@@ -1,0 +1,2 @@
+id,input,expected_output,context,source_file,synthetic_input_quality,approved,feedback,reviewer
+r1,SLA가 뭐야?,SLA는 서비스 수준 합의입니다.,SLA는 Service Level Agreement의 약자입니다.,00_sla.md,0.8,True,,tester

@@ -1,0 +1,29 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# 필요한 패키지만 직접 설치
+RUN pip install --no-cache-dir \
+    "a2a-sdk>=0.3.25" \
+    "langgraph>=1.1.0" \
+    "langchain>=1.2.0" \
+    "langchain-openai>=1.1.0" \
+    "langchain-mcp-adapters>=0.2.0" \
+    "langfuse>=4.0.6" \
+    "pydantic-settings>=2.2,<3" \
+    "structlog>=25,<26" \
+    "uvicorn" \
+    "starlette" \
+    "httpx" \
+    "pydantic" \
+    "python-dotenv"
+
+# youngs75_a2a 패키지 전체 복사
+COPY youngs75_a2a/ /app/youngs75_a2a/
+
+ENV PYTHONPATH=/app
+EXPOSE 18080
+
+CMD ["python", "-m", "youngs75_a2a.tests.run_agent_server"]

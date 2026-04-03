@@ -1,0 +1,14 @@
+{
+  "summary": "I’m ready to generate the remediation report, but I don’t currently have access to your evaluation data or online metrics.\n\nWhat I tried\n- Searched the workspace for evaluation and Langfuse exports (e.g., *eval*.json/.csv, *results*.json/.csv, *langfuse*.json/.csv) and found none.\n- The read_eval_results and read_langfuse_scores tools are not available in this session, so I can’t pull data directly without either file paths or tool access.\n\nWhat I need from you (pick one)\nOption A — Grant tool a",
+  "failure_analysis": {
+    "total_evaluated": 0,
+    "total_failed": 0,
+    "failure_rate": 0.0,
+    "categories": []
+  },
+  "prompt_optimizations": [],
+  "recommendations": [],
+  "next_steps": [
+    "구조화된 평가 결과로 다시 실행하세요"
+  ]
+}

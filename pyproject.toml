@@ -1,0 +1,31 @@
+[project]
+name = "youngs75-coding-ai-agent"
+version = "0.1.0"
+description = "AI Assistant Coding Agent Harness — MCP 도구 기반 코드 생성/검증/실행 에이전트"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "a2a-sdk>=0.3.25",
+    "langchain>=1.2.13",
+    "langchain-mcp-adapters>=0.2.2",
+    "langchain-openai>=1.1.12",
+    "langfuse>=4.0.6",
+    "langgraph-cli>=0.4.19",
+    "mcp[cli]>=1.26.0",
+    "pydantic-settings>=2.2,<3",
+    "python-dotenv>=1.2.2",
+    "structlog>=25,<26",
+]
+
+[dependency-groups]
+dev = [
+    "deepeval>=3.8,<4",
+    "nest-asyncio>=1.6,<2",
+    "pytest>=9,<10",
+    "pytest-asyncio>=1.0,<2",
+    "ruff>=0.15.2",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

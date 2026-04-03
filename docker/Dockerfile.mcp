@@ -1,0 +1,23 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    "mcp[cli]>=1.26.0" \
+    "tavily-python" \
+    "arxiv" \
+    "uvicorn" \
+    "pydantic" \
+    "httpx"
+
+# MCP 서버 스크립트 3종 복사
+COPY youngs75_a2a/tests/run_tavily_mcp.py /app/run_tavily_mcp.py
+COPY youngs75_a2a/tests/run_arxiv_mcp.py /app/run_arxiv_mcp.py
+COPY youngs75_a2a/tests/run_serper_mcp.py /app/run_serper_mcp.py
+
+ENV PYTHONPATH=/app
+
+# 기본 CMD는 docker-compose에서 오버라이드
+CMD ["python", "/app/run_tavily_mcp.py"]

@@ -1,0 +1,180 @@
+# youngs75_a2a 프로덕션 배포 — MCP 3개 + Agent 3개 = 6 컨테이너
+#
+# 구성:
+#   MCP 서버:  Tavily(:3001) + arXiv(:3000) + Serper(:3002)
+#   Agent:     SimpleReAct(:18081) + DeepResearch(:18082) + DeepResearchA2A(:18083)
+#
+# 사용법:
+#   cd youngs75_a2a/docker
+#   docker compose up -d          # 전체 기동
+#   docker compose ps             # 상태 확인
+#   docker compose logs -f agent-deep-research  # 특정 서비스 로그
+#   docker compose down           # 종료
+#
+# 테스트:
+#   export $(grep -v '^#' .env | xargs)
+#   python -m youngs75_a2a.tests.test_docker_e2e
+
+services:
+  # ═══════════════════════════════════════════════
+  #  MCP 서버 (도구 제공)
+  # ═══════════════════════════════════════════════
+
+  mcp-tavily:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+    container_name: youngs75_mcp_tavily
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - ../.env
+    command: ["python", "/app/run_tavily_mcp.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3001/mcp"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - youngs75_net
+
+  mcp-arxiv:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+    container_name: youngs75_mcp_arxiv
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    command: ["python", "/app/run_arxiv_mcp.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3000/mcp"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - youngs75_net
+
+  mcp-serper:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+    container_name: youngs75_mcp_serper
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - ../.env
+    command: ["python", "/app/run_serper_mcp.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3002/mcp"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - youngs75_net
+
+  # ═══════════════════════════════════════════════
+  #  Agent 서버 (A2A 프로토콜)
+  # ═══════════════════════════════════════════════
+
+  agent-simple-react:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+    container_name: youngs75_agent_simple_react
+    restart: unless-stopped
+    ports:
+      - "18081:18081"
+    env_file:
+      - ../.env
+    environment:
+      - AGENT_PORT=18081
+      - AGENT_MODEL=gpt-5.4-mini
+      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
+    command: ["python", "-m", "youngs75_a2a.tests.run_simple_react_server"]
+    depends_on:
+      mcp-tavily:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - youngs75_net
+
+  agent-deep-research:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+    container_name: youngs75_agent_deep_research
+    restart: unless-stopped
+    ports:
+      - "18082:18082"
+    env_file:
+      - ../.env
+    environment:
+      - AGENT_PORT=18082
+      - AGENT_MODEL=gpt-5.4-mini
+      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
+      - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
+      - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
+    command: ["python", "-m", "youngs75_a2a.tests.run_agent_server"]
+    depends_on:
+      mcp-tavily:
+        condition: service_healthy
+      mcp-arxiv:
+        condition: service_healthy
+      mcp-serper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18082/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - youngs75_net
+
+  agent-deep-research-a2a:
+    build:
+      context: ../..
+      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+    container_name: youngs75_agent_deep_research_a2a
+    restart: unless-stopped
+    ports:
+      - "18083:18083"
+    env_file:
+      - ../.env
+    environment:
+      - AGENT_PORT=18083
+      - AGENT_MODEL=gpt-5.4-mini
+      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
+      - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
+      - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
+    command: ["python", "-m", "youngs75_a2a.tests.run_deep_research_a2a_server"]
+    depends_on:
+      mcp-tavily:
+        condition: service_healthy
+      mcp-arxiv:
+        condition: service_healthy
+      mcp-serper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18083/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - youngs75_net
+
+networks:
+  youngs75_net:
+    driver: bridge

@@ -1,0 +1,200 @@
+﻿id,input,expected_output,context,source_file,synthetic_input_quality,approved,feedback,reviewer
+d6b7fa2915d0,"가정: p95 지연↑, HTTP 5xx↑. SLA는 월간 가용성·지연·오류율을 어떻게 문서화하나?","다음처럼 “정의–측정–목표–보고” 순으로 월간 SLA를 문서화합니다.
+
+- 범위/기간
+  - 집계 기간: 매 캘린더 월
+  - 적용 범위: prod 트래픽, 리전/엔드포인트 명시
+
+- 가용성(Availability)
+  - 정의/산식: 가용성 = 1 − (장애 시간 / 총 시간)
+  - 장애 시간: 사용자 영향 있는 가동 중단 분(min) 합계; 사전 공지된 계획 점검 제외 여부 명시
+  - 보고: 월 단위 퍼센트와 총 장애 시간(분) 병기
+
+- 지연(Latency)
+  - 정의: p50/p95/p99 분위수로 측정
+  - 사용자 체감 지표: TTFE, E2E 함께 보고
+  - 범위: 성공 응답(예: 2xx) 기준, 샘플링/집계 방법 명시
+
+- 오류율(Error rate)
+  - 정의: HTTP 5xx, tool error rate 포함
+  - 분모: 총 요청 수를 명확히 기재(재시도 포함/제외 정책 명시)
+  - 분해: 엔드포인트/리전별도 가능
+
+- 목표(SLO) 예시
+  - 가용성 ≥ 99.9%
+  - p95 E2E ≤ 500 ms, p95 TTFE ≤ 200 ms
+  - HTTP 5xx ≤ 0.10%, tool error rate ≤ 0.05%
+
+- 월간 보고 포맷(요약 + 지표표 + 사건기록)
+  - 요약: 준수/미준수, MoM 증감 화살표
+  - 지표표: 
+    - 가용성: XX.XX% (장애 YY분)
+    - 지연: p50/p95/p99, TTFE p95, E2E p95
+    - 오류율: HTTP 5xx ZZ.ZZ% (분모 N요청), tool error rate AA.AA%
+  - 인시던트: 원인(RCA), 영향, 재발 방지 액션, 타임라인
+
+- 이번 가정(p95 지연↑, HTTP 5xx↑)의 기록 예시
+  - 지연: p95 E2E 520 ms (▲ +8% MoM) — 목표 초과 → 미준수 표기, 영향 구간/원인 분석 첨부
+  - 오류율: HTTP 5xx 0.18% (▲ +0.08%p) — 목표 초과 → 인시던트 섹션에 상세 RCA/조치 기재
+  - 가용성: 산식대로 계산한 월 가용성과 장애 시간 병기(목표 대비 판단)","# SLA (Service Level Agreement)
+
+SLA는 서비스 제공자가 사용자에게 약속하는 **서비스 수준(가용성/지연/오류율 등)** 을 문서화한 합의입니다.
+
+## 측정 방법(예시)
+
+- **가용성**: `1 - (장애 시간 / 총 시간)`으로 산출하고 월 단위로 보고합니다.
+- **지연**: p50/p95/p99 등 분위수로 측정하며, 사용자 체감 지표로는 TTFE(Time To First Event)와 E2E(End-to-End)를 함께 봅니다.
+- **오류율**: HTTP 5xx, tool error rate 등을 포함해 정의하고, 분모(요청 수)를 명확히 합니다.
+
+",data/corpus/00_sla.md,0.0,,,
+d870623c2cb8,"Rewritten Input:
+월간 SLA 보고서: 가용성=1-(장애/총), 지연 p50/p95/p99·TTFE/E2E, 오류율=HTTP5xx·tool/요청수.","월간 SLA 보고 지표 정의
+- 가용성: 1 − (장애 시간 / 총 시간)로 산정, 월 단위 보고
+- 지연: p50/p95/p99 분위수 + TTFE, E2E 병행 보고
+- 오류율: (HTTP 5xx + tool 에러) / 요청 수로 산정","# SLA (Service Level Agreement)
+
+SLA는 서비스 제공자가 사용자에게 약속하는 **서비스 수준(가용성/지연/오류율 등)** 을 문서화한 합의입니다.
+
+## 측정 방법(예시)
+
+- **가용성**: `1 - (장애 시간 / 총 시간)`으로 산출하고 월 단위로 보고합니다.
+- **지연**: p50/p95/p99 등 분위수로 측정하며, 사용자 체감 지표로는 TTFE(Time To First Event)와 E2E(End-to-End)를 함께 봅니다.
+- **오류율**: HTTP 5xx, tool error rate 등을 포함해 정의하고, 분모(요청 수)를 명확히 합니다.
+
+",data/corpus/00_sla.md,0.0,,,
+0c9263e099b0,"Rewritten Input:
+p95/p99·TTFE·E2E와 HTTP 5xx/툴 오류율 결합, 이상탐지·경보 임계 설계.","다음처럼 설계하세요.
+
+- 지표 구성
+  - 지연: TTFE·E2E의 p95/p99을 핵심 지표로 산출.
+  - 오류율: HTTP 5xx + 툴 오류율을 합산해 하나의 “에러율”로 보고. 분모는 “유효한 요청 수”로 고정해 명확히 정의.
+
+- 집계 기준
+  - 1분 단위 원시 지표 → 5분/15분 윈도우로 집계해 알림 판단.
+  - 엔드포인트/리전/핵심 경로별로 분리 집계, 트래픽 가중 평균 병행.
+
+- 목표/임계
+  - SLO로 p95·p99 목표, TTFE와 E2E 각각 별도 설정.
+  - 에러율 SLO(예: ≤X%) 설정 및 최소 트래픽 조건(N req/min) 부여.
+  - 정적 임계: p95(E2E) > 목표×1.2 또는 p99 > 목표×1.1, 에러율 > 목표×2 등 단계화.
+
+- 이상탐지(동적)
+  - 28일 롤링 기준선(요일·시간대별) 대비 편차 사용.
+  - z-score/MAD 기반으로 p95·p99가 기준선 대비 +30% 또는 3σ 초과가 10분 이상 지속 시 “이상”.
+  - 노이즈 완화: p95와 p99 동시 초과, 또는 지연 이상 + 에러율 상승 동시일 때만 고심각도.
+
+- 경보 설계
+  - P1: p99(E2E) > 목표×2 또는 에러율 > 목표×3가 5–10분 지속(최소 트래픽 충족).
+  - P2: p95(E2E) > 목표×1.3 또는 에러율 > 목표×2가 15–30분 지속.
+  - 예행경보: p95(TTFE) > 목표×1.2가 15분 지속(복구 전조).
+  - 중복 억제: 동일 원인(동일 리전/서비스) 경보는 묶어 발송.
+
+- 보고/추적
+  - 월 단위 SLA 리포트: 가용성=1−(장애시간/총시간), 지연 p95/p99·TTFE·E2E, 에러율(HTTP 5xx+툴) 함께 제시.
+  - 모든 임계·분모 정의는 문서화하고 변경 시 버전 관리.","# SLA (Service Level Agreement)
+
+SLA는 서비스 제공자가 사용자에게 약속하는 **서비스 수준(가용성/지연/오류율 등)** 을 문서화한 합의입니다.
+
+## 측정 방법(예시)
+
+- **가용성**: `1 - (장애 시간 / 총 시간)`으로 산출하고 월 단위로 보고합니다.
+- **지연**: p50/p95/p99 등 분위수로 측정하며, 사용자 체감 지표로는 TTFE(Time To First Event)와 E2E(End-to-End)를 함께 봅니다.
+- **오류율**: HTTP 5xx, tool error rate 등을 포함해 정의하고, 분모(요청 수)를 명확히 합니다.
+
+",data/corpus/00_sla.md,0.0,,,
+2e35f71fbf37,"Explain corpus purpose, Step1 use; outline 00_sla.md, synthesizer.py, test steps, rules, no external deps.","- Purpose: The corpus is the source repository used in Loop1 Step1 to generate synthetic Q&A. Its content directly impacts Golden quality.
+- Step1 use: Step1 references these documents to create synthetic queries/answers; any additions/edits can change diversity and quality, so changes must be logged.
+- Key file — 00_sla.md: Contains foundational knowledge on SLA concepts and metrics.
+- Internal dependency: src/loop1_dataset/synthesizer.py.
+- Testing after changes: Run Step1 or Step4 with --skip-review to verify synthetic generation works.
+- Working rules:
+  - Maintain factual accuracy and consistency.
+  - Log impacts when adding/modifying files.
+  - Do not store sensitive or private information.
+  - Use UTF-8 Markdown; keep one clear topic per file.
+- Structure: No subdirectories.
+- External dependencies: None.","<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-02-20 23:46:10 +0900 | Updated: 2026-02-20 23:46:10 +0900 -->
+
+# corpus
+
+## Purpose
+Loop1 Step1에서 synthetic 질의응답을 생성할 때 참조하는 원천 문서 저장소입니다.
+
+## Key Files
+| File | Description |
+|------|-------------|
+| `00_sla.md` | SLA 개념/지표 관련 기본 지식 문서 |
+
+## Subdirectories
+해당 없음.
+
+## For AI Agents
+
+### Working In This Directory
+- 문서 내용은 Golden 품질에 직접 영향을 주므로 사실성/일관성을 유지합니다.
+- 파일 추가/수정 시 Step1 생성 결과의 다양성과 품질이 변할 수 있음을 로그에 기록합니다.
+- 민감정보/비공개 정보는 저장하지 않습니다.
+
+### Testing Requirements
+- 변경 후 Step1 또는 Step4(`--skip-review`)를 실행해 synthetic 생성이 정상 동작하는지 확인합니다.
+
+### Common Patterns
+- UTF-8 마크다운 문서
+- 한 파일당 하나의 명확한 주제 유지
+
+## Dependencies
+
+### Internal
+- `src/loop1_dataset/synthesizer.py`
+
+### External
+- 없음
+
+<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+",data/corpus/AGENTS.md,0.0,,,
+2ac95582b57b,"Context만 근거로 'corpus' 민감정보 저장 허용/불허 판정, 정책 원문 인용·예외 유무·00_sla.md 존재 확인.","- 판정: 불허
+- 근거(정책 원문 인용): “민감정보/비공개 정보는 저장하지 않습니다.”
+- 예외 유무: 예외 조항 언급 없음
+- 00_sla.md 존재: 존재함 (Key Files에 “00_sla.md — SLA 개념/지표 관련 기본 지식 문서”로 명시)","<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-02-20 23:46:10 +0900 | Updated: 2026-02-20 23:46:10 +0900 -->
+
+# corpus
+
+## Purpose
+Loop1 Step1에서 synthetic 질의응답을 생성할 때 참조하는 원천 문서 저장소입니다.
+
+## Key Files
+| File | Description |
+|------|-------------|
+| `00_sla.md` | SLA 개념/지표 관련 기본 지식 문서 |
+
+## Subdirectories
+해당 없음.
+
+## For AI Agents
+
+### Working In This Directory
+- 문서 내용은 Golden 품질에 직접 영향을 주므로 사실성/일관성을 유지합니다.
+- 파일 추가/수정 시 Step1 생성 결과의 다양성과 품질이 변할 수 있음을 로그에 기록합니다.
+- 민감정보/비공개 정보는 저장하지 않습니다.
+
+### Testing Requirements
+- 변경 후 Step1 또는 Step4(`--skip-review`)를 실행해 synthetic 생성이 정상 동작하는지 확인합니다.
+
+### Common Patterns
+- UTF-8 마크다운 문서
+- 한 파일당 하나의 명확한 주제 유지
+
+## Dependencies
+
+### Internal
+- `src/loop1_dataset/synthesizer.py`
+
+### External
+- 없음
+
+<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+",data/corpus/AGENTS.md,0.0,,,
