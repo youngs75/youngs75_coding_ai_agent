@@ -93,31 +93,39 @@ def _save_episodic_memory(
     session.memory.put(item)
 
 
-async def _create_agent(name: str) -> BaseGraphAgent:
+async def _create_agent(
+    name: str,
+    checkpointer: Any | None = None,
+    memory_store: Any | None = None,
+) -> BaseGraphAgent:
     """에이전트를 비동기로 생성한다."""
     if name == "coding_assistant":
         from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
         from youngs75_a2a.agents.coding_assistant.config import CodingConfig
 
-        return await CodingAssistantAgent.create(config=CodingConfig())
+        return await CodingAssistantAgent.create(
+            config=CodingConfig(),
+            checkpointer=checkpointer,
+            memory_store=memory_store,
+        )
 
     if name == "deep_research":
         from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
         from youngs75_a2a.agents.deep_research.config import ResearchConfig
 
-        return await DeepResearchAgent.create(config=ResearchConfig())
+        return await DeepResearchAgent.create(config=ResearchConfig(), checkpointer=checkpointer)
 
     if name == "simple_react":
         from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
         from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
 
-        return await SimpleMCPReActAgent.create(config=SimpleReActConfig())
+        return await SimpleMCPReActAgent.create(config=SimpleReActConfig(), checkpointer=checkpointer)
 
     if name == "orchestrator":
         from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
         from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
 
-        return await OrchestratorAgent.create(config=OrchestratorConfig())
+        return await OrchestratorAgent.create(config=OrchestratorConfig(), checkpointer=checkpointer)
 
     raise ValueError(f"알 수 없는 에이전트: {name}")
 
@@ -133,7 +141,11 @@ async def _get_or_create_agent(
 
     renderer.system_message(f"[{name}] 에이전트 초기화 중...")
     try:
-        agent = await _create_agent(name)
+        agent = await _create_agent(
+            name,
+            checkpointer=session.checkpointer,
+            memory_store=session.memory,
+        )
         session.cache_agent(name, agent)
         renderer.system_message(f"[{name}] 에이전트 준비 완료")
         return agent
@@ -170,6 +182,12 @@ def _build_input_state(
         recent = episodic_items[:_EPISODIC_MAX_ITEMS]
         if recent:
             state["episodic_log"] = [item.content for item in recent]
+        # Procedural Memory 주입 — 학습된 코드 패턴 (Voyager식 누적)
+        procedural_items = session.memory.retrieve_skills(
+            query=user_input, limit=3,
+        )
+        if procedural_items:
+            state["procedural_skills"] = [item.content for item in procedural_items]
 
     elif agent_name == "orchestrator":
         state["selected_agent"] = None
@@ -215,7 +233,13 @@ def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
 async def _run_agent_turn(
     user_input: str, session: CLISession, renderer: CLIRenderer
 ) -> None:
-    """에이전트에 메시지를 전달하고 응답을 출력한다."""
+    """에이전트에 메시지를 전달하고 응답을 출력한다.
+
+    astream_events(v2) 기반 토큰 단위 실시간 스트리밍을 사용한다.
+    - on_chain_start: 노드 진행 상태 표시 (_NODE_LABELS)
+    - on_chat_model_stream: LLM 토큰 실시간 출력
+    - on_chain_end: 응답 데이터 수집
+    """
     session.add_message("user", user_input)
 
     agent = await _get_or_create_agent(session, renderer)
@@ -224,31 +248,55 @@ async def _run_agent_turn(
 
     input_state = _build_input_state(session.info.agent_name, user_input, session)
 
-    # 에이전트 그래프 스트리밍 실행
+    # 에이전트 그래프 이벤트 스트리밍 실행
+    run_config: dict[str, Any] = {"configurable": {"thread_id": session.thread_id}}
     response_data: dict[str, Any] = {}
     last_node = ""
     passed = True
+    token_streamed = False
     try:
-        async for chunk in agent.graph.astream(input_state):
-            for node_name, update in chunk.items():
-                if node_name.startswith("__"):
-                    continue
-                # 노드 변경 시 진행 상태 출력
-                if node_name != last_node:
-                    label = _NODE_LABELS.get(node_name, node_name)
-                    renderer.system_message(f"  > {label}")
-                    last_node = node_name
-                # 응답에 필요한 필드 수집
-                if isinstance(update, dict):
+        async for event in agent.graph.astream_events(
+            input_state, config=run_config, version="v2",
+        ):
+            kind = event["event"]
+            node = event.get("metadata", {}).get("langgraph_node", "")
+
+            # 노드 시작 시 진행 상태 표시
+            if kind == "on_chain_start" and node in _NODE_LABELS and node != last_node:
+                if token_streamed:
+                    renderer.flush_tokens()
+                    token_streamed = False
+                renderer.system_message(f"  > {_NODE_LABELS[node]}")
+                last_node = node
+
+            # LLM 토큰 스트리밍
+            elif kind in ("on_chat_model_stream", "on_llm_stream"):
+                chunk = event["data"].get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    if not token_streamed:
+                        renderer.start_token_stream()
+                        token_streamed = True
+                    renderer.render_token(chunk.content)
+
+            # 노드 완료 시 응답 데이터 수집
+            elif kind == "on_chain_end" and node:
+                output = event["data"].get("output")
+                if isinstance(output, dict):
                     for key in ("generated_code", "verify_result", "final_report",
                                 "selected_agent", "agent_response"):
-                        if key in update:
-                            response_data[key] = update[key]
-                    if "messages" in update:
-                        for msg in update["messages"]:
+                        if key in output:
+                            response_data[key] = output[key]
+                    if "messages" in output:
+                        for msg in output["messages"]:
                             if isinstance(msg, AIMessage) and msg.content:
                                 response_data["last_ai_message"] = msg.content
+
+        if token_streamed:
+            renderer.flush_tokens()
+
     except Exception as e:
+        if token_streamed:
+            renderer.flush_tokens()
         logger.exception("에이전트 실행 오류")
         renderer.error(f"에이전트 실행 오류: {e}")
         return
@@ -259,7 +307,11 @@ async def _run_agent_turn(
         passed = verify.get("passed", True)
 
     response = _extract_response(session.info.agent_name, response_data)
-    renderer.agent_message(response)
+
+    # 토큰 스트리밍이 된 경우 이미 출력되었으므로 중복 출력 방지
+    if not token_streamed:
+        renderer.agent_message(response)
+
     session.add_message("assistant", response)
 
     # Episodic Memory 저장
@@ -278,12 +330,30 @@ def _init_skill_registry(skills_dir: str | None) -> SkillRegistry:
     return registry
 
 
+def _create_checkpointer(config: CLIConfig) -> Any:
+    """설정에 따라 체크포인터를 생성한다."""
+    if config.checkpointer_backend == "sqlite":
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+            return SqliteSaver.from_conn_string(config.checkpointer_sqlite_path)
+        except ImportError:
+            logger.warning("langgraph-checkpoint-sqlite 미설치, MemorySaver로 대체")
+
+    from langgraph.checkpoint.memory import MemorySaver
+    return MemorySaver()
+
+
 async def _main_loop(config: CLIConfig) -> None:
     """대화형 메인 루프."""
     console = Console()
     renderer = CLIRenderer(console)
     skill_registry = _init_skill_registry(config.skills_dir)
-    session = CLISession(agent_name=config.default_agent, skill_registry=skill_registry)
+    checkpointer = _create_checkpointer(config)
+    session = CLISession(
+        agent_name=config.default_agent,
+        skill_registry=skill_registry,
+        checkpointer=checkpointer,
+    )
 
     prompt_session: PromptSession[str] = PromptSession(
         history=FileHistory(config.history_file),

@@ -25,6 +25,9 @@ Remediation Agent의 출력을 Pydantic 모델로 정의합니다.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 
@@ -130,3 +133,133 @@ class RecommendationReport(BaseModel):
     prompt_optimizations: list[PromptOptimization] = Field(default_factory=list)
     recommendations: list[WorkflowRecommendation] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list, description="다음 단계 액션 아이템")
+    version: str = Field(default="1", description="리포트 버전")
+
+    def get_prompt_changes(self) -> list[dict[str, str]]:
+        """프롬프트 최적화 제안을 적용 가능한 형태로 변환합니다.
+
+        Returns:
+            적용 가능한 프롬프트 변경 딕셔너리 리스트.
+            각 항목: target_prompt, issue, change, metric
+        """
+        changes: list[dict[str, str]] = []
+        for opt in self.prompt_optimizations:
+            changes.append({
+                "target_prompt": opt.target_prompt,
+                "issue": opt.current_issue,
+                "change": opt.suggested_change,
+                "metric": opt.expected_metric_improvement,
+            })
+        # recommendations 중 prompt 카테고리도 포함
+        for rec in self.recommendations:
+            if rec.category == "prompt":
+                changes.append({
+                    "target_prompt": rec.title,
+                    "issue": rec.description,
+                    "change": "; ".join(rec.specific_changes) if rec.specific_changes else rec.description,
+                    "metric": rec.expected_impact,
+                })
+        return changes
+
+    def format_report(self) -> str:
+        """사람이 읽기 쉬운 텍스트 리포트를 생성합니다.
+
+        Returns:
+            포맷팅된 리포트 문자열
+        """
+        lines = [
+            f"{'=' * 60}",
+            "REMEDIATION REPORT",
+            f"{'=' * 60}",
+            f"\n요약: {self.summary}",
+            f"\n실패 분석:",
+            f"  총 평가: {self.failure_analysis.total_evaluated}건",
+            f"  총 실패: {self.failure_analysis.total_failed}건",
+            f"  실패율: {self.failure_analysis.failure_rate:.1%}",
+        ]
+
+        if self.failure_analysis.categories:
+            lines.append("\n  카테고리별:")
+            for cat in self.failure_analysis.categories:
+                lines.append(f"    [{cat.severity.upper()}] {cat.name}: {cat.count}건")
+                for p in cat.patterns:
+                    lines.append(f"      - {p}")
+
+        if self.prompt_optimizations:
+            lines.append(f"\n프롬프트 최적화 ({len(self.prompt_optimizations)}건):")
+            for opt in self.prompt_optimizations:
+                lines.append(f"  - [{opt.target_prompt}] {opt.current_issue}")
+                lines.append(f"    → {opt.suggested_change}")
+                lines.append(f"    예상: {opt.expected_metric_improvement}")
+
+        if self.recommendations:
+            lines.append(f"\n추천 사항 ({len(self.recommendations)}건):")
+            for rec in self.recommendations:
+                lines.append(f"  - [{rec.priority.upper()}] {rec.title}")
+                lines.append(f"    카테고리: {rec.category}, 복잡도: {rec.implementation_complexity}")
+                lines.append(f"    영향: {rec.expected_impact}")
+
+        if self.next_steps:
+            lines.append("\n다음 단계:")
+            for step in self.next_steps:
+                lines.append(f"  - {step}")
+
+        return "\n".join(lines)
+
+
+def save_remediation_report(
+    report: RecommendationReport,
+    output_dir: str | Path | None = None,
+) -> Path:
+    """Remediation 리포트를 JSON 파일로 저장합니다.
+
+    Args:
+        report: 저장할 RecommendationReport 모델
+        output_dir: 저장 디렉토리 (기본: data/eval_results)
+
+    Returns:
+        저장된 파일 경로
+    """
+    if output_dir is None:
+        from youngs75_a2a.eval_pipeline.settings import get_settings
+        settings = get_settings()
+        output_dir = settings.data_dir / "eval_results"
+    else:
+        output_dir = Path(output_dir)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "remediation_report.json"
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(report.model_dump(), f, ensure_ascii=False, indent=2)
+
+    return output_path
+
+
+def load_remediation_report(
+    report_path: str | Path | None = None,
+) -> RecommendationReport | None:
+    """저장된 Remediation 리포트를 로드합니다.
+
+    Args:
+        report_path: 리포트 파일 경로 (기본: data/eval_results/remediation_report.json)
+
+    Returns:
+        RecommendationReport 또는 파일이 없으면 None
+    """
+    if report_path is None:
+        from youngs75_a2a.eval_pipeline.settings import get_settings
+        settings = get_settings()
+        report_path = settings.data_dir / "eval_results" / "remediation_report.json"
+    else:
+        report_path = Path(report_path)
+
+    if not report_path.exists():
+        return None
+
+    try:
+        with open(report_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return RecommendationReport(**data)
+    except Exception:
+        return None

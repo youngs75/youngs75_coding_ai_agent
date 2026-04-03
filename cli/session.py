@@ -31,15 +31,22 @@ class CLISession:
         self,
         agent_name: str = "coding_assistant",
         skill_registry: SkillRegistry | None = None,
+        checkpointer: Any | None = None,
     ):
         self.info = SessionInfo(agent_name=agent_name)
         self.memory = MemoryStore()
         self.skills = skill_registry or SkillRegistry()
+        self.checkpointer = checkpointer
         self._history: list[dict[str, str]] = []
         self._agents: dict[str, Any] = {}
 
     @property
     def session_id(self) -> str:
+        return self.info.session_id
+
+    @property
+    def thread_id(self) -> str:
+        """멀티턴 대화 상태 유지를 위한 스레드 ID."""
         return self.info.session_id
 
     def add_message(self, role: str, content: str) -> None:
@@ -66,3 +73,18 @@ class CLISession:
     def switch_agent(self, agent_name: str) -> None:
         """에이전트 전환."""
         self.info.agent_name = agent_name
+
+    def get_history_summary(self, limit: int = 10) -> list[dict[str, str]]:
+        """최근 대화 히스토리 요약을 반환한다."""
+        return list(self._history[-limit:])
+
+    def activate_skill(self, name: str) -> str | None:
+        """스킬을 L2 레벨로 활성화하고 이름을 반환한다.
+
+        Returns:
+            활성화된 스킬 이름 또는 None (스킬이 없을 경우)
+        """
+        skill = self.skills.activate(name)
+        if skill is None:
+            return None
+        return skill.name

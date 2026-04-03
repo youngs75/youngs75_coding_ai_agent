@@ -19,6 +19,7 @@ from youngs75_a2a.cli.app import (
     _EPISODIC_MAX_ITEMS,
     _build_episodic_summary,
     _build_input_state,
+    _create_checkpointer,
     _extract_response,
     _get_or_create_agent,
     _run_agent_turn,
@@ -26,7 +27,14 @@ from youngs75_a2a.cli.app import (
 )
 from youngs75_a2a.cli.commands import CommandResult, handle_command
 from youngs75_a2a.cli.config import CLIConfig
-from youngs75_a2a.cli.eval_runner import EvalResult, format_eval_summary, load_last_eval_results
+from youngs75_a2a.cli.eval_runner import (
+    EvalResult,
+    RemediationResult,
+    format_eval_summary,
+    format_remediation_summary,
+    load_last_eval_results,
+    load_last_remediation_report,
+)
 from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
@@ -38,6 +46,24 @@ def _make_renderer() -> CLIRenderer:
     return CLIRenderer(console=Console(file=StringIO(), force_terminal=True))
 
 
+def _make_event(
+    event_type: str,
+    name: str = "",
+    data: dict | None = None,
+    node: str | None = None,
+) -> dict:
+    """테스트용 astream_events 이벤트 생성 헬퍼."""
+    return {
+        "event": event_type,
+        "name": name,
+        "data": data or {},
+        "metadata": {"langgraph_node": node} if node else {},
+        "tags": [],
+        "run_id": "test-run",
+        "parent_ids": [],
+    }
+
+
 # ── CLIConfig ──
 
 
@@ -46,6 +72,23 @@ class TestCLIConfig:
         config = CLIConfig()
         assert config.default_agent == "coding_assistant"
         assert config.stream_output is True
+
+    def test_checkpointer_default(self):
+        config = CLIConfig()
+        assert config.checkpointer_backend == "memory"
+
+    def test_create_checkpointer_memory(self):
+        from langgraph.checkpoint.memory import MemorySaver
+        config = CLIConfig(checkpointer_backend="memory")
+        cp = _create_checkpointer(config)
+        assert isinstance(cp, MemorySaver)
+
+    def test_create_checkpointer_sqlite_fallback(self):
+        """sqlite 패키지 미설치 시 MemorySaver로 대체."""
+        from langgraph.checkpoint.memory import MemorySaver
+        config = CLIConfig(checkpointer_backend="sqlite")
+        cp = _create_checkpointer(config)
+        assert isinstance(cp, MemorySaver)
 
 
 # ── CLISession ──
@@ -107,6 +150,46 @@ class TestCLISession:
         ))
         s = CLISession(skill_registry=registry)
         assert len(s.skills.list_skills()) == 1
+
+    def test_checkpointer_default_none(self):
+        s = CLISession()
+        assert s.checkpointer is None
+
+    def test_checkpointer_custom(self):
+        from langgraph.checkpoint.memory import MemorySaver
+        cp = MemorySaver()
+        s = CLISession(checkpointer=cp)
+        assert s.checkpointer is cp
+
+    def test_thread_id_matches_session_id(self):
+        s = CLISession()
+        assert s.thread_id == s.session_id
+
+    def test_get_history_summary_empty(self):
+        s = CLISession()
+        assert s.get_history_summary() == []
+
+    def test_get_history_summary(self):
+        s = CLISession()
+        s.add_message("user", "hello")
+        s.add_message("assistant", "hi")
+        s.add_message("user", "bye")
+        summary = s.get_history_summary(limit=2)
+        assert len(summary) == 2
+        assert summary[0]["content"] == "hi"
+        assert summary[1]["content"] == "bye"
+
+    def test_activate_skill_not_found(self):
+        s = CLISession()
+        assert s.activate_skill("nonexistent") is None
+
+    def test_activate_skill_found(self):
+        registry = SkillRegistry()
+        registry.register(Skill(
+            metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
+        ))
+        s = CLISession(skill_registry=registry)
+        assert s.activate_skill("code_review") == "code_review"
 
 
 # ── CLIRenderer ──
@@ -178,6 +261,62 @@ class TestCommands:
     def test_non_command(self):
         result = handle_command("hello world", CLISession(), _make_renderer())
         assert not result.handled  # 일반 메시지로 처리
+
+    # ── /skill 커맨드 ──
+
+    def test_skill_list_empty(self):
+        result = handle_command("/skill list", CLISession(), _make_renderer())
+        assert result.handled
+
+    def test_skill_list_with_skills(self):
+        registry = SkillRegistry()
+        registry.register(Skill(
+            metadata=SkillMetadata(name="test_skill", description="테스트 스킬"),
+        ))
+        session = CLISession(skill_registry=registry)
+        result = handle_command("/skill list", session, _make_renderer())
+        assert result.handled
+
+    def test_skill_activate_success(self):
+        registry = SkillRegistry()
+        registry.register(Skill(
+            metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
+        ))
+        session = CLISession(skill_registry=registry)
+        result = handle_command("/skill activate code_review", session, _make_renderer())
+        assert result.handled
+
+    def test_skill_activate_not_found(self):
+        result = handle_command("/skill activate nonexistent", CLISession(), _make_renderer())
+        assert result.handled
+
+    def test_skill_activate_no_name(self):
+        result = handle_command("/skill activate", CLISession(), _make_renderer())
+        assert result.handled
+
+    def test_skill_unknown_sub(self):
+        result = handle_command("/skill unknown", CLISession(), _make_renderer())
+        assert result.handled
+
+    # ── /history 커맨드 ──
+
+    def test_history_empty(self):
+        result = handle_command("/history", CLISession(), _make_renderer())
+        assert result.handled
+
+    def test_history_with_messages(self):
+        session = CLISession()
+        session.add_message("user", "hello")
+        session.add_message("assistant", "hi there")
+        result = handle_command("/history", session, _make_renderer())
+        assert result.handled
+
+    def test_history_clear(self):
+        session = CLISession()
+        session.add_message("user", "hello")
+        result = handle_command("/history clear", session, _make_renderer())
+        assert result.handled
+        assert session.info.message_count == 0
 
 
 # ── 에이전트 연동 헬퍼 ──
@@ -256,6 +395,22 @@ class TestBuildInputState:
         session = CLISession()
         state = _build_input_state("coding_assistant", "함수 작성", session)
         assert "skill_context" not in state
+
+    def test_coding_with_procedural_memory(self):
+        session = CLISession()
+        session.memory.accumulate_skill(
+            code="def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)",
+            description="피보나치 함수 재귀 구현",
+            tags=["python", "generate"],
+        )
+        state = _build_input_state("coding_assistant", "피보나치 함수 작성", session)
+        assert "procedural_skills" in state
+        assert len(state["procedural_skills"]) >= 1
+
+    def test_coding_without_procedural_memory(self):
+        session = CLISession()
+        state = _build_input_state("coding_assistant", "함수 작성", session)
+        assert "procedural_skills" not in state
 
 
 class TestExtractResponse:
@@ -356,16 +511,25 @@ class TestRunAgentTurn:
         session = CLISession()
         renderer = _make_renderer()
 
-        # 에이전트 그래프 astream mock
+        # 에이전트 그래프 astream_events mock
         ai_msg = AIMessage(content="피보나치 함수입니다.")
         fake_graph = MagicMock()
 
-        async def fake_astream(input_state):
-            yield {"parse_request": {"parse_result": {"task_type": "generate"}}}
-            yield {"execute_code": {"generated_code": "def fib(n): ...", "messages": [ai_msg]}}
-            yield {"verify_result": {"verify_result": {"passed": True, "issues": [], "suggestions": []}}}
+        async def fake_astream_events(input_state, config=None, version="v2"):
+            yield _make_event("on_chain_start", "parse_request", node="parse_request")
+            yield _make_event("on_chain_end", "parse_request",
+                              data={"output": {"parse_result": {"task_type": "generate"}}},
+                              node="parse_request")
+            yield _make_event("on_chain_start", "execute_code", node="execute_code")
+            yield _make_event("on_chain_end", "execute_code",
+                              data={"output": {"generated_code": "def fib(n): ...", "messages": [ai_msg]}},
+                              node="execute_code")
+            yield _make_event("on_chain_start", "verify_result", node="verify_result")
+            yield _make_event("on_chain_end", "verify_result",
+                              data={"output": {"verify_result": {"passed": True, "issues": [], "suggestions": []}}},
+                              node="verify_result")
 
-        fake_graph.astream = fake_astream
+        fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
         session.cache_agent("coding_assistant", fake_agent)
 
@@ -376,17 +540,49 @@ class TestRunAgentTurn:
         assert "def fib(n)" in session.history[-1]["content"]
 
     @pytest.mark.asyncio
+    async def test_token_streaming(self):
+        """토큰 단위 스트리밍이 올바르게 동작하는지 검증."""
+        from langchain_core.messages import AIMessageChunk
+
+        session = CLISession()
+        renderer = _make_renderer()
+        ai_msg = AIMessage(content="Hello World")
+        fake_graph = MagicMock()
+
+        async def fake_astream_events(input_state, config=None, version="v2"):
+            yield _make_event("on_chain_start", "react_agent", node="react_agent")
+            yield _make_event("on_chat_model_stream", "ChatOpenAI",
+                              data={"chunk": AIMessageChunk(content="Hello")},
+                              node="react_agent")
+            yield _make_event("on_chat_model_stream", "ChatOpenAI",
+                              data={"chunk": AIMessageChunk(content=" World")},
+                              node="react_agent")
+            yield _make_event("on_chain_end", "react_agent",
+                              data={"output": {"messages": [ai_msg]}},
+                              node="react_agent")
+
+        fake_graph.astream_events = fake_astream_events
+        session.switch_agent("simple_react")
+        fake_agent = MagicMock(graph=fake_graph)
+        session.cache_agent("simple_react", fake_agent)
+
+        await _run_agent_turn("test", session, renderer)
+
+        assert session.info.message_count == 2
+        assert session.history[-1]["content"] == "Hello World"
+
+    @pytest.mark.asyncio
     async def test_handles_agent_error(self):
         session = CLISession()
         renderer = _make_renderer()
 
         fake_graph = MagicMock()
 
-        async def failing_astream(input_state):
+        async def failing_astream_events(input_state, config=None, version="v2"):
             raise RuntimeError("LLM API 오류")
             yield  # noqa: unreachable — async generator 시그니처 유지
 
-        fake_graph.astream = failing_astream
+        fake_graph.astream_events = failing_astream_events
         fake_agent = MagicMock(graph=fake_graph)
         session.cache_agent("coding_assistant", fake_agent)
 
@@ -489,12 +685,21 @@ class TestEpisodicMemory:
         ai_msg = AIMessage(content="결과입니다.")
         fake_graph = MagicMock()
 
-        async def fake_astream(input_state):
-            yield {"parse_request": {"parse_result": {"task_type": "generate"}}}
-            yield {"execute_code": {"generated_code": "code", "messages": [ai_msg]}}
-            yield {"verify_result": {"verify_result": {"passed": True, "issues": []}}}
+        async def fake_astream_events(input_state, config=None, version="v2"):
+            yield _make_event("on_chain_start", "parse_request", node="parse_request")
+            yield _make_event("on_chain_end", "parse_request",
+                              data={"output": {"parse_result": {"task_type": "generate"}}},
+                              node="parse_request")
+            yield _make_event("on_chain_start", "execute_code", node="execute_code")
+            yield _make_event("on_chain_end", "execute_code",
+                              data={"output": {"generated_code": "code", "messages": [ai_msg]}},
+                              node="execute_code")
+            yield _make_event("on_chain_start", "verify_result", node="verify_result")
+            yield _make_event("on_chain_end", "verify_result",
+                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                              node="verify_result")
 
-        fake_graph.astream = fake_astream
+        fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
         session.cache_agent("coding_assistant", fake_agent)
 
@@ -523,6 +728,12 @@ class TestEvalCommands:
 
     def test_eval_unknown_subcommand(self):
         result = handle_command("/eval unknown", CLISession(), _make_renderer())
+        assert result.handled
+
+    def test_eval_remediate_status_command_handled(self):
+        with patch("youngs75_a2a.cli.commands.load_last_remediation_report",
+                    return_value=RemediationResult(success=False, error_message="리포트 없음")):
+            result = handle_command("/eval remediate status", CLISession(), _make_renderer())
         assert result.handled
 
 
@@ -575,3 +786,209 @@ class TestEvalRunner:
             assert result.passed == 1
         finally:
             tmp_path.unlink(missing_ok=True)
+
+
+# ── Remediation Runner ──
+
+
+class TestRemediationRunner:
+    def test_remediation_result_success(self):
+        result = RemediationResult(success=True, report="dummy", report_path="/tmp/r.json")
+        assert result.success
+        assert result.report == "dummy"
+
+    def test_remediation_result_failure(self):
+        result = RemediationResult(success=False, error_message="의존성 없음")
+        assert not result.success
+        assert result.error_message == "의존성 없음"
+
+    def test_format_remediation_failure(self):
+        result = RemediationResult(success=False, error_message="파일 없음")
+        assert "파일 없음" in format_remediation_summary(result)
+
+    def test_format_remediation_success(self):
+        # format_report를 갖는 mock 리포트
+        mock_report = MagicMock()
+        mock_report.format_report.return_value = "REMEDIATION REPORT\n요약: 테스트"
+        result = RemediationResult(success=True, report=mock_report)
+        summary = format_remediation_summary(result)
+        assert "REMEDIATION REPORT" in summary
+
+    def test_format_remediation_no_report(self):
+        result = RemediationResult(success=True, report=None)
+        assert "비어있습니다" in format_remediation_summary(result)
+
+    def test_load_missing_report(self):
+        with patch("youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR",
+                    Path("/nonexistent")):
+            result = load_last_remediation_report()
+        assert not result.success
+
+    def test_load_valid_report(self):
+        data = {
+            "summary": "테스트",
+            "failure_analysis": {
+                "total_evaluated": 10,
+                "total_failed": 2,
+                "failure_rate": 0.2,
+                "categories": [],
+            },
+            "prompt_optimizations": [],
+            "recommendations": [],
+            "next_steps": [],
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(data, f)
+            tmp_path = Path(f.name)
+        try:
+            report_dir = tmp_path.parent
+            with patch("youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR", report_dir):
+                # 파일명을 맞추기 위해 직접 경로로 테스트
+                from youngs75_a2a.cli.eval_runner import load_last_remediation_report as _load
+                # load_last_remediation_report는 remediation_report.json 파일명을 기대하므로
+                # 임시 파일 대신 remediation_report.json으로 복사
+                import shutil
+                report_path = report_dir / "remediation_report.json"
+                shutil.copy(tmp_path, report_path)
+                result = _load()
+            assert result.success
+            assert result.report.summary == "테스트"
+        finally:
+            tmp_path.unlink(missing_ok=True)
+            report_path.unlink(missing_ok=True)
+
+
+# ── 프롬프트 버전 관리 ──
+
+
+class TestPromptRegistry:
+    def test_initial_prompts_registered(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        assert "parse" in registry.list_prompts()
+        assert "execute" in registry.list_prompts()
+        assert "verify" in registry.list_prompts()
+
+    def test_get_prompt_latest(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        prompt = registry.get_prompt("parse")
+        assert "요청을 분석" in prompt
+
+    def test_get_prompt_v1(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        prompt = registry.get_prompt("parse", version="v1")
+        assert "요청을 분석" in prompt
+
+    def test_get_prompt_invalid_name(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        with pytest.raises(KeyError):
+            registry.get_prompt("nonexistent")
+
+    def test_get_prompt_invalid_version(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        with pytest.raises(ValueError):
+            registry.get_prompt("parse", version="v99")
+
+    def test_current_version(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        assert registry.get_current_version("parse") == "v1"
+
+    def test_list_versions(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        assert registry.list_versions("execute") == ["v1"]
+
+    def test_apply_remediation(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+
+        changes = [
+            {
+                "target_prompt": "execute",
+                "issue": "타입 힌트 누락",
+                "change": "타입 힌트 필수 규칙 추가",
+                "metric": "faithfulness +0.1",
+            },
+        ]
+        updated = registry.apply_remediation(changes)
+        assert "execute" in updated
+        assert registry.get_current_version("execute") == "v2"
+        assert registry.list_versions("execute") == ["v1", "v2"]
+
+        # 새 버전에 개선 내용 포함
+        new_prompt = registry.get_prompt("execute")
+        assert "타입 힌트 필수 규칙 추가" in new_prompt
+
+        # v1은 원본 유지
+        v1_prompt = registry.get_prompt("execute", version="v1")
+        assert "타입 힌트 필수 규칙 추가" not in v1_prompt
+
+    def test_apply_remediation_multiple(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+
+        changes = [
+            {
+                "target_prompt": "execute",
+                "issue": "이슈1",
+                "change": "변경1",
+                "metric": "메트릭1",
+            },
+            {
+                "target_prompt": "execute",
+                "issue": "이슈2",
+                "change": "변경2",
+                "metric": "메트릭2",
+            },
+        ]
+        updated = registry.apply_remediation(changes)
+        assert "execute" in updated
+        # 두 번 적용되므로 v3
+        assert registry.get_current_version("execute") == "v3"
+
+    def test_apply_remediation_unknown_target(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+
+        changes = [
+            {
+                "target_prompt": "unknown_agent",
+                "issue": "이슈",
+                "change": "변경",
+                "metric": "메트릭",
+            },
+        ]
+        updated = registry.apply_remediation(changes)
+        assert updated == []
+
+    def test_apply_remediation_name_mapping(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+
+        changes = [
+            {
+                "target_prompt": "verification",
+                "issue": "검증 느슨함",
+                "change": "기준 강화",
+                "metric": "정확성 +10%",
+            },
+        ]
+        updated = registry.apply_remediation(changes)
+        assert "verify" in updated
+        assert registry.get_current_version("verify") == "v2"
+
+    def test_singleton_registry(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import (
+            get_prompt_registry,
+            reset_prompt_registry,
+        )
+        reset_prompt_registry()
+        r1 = get_prompt_registry()
+        r2 = get_prompt_registry()
+        assert r1 is r2
+        reset_prompt_registry()  # 정리

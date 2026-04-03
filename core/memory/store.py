@@ -13,7 +13,7 @@ from __future__ import annotations
 from langgraph.store.memory import InMemoryStore
 
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.search import TwoStageSearch
+from youngs75_a2a.core.memory.search import TwoStageSearch, _tokenize
 
 
 def _namespace(memory_type: MemoryType, session_id: str | None = None) -> tuple[str, ...]:
@@ -111,6 +111,94 @@ class MemoryStore:
                 count += len(self._index[ns])
                 del self._index[ns]
         return count
+
+    # ── Procedural Memory (Voyager 패턴) ──────────────────────
+
+    def accumulate_skill(
+        self,
+        code: str,
+        description: str,
+        tags: list[str] | None = None,
+        *,
+        novelty_threshold: float = 0.7,
+    ) -> MemoryItem | None:
+        """성공적인 코드 패턴을 Procedural Memory로 누적 저장한다.
+
+        Voyager 패턴: 실행 성공 시 코드 패턴을 추출하여 저장하되,
+        기존 스킬과 유사도가 높으면 중복으로 판단하여 저장하지 않는다.
+
+        Args:
+            code: 저장할 코드 패턴
+            description: 스킬 설명
+            tags: 스킬 분류 태그
+            novelty_threshold: 중복 판단 임계값 (0~1, 높을수록 엄격)
+
+        Returns:
+            저장된 MemoryItem 또는 중복으로 판단 시 None
+        """
+        if not code or not code.strip():
+            return None
+
+        content = f"{description}\n\n```\n{code}\n```"
+
+        # Novelty 필터링: 기존 procedural 메모리와 유사도 검사
+        if not self._is_novel(content, novelty_threshold):
+            return None
+
+        item = MemoryItem(
+            type=MemoryType.PROCEDURAL,
+            content=content,
+            tags=tags or [],
+            metadata={"code": code, "description": description},
+        )
+        self.put(item)
+        return item
+
+    def retrieve_skills(
+        self,
+        query: str,
+        *,
+        tags: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[MemoryItem]:
+        """Procedural Memory에서 관련 스킬을 검색한다.
+
+        Args:
+            query: 검색 쿼리 (작업 설명 등)
+            tags: 태그 필터
+            limit: 최대 반환 수
+        """
+        return self.search(
+            query,
+            memory_type=MemoryType.PROCEDURAL,
+            tags=tags,
+            limit=limit,
+        )
+
+    def _is_novel(self, content: str, threshold: float) -> bool:
+        """기존 procedural 메모리 대비 새로운 패턴인지 판단한다.
+
+        토큰 기반 Jaccard 유사도를 사용하여 중복을 판단한다.
+        """
+        existing = self.list_by_type(MemoryType.PROCEDURAL)
+        if not existing:
+            return True
+
+        new_tokens = set(_tokenize(content))
+        if not new_tokens:
+            return False
+
+        for item in existing:
+            existing_tokens = set(_tokenize(item.content))
+            if not existing_tokens:
+                continue
+            # Jaccard 유사도
+            intersection = len(new_tokens & existing_tokens)
+            union = len(new_tokens | existing_tokens)
+            similarity = intersection / union if union > 0 else 0.0
+            if similarity >= threshold:
+                return False
+        return True
 
     @property
     def total_count(self) -> int:

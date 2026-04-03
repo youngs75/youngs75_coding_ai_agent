@@ -227,6 +227,154 @@ class TestMemoryAwareState:
         assert "episodic_log" in annotations
 
 
+# ── Procedural Memory (Voyager 패턴) ──
+
+
+class TestAccumulateSkill:
+    """accumulate_skill 메서드 — Voyager 패턴 스킬 누적."""
+
+    @pytest.fixture()
+    def store(self):
+        return MemoryStore()
+
+    def test_accumulate_new_skill(self, store):
+        """새로운 스킬이 정상 저장되는지 확인."""
+        item = store.accumulate_skill(
+            code="def fibonacci(n): ...",
+            description="피보나치 함수 생성",
+            tags=["generate", "python"],
+        )
+        assert item is not None
+        assert item.type == MemoryType.PROCEDURAL
+        assert "fibonacci" in item.content
+        assert "피보나치" in item.content
+        assert item.metadata["code"] == "def fibonacci(n): ..."
+        assert item.metadata["description"] == "피보나치 함수 생성"
+
+    def test_accumulate_stores_in_procedural_namespace(self, store):
+        """저장된 스킬이 PROCEDURAL 타입으로 조회 가능한지 확인."""
+        store.accumulate_skill(code="x = 1", description="간단한 할당")
+        items = store.list_by_type(MemoryType.PROCEDURAL)
+        assert len(items) == 1
+
+    def test_novelty_filter_blocks_duplicate(self, store):
+        """동일한 코드 패턴은 novelty 필터에 의해 차단."""
+        store.accumulate_skill(code="def hello(): print('hi')", description="인사 함수")
+        duplicate = store.accumulate_skill(
+            code="def hello(): print('hi')", description="인사 함수"
+        )
+        assert duplicate is None
+        assert len(store.list_by_type(MemoryType.PROCEDURAL)) == 1
+
+    def test_novelty_filter_allows_different_skill(self, store):
+        """충분히 다른 코드 패턴은 통과."""
+        store.accumulate_skill(
+            code="def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)",
+            description="피보나치 재귀",
+        )
+        item = store.accumulate_skill(
+            code="class DatabaseConnection:\n    def connect(self): ...\n    def query(self, sql): ...",
+            description="DB 연결 클래스",
+        )
+        assert item is not None
+        assert len(store.list_by_type(MemoryType.PROCEDURAL)) == 2
+
+    def test_novelty_threshold_adjustable(self, store):
+        """novelty_threshold 조정으로 필터 강도 변경."""
+        store.accumulate_skill(code="print('hello world')", description="출력 1")
+        # 낮은 임계값으로 유사한 패턴도 통과
+        item = store.accumulate_skill(
+            code="print('hello everyone')",
+            description="출력 2",
+            novelty_threshold=0.95,
+        )
+        assert item is not None
+
+    def test_retrieve_skills(self, store):
+        """retrieve_skills로 관련 스킬 검색."""
+        store.accumulate_skill(
+            code="def sort_list(lst): return sorted(lst)",
+            description="리스트 정렬 함수",
+            tags=["generate", "python"],
+        )
+        store.accumulate_skill(
+            code="class APIClient:\n    def get(self, url): ...",
+            description="API 클라이언트 클래스",
+            tags=["generate", "python"],
+        )
+        results = store.retrieve_skills("정렬 sort", limit=1)
+        assert len(results) == 1
+        assert "sort" in results[0].content
+
+    def test_retrieve_skills_with_tags(self, store):
+        """태그 기반 스킬 검색 필터링."""
+        store.accumulate_skill(
+            code="console.log('hi')",
+            description="JS 로깅",
+            tags=["generate", "javascript"],
+        )
+        store.accumulate_skill(
+            code="print('hi')",
+            description="Python 출력",
+            tags=["generate", "python"],
+        )
+        results = store.retrieve_skills("출력", tags=["python"])
+        assert all("python" in r.tags for r in results)
+
+    def test_empty_code_not_accumulated(self, store):
+        """빈 코드는 저장하지 않음 (novelty 필터에서 차단)."""
+        item = store.accumulate_skill(code="", description="빈 코드")
+        assert item is None
+
+
+class TestIsNovel:
+    """_is_novel 내부 메서드 — Jaccard 유사도 기반 중복 판단."""
+
+    def test_first_item_always_novel(self):
+        store = MemoryStore()
+        assert store._is_novel("완전히 새로운 콘텐츠", threshold=0.7) is True
+
+    def test_identical_content_not_novel(self):
+        store = MemoryStore()
+        store.put(_make_item(
+            "def foo(): pass",
+            memory_type=MemoryType.PROCEDURAL,
+        ))
+        assert store._is_novel("def foo(): pass", threshold=0.7) is False
+
+    def test_different_content_is_novel(self):
+        store = MemoryStore()
+        store.put(_make_item(
+            "def fibonacci(n): return n",
+            memory_type=MemoryType.PROCEDURAL,
+        ))
+        assert store._is_novel(
+            "class DatabaseConnection:\n    def connect(self): ...",
+            threshold=0.7,
+        ) is True
+
+
+# ── MemoryAwareState procedural ──
+
+
+class TestMemoryAwareStateProcedural:
+    def test_procedural_context_field_exists(self):
+        """MemoryAwareState에 procedural_context 필드가 정의되어 있는지 확인."""
+        annotations = MemoryAwareState.__annotations__
+        assert "procedural_context" in annotations
+
+
+# ── CodingState procedural_skills ──
+
+
+class TestCodingStateProcedural:
+    def test_procedural_skills_field_exists(self):
+        """CodingState에 procedural_skills 필드가 정의되어 있는지 확인."""
+        from youngs75_a2a.agents.coding_assistant.schemas import CodingState
+        annotations = CodingState.__annotations__
+        assert "procedural_skills" in annotations
+
+
 # ── core import 통합 ──
 
 

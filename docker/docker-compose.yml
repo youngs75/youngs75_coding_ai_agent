@@ -195,10 +195,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       # MCP 서버 엔드포인트 (컨테이너 네트워크 내부 주소)
-      - CODE_TOOLS_URL=http://mcp-code-tools:3003/mcp/
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
       - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
+      # Agent 서버 엔드포인트 (CLI에서 에이전트 접근용)
+      - SIMPLE_REACT_URL=http://agent-simple-react:18081
+      - DEEP_RESEARCH_URL=http://agent-deep-research:18082
+      - DEEP_RESEARCH_A2A_URL=http://agent-deep-research-a2a:18083
     # 대화형 모드 활성화
     stdin_open: true
     tty: true
@@ -208,6 +211,12 @@ services:
       mcp-arxiv:
         condition: service_healthy
       mcp-serper:
+        condition: service_healthy
+      agent-simple-react:
+        condition: service_healthy
+      agent-deep-research:
+        condition: service_healthy
+      agent-deep-research-a2a:
         condition: service_healthy
     networks:
       - youngs75_net

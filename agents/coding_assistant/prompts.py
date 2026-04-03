@@ -4,7 +4,14 @@
 - parse: 요청 분석만 수행
 - execute: MCP 도구로 컨텍스트 수집 + 코드 생성/수정 (검증 정보 미제공)
 - verify: 더 넓은 맥락에서 검증 (특권 정보 보유)
+
+프롬프트 버전 관리:
+- PROMPT_REGISTRY: 프롬프트 이름별 버전 이력을 관리
+- get_prompt(): 특정 버전의 프롬프트 반환
+- apply_remediation(): remediation 결과로 프롬프트 개선 적용
 """
+
+from __future__ import annotations
 
 PARSE_SYSTEM_PROMPT = """\
 당신은 소프트웨어 개발 요청을 분석하는 전문가입니다.
@@ -72,3 +79,157 @@ VERIFY_SYSTEM_PROMPT = """\
 - issues: 발견된 문제 리스트 (없으면 빈 리스트)
 - suggestions: 개선 제안 리스트 (없으면 빈 리스트)
 """
+
+
+# ── 프롬프트 버전 관리 ──
+
+
+class PromptVersion:
+    """단일 프롬프트 버전 정보."""
+
+    def __init__(self, *, version: str, content: str, source: str = "initial"):
+        self.version = version
+        self.content = content
+        self.source = source  # "initial" | "remediation" 등
+
+
+class PromptRegistry:
+    """프롬프트 이름별 버전 이력을 관리하는 레지스트리.
+
+    사용 예시:
+        registry = PromptRegistry()
+        current = registry.get_prompt("parse")
+        registry.apply_remediation(changes)
+        updated = registry.get_prompt("parse")  # v2
+    """
+
+    def __init__(self) -> None:
+        self._prompts: dict[str, list[PromptVersion]] = {}
+        # 초기 프롬프트 등록 (v1)
+        self._register_initial("parse", PARSE_SYSTEM_PROMPT)
+        self._register_initial("execute", EXECUTE_SYSTEM_PROMPT)
+        self._register_initial("verify", VERIFY_SYSTEM_PROMPT)
+
+    def _register_initial(self, name: str, content: str) -> None:
+        """초기(v1) 프롬프트를 등록합니다."""
+        self._prompts[name] = [
+            PromptVersion(version="v1", content=content, source="initial")
+        ]
+
+    def get_prompt(self, name: str, *, version: str | None = None) -> str:
+        """특정 프롬프트의 최신 또는 지정 버전을 반환합니다.
+
+        Args:
+            name: 프롬프트 이름 (parse, execute, verify)
+            version: 특정 버전 (None이면 최신 버전)
+
+        Returns:
+            프롬프트 내용 문자열
+
+        Raises:
+            KeyError: 프롬프트 이름이 존재하지 않을 때
+            ValueError: 지정 버전이 존재하지 않을 때
+        """
+        if name not in self._prompts:
+            raise KeyError(f"프롬프트 '{name}'이(가) 등록되지 않았습니다")
+
+        versions = self._prompts[name]
+        if version is None:
+            return versions[-1].content
+
+        for v in versions:
+            if v.version == version:
+                return v.content
+        raise ValueError(f"프롬프트 '{name}'의 버전 '{version}'을(를) 찾을 수 없습니다")
+
+    def get_current_version(self, name: str) -> str:
+        """프롬프트의 현재 버전 문자열을 반환합니다."""
+        if name not in self._prompts:
+            raise KeyError(f"프롬프트 '{name}'이(가) 등록되지 않았습니다")
+        return self._prompts[name][-1].version
+
+    def list_versions(self, name: str) -> list[str]:
+        """프롬프트의 모든 버전 목록을 반환합니다."""
+        if name not in self._prompts:
+            raise KeyError(f"프롬프트 '{name}'이(가) 등록되지 않았습니다")
+        return [v.version for v in self._prompts[name]]
+
+    def list_prompts(self) -> list[str]:
+        """등록된 모든 프롬프트 이름 목록을 반환합니다."""
+        return list(self._prompts.keys())
+
+    def apply_remediation(self, changes: list[dict[str, str]]) -> list[str]:
+        """Remediation 결과를 반영하여 프롬프트를 개선합니다.
+
+        RecommendationReport.get_prompt_changes()의 출력을 받아,
+        해당 프롬프트에 개선 지시를 추가한 새 버전을 생성합니다.
+
+        Args:
+            changes: get_prompt_changes() 결과 리스트.
+                각 항목: {target_prompt, issue, change, metric}
+
+        Returns:
+            업데이트된 프롬프트 이름 목록
+        """
+        updated: list[str] = []
+
+        # 프롬프트 이름 매핑 (유연한 매칭)
+        name_map = {
+            "parse": "parse",
+            "parser": "parse",
+            "execute": "execute",
+            "executor": "execute",
+            "generation": "execute",
+            "verify": "verify",
+            "verifier": "verify",
+            "verification": "verify",
+        }
+
+        for change in changes:
+            target = change.get("target_prompt", "").lower().strip()
+            prompt_name = name_map.get(target)
+            if prompt_name is None or prompt_name not in self._prompts:
+                continue
+
+            current = self._prompts[prompt_name][-1]
+            current_ver_num = int(current.version.lstrip("v"))
+            new_ver = f"v{current_ver_num + 1}"
+
+            # 기존 프롬프트에 개선 지시 섹션 추가
+            improvement = (
+                f"\n\n## 개선 사항 ({new_ver})\n"
+                f"문제: {change.get('issue', '')}\n"
+                f"변경: {change.get('change', '')}\n"
+                f"예상 효과: {change.get('metric', '')}"
+            )
+            new_content = current.content + improvement
+
+            self._prompts[prompt_name].append(
+                PromptVersion(
+                    version=new_ver,
+                    content=new_content,
+                    source="remediation",
+                )
+            )
+            if prompt_name not in updated:
+                updated.append(prompt_name)
+
+        return updated
+
+
+# 전역 레지스트리 인스턴스
+_prompt_registry: PromptRegistry | None = None
+
+
+def get_prompt_registry() -> PromptRegistry:
+    """전역 PromptRegistry 인스턴스를 반환합니다 (싱글턴)."""
+    global _prompt_registry
+    if _prompt_registry is None:
+        _prompt_registry = PromptRegistry()
+    return _prompt_registry
+
+
+def reset_prompt_registry() -> None:
+    """전역 PromptRegistry를 초기화합니다 (테스트용)."""
+    global _prompt_registry
+    _prompt_registry = None

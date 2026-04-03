@@ -53,3 +53,18 @@ class CLIRenderer:
     def stream_end(self) -> None:
         """스트리밍 종료."""
         self.console.print()
+
+    # ── 토큰 단위 실시간 스트리밍 ──
+
+    def start_token_stream(self) -> None:
+        """토큰 스트리밍 시작 — Agent 헤더 출력."""
+        self.console.print("[bold green]Agent:[/]")
+
+    def render_token(self, token: str) -> None:
+        """토큰 단위 실시간 출력 (마크업·하이라이트 없이)."""
+        self.console.print(token, end="", markup=False, highlight=False)
+
+    def flush_tokens(self) -> None:
+        """토큰 스트리밍 완료 — 줄바꿈 추가."""
+        self.console.print()
+        self.console.print()

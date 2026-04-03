@@ -42,6 +42,9 @@ class CodingState(TypedDict, total=False):
     # Episodic Memory — 이전 실행 이력
     episodic_log: Annotated[list[str], override_reducer]
 
+    # Procedural Memory — 학습된 스킬 패턴 (Voyager식 누적)
+    procedural_skills: Annotated[list[str], override_reducer]
+
     # parse_request 출력
     parse_result: ParseResult
 

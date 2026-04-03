@@ -3,6 +3,11 @@
 eval_pipeline의 기존 함수를 호출하여 에이전트 평가를 실행하고,
 결과를 data/eval_results/에 저장합니다.
 DeepEval이나 Langfuse 키가 없어도 graceful하게 동작합니다.
+
+Loop 3 Remediation 연동:
+- run_remediation_async(): remediation 에이전트 비동기 실행
+- load_last_remediation_report(): 마지막 remediation 리포트 로드
+- format_remediation_summary(): 리포트 요약 텍스트 생성
 """
 
 from __future__ import annotations
@@ -204,3 +209,108 @@ def format_eval_summary(result: EvalResult) -> str:
             lines.append(f"  ... 외 {len(result.results) - 10}건")
 
     return "\n".join(lines)
+
+
+# ── Remediation (Loop 3) ──
+
+
+class RemediationResult:
+    """Remediation 실행 결과를 담는 데이터 클래스."""
+
+    def __init__(
+        self,
+        *,
+        success: bool,
+        report: Any | None = None,
+        error_message: str = "",
+        report_path: str = "",
+    ):
+        self.success = success
+        self.report = report
+        self.error_message = error_message
+        self.report_path = report_path
+
+
+async def run_remediation_async(
+    *,
+    eval_results_dir: str | None = None,
+) -> RemediationResult:
+    """비동기 방식으로 Remediation Agent를 실행합니다.
+
+    eval_pipeline의 run_remediation을 호출하고,
+    결과 리포트를 파일로 저장합니다.
+    """
+    try:
+        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+            save_remediation_report,
+        )
+        from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+            run_remediation,
+        )
+    except ImportError as exc:
+        return RemediationResult(
+            success=False,
+            error_message=f"Remediation 의존성을 찾을 수 없습니다: {exc}",
+        )
+
+    try:
+        report = await run_remediation(eval_results_dir=eval_results_dir)
+        output_path = save_remediation_report(report)
+        return RemediationResult(
+            success=True,
+            report=report,
+            report_path=str(output_path),
+        )
+    except Exception as exc:
+        return RemediationResult(
+            success=False,
+            error_message=f"Remediation 실행 중 오류 발생: {exc}",
+        )
+
+
+def load_last_remediation_report() -> RemediationResult:
+    """마지막 Remediation 리포트를 파일에서 로드합니다.
+
+    data/eval_results/remediation_report.json을 읽어 RemediationResult로 변환합니다.
+    """
+    report_path = _EVAL_RESULTS_DIR / "remediation_report.json"
+
+    if not report_path.exists():
+        return RemediationResult(
+            success=False,
+            error_message="Remediation 리포트가 없습니다. /eval remediate 명령으로 먼저 실행하세요.",
+        )
+
+    try:
+        with open(report_path, encoding="utf-8") as f:
+            data = json.load(f)
+        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+            RecommendationReport,
+        )
+        report = RecommendationReport(**data)
+        return RemediationResult(
+            success=True,
+            report=report,
+            report_path=str(report_path),
+        )
+    except Exception as exc:
+        return RemediationResult(
+            success=False,
+            error_message=f"Remediation 리포트 읽기 실패: {exc}",
+        )
+
+
+def format_remediation_summary(result: RemediationResult) -> str:
+    """Remediation 결과를 사람이 읽기 쉬운 텍스트로 포맷팅합니다."""
+    if not result.success:
+        return f"Remediation 실패: {result.error_message}"
+
+    report = result.report
+    if report is None:
+        return "Remediation 리포트가 비어있습니다."
+
+    # RecommendationReport의 format_report() 메서드 활용
+    if hasattr(report, "format_report"):
+        return report.format_report()
+
+    return f"Remediation 완료: {report.summary}"

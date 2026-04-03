@@ -25,6 +25,7 @@ from langgraph.graph import END, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.mcp_loader import MCPToolLoader
+from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
 
 from .config import CodingConfig
@@ -64,11 +65,13 @@ class CodingAssistantAgent(BaseGraphAgent):
         *,
         config: CodingConfig | None = None,
         model: BaseChatModel | None = None,
+        memory_store: MemoryStore | None = None,
         **kwargs: Any,
     ) -> None:
         self._coding_config = config or CodingConfig()
         self._mcp_loader = MCPToolLoader(self._coding_config.mcp_servers)
         self._tools: list[Any] = []
+        self._memory_store = memory_store
 
         self._explicit_model = model
         self._gen_model: BaseChatModel | None = None
@@ -166,6 +169,12 @@ class CodingAssistantAgent(BaseGraphAgent):
         if episodic_log:
             system_prompt += "\n\n## 이전 실행 이력 (Episodic Memory)\n"
             system_prompt += "\n".join(f"- {entry}" for entry in episodic_log)
+
+        # Procedural Memory 주입 — 학습된 스킬 패턴 참조
+        procedural_skills = state.get("procedural_skills", [])
+        if procedural_skills:
+            system_prompt += "\n\n## 학습된 코드 패턴 (Procedural Memory)\n"
+            system_prompt += "\n".join(f"- {skill}" for skill in procedural_skills)
 
         # 컨텍스트 메시지 구성
         context_parts = [
@@ -273,11 +282,49 @@ class CodingAssistantAgent(BaseGraphAgent):
         log = state.get("execution_log", [])
         log.append(f"[verify] passed={verify_result.get('passed')}")
 
-        return {
+        result: dict[str, Any] = {
             "verify_result": verify_result,
             "execution_log": log,
             "iteration": state.get("iteration", 0) + 1,
         }
+
+        # Procedural Memory 훅: 검증 통과 시 코드 패턴 자동 누적
+        if verify_result.get("passed") and self._memory_store:
+            self._accumulate_skill_from_execution(state, result)
+
+        return result
+
+    # ── Procedural Memory 훅 ─────────────────────────────────
+
+    def _accumulate_skill_from_execution(
+        self, state: CodingState, result: dict[str, Any]
+    ) -> None:
+        """검증 통과 후 코드 패턴을 Procedural Memory에 누적한다.
+
+        Voyager 패턴: 성공적인 코드 실행 결과에서 패턴을 추출하여
+        novelty 필터링 후 저장한다.
+        """
+        generated_code = state.get("generated_code", "")
+        if not generated_code or not generated_code.strip():
+            return
+
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        language = parse_result.get("language", "python")
+        description = parse_result.get("description", "")
+
+        skill_description = f"[{task_type}] {language}: {description}"
+        tags = [task_type, language]
+
+        item = self._memory_store.accumulate_skill(
+            code=generated_code,
+            description=skill_description,
+            tags=tags,
+        )
+        if item:
+            result.setdefault("execution_log", []).append(
+                f"[procedural] 스킬 저장됨: {skill_description[:80]}"
+            )
 
     # ── 라우팅 ──────────────────────────────────────────────
 

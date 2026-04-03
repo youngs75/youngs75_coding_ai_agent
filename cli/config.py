@@ -25,3 +25,11 @@ class CLIConfig(BaseModel):
         default_factory=lambda: os.getenv("SKILLS_DIR"),
         description="스킬 파일 디렉토리 경로",
     )
+    checkpointer_backend: str = Field(
+        default_factory=lambda: os.getenv("CLI_CHECKPOINTER", "memory"),
+        description="체크포인터 백엔드 (memory 또는 sqlite)",
+    )
+    checkpointer_sqlite_path: str = Field(
+        default_factory=lambda: os.getenv("CLI_CHECKPOINTER_SQLITE_PATH", ".checkpoints.db"),
+        description="SQLite 체크포인터 파일 경로",
+    )
