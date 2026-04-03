@@ -1,3 +1,8 @@
+# MCP 서버 (Tavily / arXiv / Serper) 컨테이너 이미지
+#
+# 빌드 컨텍스트: 프로젝트 루트 (..)
+# 각 MCP 서버는 docker-compose의 command로 실행 스크립트를 지정한다.
+
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -10,12 +15,13 @@ RUN pip install --no-cache-dir \
     "arxiv" \
     "uvicorn" \
     "pydantic" \
-    "httpx"
+    "httpx" \
+    "python-dotenv"
 
 # MCP 서버 스크립트 3종 복사
-COPY youngs75_a2a/tests/run_tavily_mcp.py /app/run_tavily_mcp.py
-COPY youngs75_a2a/tests/run_arxiv_mcp.py /app/run_arxiv_mcp.py
-COPY youngs75_a2a/tests/run_serper_mcp.py /app/run_serper_mcp.py
+COPY tests/run_tavily_mcp.py /app/run_tavily_mcp.py
+COPY tests/run_arxiv_mcp.py /app/run_arxiv_mcp.py
+COPY tests/run_serper_mcp.py /app/run_serper_mcp.py
 
 ENV PYTHONPATH=/app
 

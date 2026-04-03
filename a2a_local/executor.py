@@ -45,8 +45,14 @@ class BaseAgentExecutor(AgentExecutor):
     취소는 asyncio.Task.cancel()로 CancelledError를 전파하여 즉시 중단.
     """
 
-    def __init__(self, agent_fn: AgentFn):
+    def __init__(
+        self,
+        agent_fn: AgentFn,
+        *,
+        execution_timeout: float | None = None,
+    ):
         self.agent_fn = agent_fn
+        self._execution_timeout = execution_timeout
         # 실행 중인 asyncio.Task를 task_id별로 추적 (취소용)
         self._running_tasks: dict[str, asyncio.Task] = {}
 
@@ -82,7 +88,22 @@ class BaseAgentExecutor(AgentExecutor):
             self._running_tasks[task_id] = run_task
 
             try:
-                result = await run_task
+                result = await asyncio.wait_for(
+                    run_task, timeout=self._execution_timeout
+                )
+            except asyncio.TimeoutError:
+                run_task.cancel()
+                self._running_tasks.pop(task_id, None)
+                logger.warning(
+                    f"BaseAgentExecutor 실행 타임아웃: {task_id} "
+                    f"({self._execution_timeout}초)"
+                )
+                timeout_msg = new_agent_text_message(
+                    f"실행 시간 초과 ({self._execution_timeout}초)",
+                    task.context_id, task.id,
+                )
+                await updater.failed(message=timeout_msg)
+                return
             finally:
                 self._running_tasks.pop(task_id, None)
 
@@ -164,9 +185,12 @@ class LGAgentExecutor(AgentExecutor):
         self,
         graph: CompiledStateGraph,
         result_extractor: Callable[[dict[str, Any]], str] | None = None,
+        *,
+        execution_timeout: float | None = None,
     ):
         self.graph = graph
         self._extract_result = result_extractor or self._default_extract_text
+        self._execution_timeout = execution_timeout
         self._cancelled_task_ids: set[str] = set()
         self._running_tasks: dict[str, asyncio.Task] = {}
 
@@ -277,7 +301,23 @@ class LGAgentExecutor(AgentExecutor):
             self._running_tasks[task_id] = run_task
 
             try:
-                result = await run_task
+                result = await asyncio.wait_for(
+                    run_task, timeout=self._execution_timeout
+                )
+            except asyncio.TimeoutError:
+                run_task.cancel()
+                self._running_tasks.pop(task_id, None)
+                self._cancelled_task_ids.discard(task_id)
+                logger.warning(
+                    f"LGAgentExecutor 실행 타임아웃: {task_id} "
+                    f"({self._execution_timeout}초)"
+                )
+                timeout_msg = new_agent_text_message(
+                    f"실행 시간 초과 ({self._execution_timeout}초)",
+                    task.context_id, task.id,
+                )
+                await updater.failed(message=timeout_msg)
+                return
             finally:
                 self._running_tasks.pop(task_id, None)
                 self._cancelled_task_ids.discard(task_id)

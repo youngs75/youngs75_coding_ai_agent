@@ -16,7 +16,6 @@ try:
     load_dotenv(".env")
 except ImportError:
     pass
-        break
 
 import uvicorn
 from starlette.routing import Route

@@ -33,7 +33,12 @@ class OpenAIModel(DeepEvalBaseLLM):
     """
 
     def __init__(self, model_name: str | None = None, api_key: str | None = None):
-        self._model_name = model_name or os.getenv("OPENAI_MODEL_NAME", "gpt-5.4")
+        # Settings에서 모델명을 가져오되, 환경변수 OPENAI_MODEL_NAME을 먼저 확인
+        if model_name is None:
+            model_name = os.getenv("OPENAI_MODEL_NAME")
+        if model_name is None:
+            model_name = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
+        self._model_name = model_name
         self._client = OpenAI(
             api_key=api_key or os.getenv("OPENAI_API_KEY"),
         )

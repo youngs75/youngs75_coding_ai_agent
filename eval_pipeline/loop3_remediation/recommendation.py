@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class FailureCategory(BaseModel):
@@ -48,8 +48,17 @@ class FailureCategory(BaseModel):
     name: str = Field(
         description="카테고리명 (retrieval_failures, generation_failures, agent_failures, safety_failures)"
     )
-    count: int = Field(description="해당 카테고리 실패 건수")
-    severity: str = Field(description="심각도 (critical, high, medium, low)")
+    count: int = Field(default=0, description="해당 카테고리 실패 건수")
+    severity: str = Field(default="medium", description="심각도 (critical, high, medium, low)")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_fields(cls, data: dict) -> dict:
+        """LLM 출력에서 'category' → 'name' 필드 매핑."""
+        if isinstance(data, dict):
+            if "category" in data and "name" not in data:
+                data["name"] = data.pop("category")
+        return data
     patterns: list[str] = Field(default_factory=list, description="발견된 실패 패턴 목록")
     root_causes: list[str] = Field(default_factory=list, description="추정 원인 목록")
 

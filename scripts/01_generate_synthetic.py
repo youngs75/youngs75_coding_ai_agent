@@ -25,18 +25,14 @@ def main():
     args = parser.parse_args()
 
     settings = get_settings()
-    print(f"[Step 1] OpenRouter Model: {settings.openrouter_model_name}")
+    print(f"[Step 1] Model: {settings.openrouter_model_name}")
 
     if args.dry_run:
-        from youngs75_a2a.eval_pipeline.llm.openrouter import get_openrouter_client
+        from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
 
-        client = get_openrouter_client()
-        resp = client.chat.completions.create(
-            model=settings.openrouter_model_name,
-            messages=[{"role": "user", "content": "Say 'OK' if you can hear me."}],
-            max_tokens=32,
-        )
-        print(f"[Dry Run] API response: {resp.choices[0].message.content}")
+        model = get_deepeval_model()
+        result = model.generate("Say 'OK' if you can hear me.")
+        print(f"[Dry Run] API response: {result}")
         return
 
     corpus_dir = Path(args.corpus_dir) if args.corpus_dir else None

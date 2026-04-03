@@ -26,10 +26,9 @@ CSV 스키마:
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
-
-import pandas as pd
 
 
 def export_to_review_csv(
@@ -53,18 +52,30 @@ def export_to_review_csv(
     with open(synthetic_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    rows = []
-    for item in data:
-        # context가 리스트인 경우 세미콜론으로 합침
-        # (CSV에서는 리스트를 직접 표현할 수 없으므로)
-        context_list = item.get("context", [])
-        if isinstance(context_list, list):
-            context_str = ";".join(context_list)
-        else:
-            context_str = str(context_list)
+    # CSV 칼럼 정의
+    fieldnames = [
+        "id", "input", "expected_output", "context",
+        "source_file", "synthetic_input_quality",
+        "approved", "feedback", "reviewer",
+    ]
 
-        rows.append(
-            {
+    # 출력 디렉토리 생성
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # utf-8-sig: Excel에서 한글이 깨지지 않도록 BOM 포함
+    with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for item in data:
+            # context가 리스트인 경우 세미콜론으로 합침
+            context_list = item.get("context", [])
+            if isinstance(context_list, list):
+                context_str = ";".join(context_list)
+            else:
+                context_str = str(context_list)
+
+            writer.writerow({
                 "id": item.get("id", ""),
                 "input": item.get("input", ""),
                 "expected_output": item.get("expected_output", ""),
@@ -75,14 +86,6 @@ def export_to_review_csv(
                 "approved": "",
                 "feedback": "",
                 "reviewer": "",
-            }
-        )
-
-    df = pd.DataFrame(rows)
-
-    # 출력 디렉토리 생성 및 CSV 저장
-    # utf-8-sig: Excel에서 한글이 깨지지 않도록 BOM 포함
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+            })
 
     return output_path

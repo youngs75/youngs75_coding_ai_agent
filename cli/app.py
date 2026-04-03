@@ -23,6 +23,12 @@ from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.skills.loader import SkillLoader
 from youngs75_a2a.core.skills.registry import SkillRegistry
+from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+    AgentMetricsCollector,
+    build_observed_config,
+    create_langfuse_handler,
+    safe_flush,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +237,11 @@ def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
 
 
 async def _run_agent_turn(
-    user_input: str, session: CLISession, renderer: CLIRenderer
+    user_input: str,
+    session: CLISession,
+    renderer: CLIRenderer,
+    *,
+    langfuse_handler: Any | None = None,
 ) -> None:
     """에이전트에 메시지를 전달하고 응답을 출력한다.
 
@@ -239,6 +249,8 @@ async def _run_agent_turn(
     - on_chain_start: 노드 진행 상태 표시 (_NODE_LABELS)
     - on_chat_model_stream: LLM 토큰 실시간 출력
     - on_chain_end: 응답 데이터 수집
+
+    Langfuse 콜백 핸들러가 주어지면 트레이스/메트릭을 자동 수집합니다.
     """
     session.add_message("user", user_input)
 
@@ -248,8 +260,17 @@ async def _run_agent_turn(
 
     input_state = _build_input_state(session.info.agent_name, user_input, session)
 
-    # 에이전트 그래프 이벤트 스트리밍 실행
-    run_config: dict[str, Any] = {"configurable": {"thread_id": session.thread_id}}
+    # Langfuse 관측성이 적용된 실행 config 구성
+    run_config = build_observed_config(
+        handler=langfuse_handler,
+        session_id=session.session_id,
+        thread_id=session.thread_id,
+        agent_name=session.info.agent_name,
+    )
+
+    # 메트릭 수집기 초기화
+    metrics = AgentMetricsCollector(agent_name=session.info.agent_name)
+
     response_data: dict[str, Any] = {}
     last_node = ""
     passed = True
@@ -267,9 +288,10 @@ async def _run_agent_turn(
                     renderer.flush_tokens()
                     token_streamed = False
                 renderer.system_message(f"  > {_NODE_LABELS[node]}")
+                metrics.record_node_start(node)
                 last_node = node
 
-            # LLM 토큰 스트리밍
+            # LLM 토큰 스트리밍 및 사용량 수집
             elif kind in ("on_chat_model_stream", "on_llm_stream"):
                 chunk = event["data"].get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
@@ -277,9 +299,17 @@ async def _run_agent_turn(
                         renderer.start_token_stream()
                         token_streamed = True
                     renderer.render_token(chunk.content)
+                # 토큰 사용량 수집 (usage_metadata가 있는 경우)
+                if chunk and hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                    usage = chunk.usage_metadata
+                    metrics.record_llm_tokens(
+                        prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
+                        completion_tokens=getattr(usage, "output_tokens", 0) or 0,
+                    )
 
             # 노드 완료 시 응답 데이터 수집
             elif kind == "on_chain_end" and node:
+                metrics.record_node_end(node)
                 output = event["data"].get("output")
                 if isinstance(output, dict):
                     for key in ("generated_code", "verify_result", "final_report",
@@ -297,9 +327,16 @@ async def _run_agent_turn(
     except Exception as e:
         if token_streamed:
             renderer.flush_tokens()
+        metrics.record_error()
         logger.exception("에이전트 실행 오류")
         renderer.error(f"에이전트 실행 오류: {e}")
         return
+    finally:
+        # 메트릭 수집 완료 및 Langfuse flush
+        metrics.finalize()
+        if langfuse_handler is not None:
+            logger.debug("에이전트 메트릭: %s", metrics.to_dict())
+            safe_flush()
 
     # 검증 결과에서 passed 여부 추출
     verify = response_data.get("verify_result")
@@ -355,6 +392,13 @@ async def _main_loop(config: CLIConfig) -> None:
         checkpointer=checkpointer,
     )
 
+    # Langfuse 콜백 핸들러 초기화 (설정으로 on/off 가능)
+    langfuse_handler = None
+    if config.langfuse_enabled:
+        langfuse_handler = create_langfuse_handler()
+        if langfuse_handler is not None:
+            renderer.system_message("Langfuse 관측성 활성화됨")
+
     prompt_session: PromptSession[str] = PromptSession(
         history=FileHistory(config.history_file),
     )
@@ -383,8 +427,10 @@ async def _main_loop(config: CLIConfig) -> None:
         if result.handled:
             continue
 
-        # 에이전트 메시지 처리
-        await _run_agent_turn(user_input, session, renderer)
+        # 에이전트 메시지 처리 (Langfuse 콜백 핸들러 자동 주입)
+        await _run_agent_turn(
+            user_input, session, renderer, langfuse_handler=langfuse_handler,
+        )
 
 
 def run_cli(config: CLIConfig | None = None) -> None:

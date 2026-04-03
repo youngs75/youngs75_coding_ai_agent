@@ -19,8 +19,8 @@ services:
 
   mcp-tavily:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: harness_mcp_tavily
     restart: unless-stopped
     ports:
@@ -39,8 +39,8 @@ services:
 
   mcp-arxiv:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: harness_mcp_arxiv
     restart: unless-stopped
     ports:
@@ -57,8 +57,8 @@ services:
 
   mcp-serper:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: harness_mcp_serper
     restart: unless-stopped
     ports:
@@ -81,8 +81,8 @@ services:
 
   agent-coding-assistant:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     container_name: harness_agent_coding
     restart: unless-stopped
     ports:
@@ -108,8 +108,8 @@ services:
 
   orchestrator:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     container_name: harness_orchestrator
     restart: unless-stopped
     ports:
@@ -142,18 +142,18 @@ services:
 
   eval-runner:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.eval
+      context: ..
+      dockerfile: docker/Dockerfile.eval
     container_name: harness_eval_runner
     env_file:
       - ../.env
     environment:
-      - DATA_DIR=/app/youngs75_a2a/data
-      - LOCAL_CORPUS_DIR=/app/youngs75_a2a/data/corpus
+      - DATA_DIR=/app/data
+      - LOCAL_CORPUS_DIR=/app/data/corpus
       - CODING_AGENT_URL=http://agent-coding-assistant:18084
       - LANGFUSE_HOST=http://langfuse-web:3000
     volumes:
-      - ../data:/app/youngs75_a2a/data
+      - ../data:/app/data
     depends_on:
       agent-coding-assistant:
         condition: service_healthy

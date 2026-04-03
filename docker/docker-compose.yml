@@ -1,4 +1,4 @@
-# youngs75_a2a 프로덕션 배포 — MCP 3개 + Agent 3개 + CLI 1개 = 7 컨테이너
+# youngs75_coding_ai_agent 프로덕션 배포 — MCP 3개 + Agent 3개 + CLI 1개 = 7 컨테이너
 #
 # 구성:
 #   MCP 서버:  Tavily(:3001) + arXiv(:3000) + Serper(:3002)
@@ -6,13 +6,14 @@
 #   CLI:       대화형 에이전트 인터페이스 (youngs75-agent)
 #
 # 사용법:
-#   cd youngs75_a2a/docker
+#   cd docker
 #   docker compose up -d          # 전체 기동
 #   docker compose ps             # 상태 확인
 #   docker compose logs -f agent-deep-research  # 특정 서비스 로그
 #   docker compose run --rm cli   # CLI 대화형 모드 실행
 #   docker compose down           # 종료
 #
+# 빌드 컨텍스트: 프로젝트 루트 (..)
 # 테스트:
 #   export $(grep -v '^#' .env | xargs)
 #   python -m youngs75_a2a.tests.test_docker_e2e
@@ -24,8 +25,8 @@ services:
 
   mcp-tavily:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: youngs75_mcp_tavily
     restart: unless-stopped
     ports:
@@ -44,8 +45,8 @@ services:
 
   mcp-arxiv:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: youngs75_mcp_arxiv
     restart: unless-stopped
     ports:
@@ -62,8 +63,8 @@ services:
 
   mcp-serper:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.mcp
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
     container_name: youngs75_mcp_serper
     restart: unless-stopped
     ports:
@@ -86,8 +87,8 @@ services:
 
   agent-simple-react:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     container_name: youngs75_agent_simple_react
     restart: unless-stopped
     ports:
@@ -98,6 +99,8 @@ services:
       - AGENT_PORT=18081
       - AGENT_MODEL=gpt-5.4-mini
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
+      # LangSmith 원격 트레이싱 비활성화 (불필요한 401 오류 방지)
+      - LANGCHAIN_TRACING_V2=false
     command: ["python", "-m", "youngs75_a2a.tests.run_simple_react_server"]
     depends_on:
       mcp-tavily:
@@ -113,8 +116,8 @@ services:
 
   agent-deep-research:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     container_name: youngs75_agent_deep_research
     restart: unless-stopped
     ports:
@@ -127,6 +130,7 @@ services:
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
       - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
+      - LANGCHAIN_TRACING_V2=false
     command: ["python", "-m", "youngs75_a2a.tests.run_agent_server"]
     depends_on:
       mcp-tavily:
@@ -146,8 +150,8 @@ services:
 
   agent-deep-research-a2a:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.agent
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     container_name: youngs75_agent_deep_research_a2a
     restart: unless-stopped
     ports:
@@ -160,6 +164,7 @@ services:
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
       - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
+      - LANGCHAIN_TRACING_V2=false
     command: ["python", "-m", "youngs75_a2a.tests.run_deep_research_a2a_server"]
     depends_on:
       mcp-tavily:
@@ -183,8 +188,8 @@ services:
 
   cli:
     build:
-      context: ../..
-      dockerfile: youngs75_a2a/docker/Dockerfile.cli
+      context: ..
+      dockerfile: docker/Dockerfile.cli
     container_name: youngs75_cli
     env_file:
       - ../.env

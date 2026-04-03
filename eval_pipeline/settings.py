@@ -27,12 +27,18 @@ class Settings(BaseSettings):
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # ── 런타임 식별 ──
     env: str = Field(default="local", alias="ENV")
     service_name: str = Field(default="youngs75-a2a", alias="SERVICE_NAME")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
+
+    # ── LLM 모델 설정 ──
+    openai_model_name: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL_NAME")
+    openrouter_model_name: str = Field(default="gpt-4o-mini", alias="DEFAULT_MODEL")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
 
     # ── Langfuse (관측성) ──
     langfuse_host: str = Field(default="", alias="LANGFUSE_HOST")

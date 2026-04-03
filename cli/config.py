@@ -33,3 +33,7 @@ class CLIConfig(BaseModel):
         default_factory=lambda: os.getenv("CLI_CHECKPOINTER_SQLITE_PATH", ".checkpoints.db"),
         description="SQLite 체크포인터 파일 경로",
     )
+    langfuse_enabled: bool = Field(
+        default_factory=lambda: os.getenv("CLI_LANGFUSE_ENABLED", "1").lower() in ("1", "true", "yes"),
+        description="Langfuse 관측성 활성화 여부 (CLI 레벨 토글)",
+    )

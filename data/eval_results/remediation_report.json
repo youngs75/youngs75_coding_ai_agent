@@ -1,14 +1,274 @@
 {
-  "summary": "I’m ready to generate the remediation report, but I don’t currently have access to your evaluation data or online metrics.\n\nWhat I tried\n- Searched the workspace for evaluation and Langfuse exports (e.g., *eval*.json/.csv, *results*.json/.csv, *langfuse*.json/.csv) and found none.\n- The read_eval_results and read_langfuse_scores tools are not available in this session, so I can’t pull data directly without either file paths or tool access.\n\nWhat I need from you (pick one)\nOption A — Grant tool a",
+  "summary": "Across 6 evaluated traces, the system failed 6 out of 6 times (failure rate 1.0), with all confirmed failures concentrated in generation rather than retrieval, agent behavior, or safety. The dominant failure mode is systematic failure on citation_quality_[geval], with scores ranging from 0.0 to 0.2, despite strong performance on answer_relevancy (0.96-1.0) and response_completeness_[geval] (1.0). This indicates that the model generally understands the task and produces complete answers, but does not reliably ground claims in the provided context or present citations in a format recognized by the evaluator. A secondary pattern is unsupported answer expansion: when context is sparse or high-level, the model adds plausible implementation details, recommendations, or operational specifics not explicitly supported by retrieved evidence, further depressing citation_quality_[geval] and likely faithfulness. Retrieval failures were not confirmed, but observability is incomplete because contextual_precision, contextual_recall, and faithfulness were skipped or unavailable in some traces. The highest-value remediation path is therefore to enforce explicit citation behavior, constrain unsupported elaboration, add grounding-aware workflow checks, and restore evaluation instrumentation to separate retrieval and generation causes more reliably.",
   "failure_analysis": {
-    "total_evaluated": 0,
-    "total_failed": 0,
-    "failure_rate": 0.0,
-    "categories": []
+    "total_evaluated": 6,
+    "total_failed": 6,
+    "failure_rate": 1.0,
+    "categories": [
+      {
+        "name": "retrieval_failures",
+        "count": 0,
+        "severity": "medium",
+        "patterns": [],
+        "root_causes": []
+      },
+      {
+        "name": "generation_failures",
+        "count": 6,
+        "severity": "medium",
+        "patterns": [],
+        "root_causes": []
+      },
+      {
+        "name": "agent_failures",
+        "count": 0,
+        "severity": "medium",
+        "patterns": [],
+        "root_causes": []
+      },
+      {
+        "name": "safety_failures",
+        "count": 0,
+        "severity": "medium",
+        "patterns": [],
+        "root_causes": []
+      }
+    ]
   },
   "prompt_optimizations": [],
-  "recommendations": [],
+  "recommendations": [
+    {
+      "title": "Enforce inline citations for every material claim",
+      "category": "prompt",
+      "priority": "high",
+      "description": "Update the generation prompt so every major factual claim must include an inline citation tied to retrieved context, using a consistent format such as [Source: <chunk_id>]. This directly targets the systematic failure on citation_quality_[geval], which failed in all 6 of 6 traces with scores between 0.0 and 0.2. The prompt should also explicitly prohibit presenting unsupported details as facts and require the model to say when the provided context is insufficient.",
+      "expected_impact": "Improves citation_quality_[geval] by making claim-to-source attribution explicit; estimated gain +0.45 to +0.65.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Add prompt instruction: 'Use only the provided context.'",
+        "Add prompt instruction: 'Every material claim must include an inline citation in the format [Source: <chunk_id>].'",
+        "Add prompt instruction: 'If a claim is not directly supported by the provided context, do not present it as fact.'",
+        "Add prompt instruction: 'If the context is insufficient, explicitly say: The provided context does not specify this.'"
+      ]
+    },
+    {
+      "title": "Separate supported facts from assumptions or recommendations",
+      "category": "prompt",
+      "priority": "high",
+      "description": "Introduce a required response structure with a 'Supported by provided context' section and an 'Assumptions / Recommendations' section. This addresses the observed pattern of unsupported answer expansion beyond source support, which is depressing citation_quality_[geval] and likely faithfulness when the model adds plausible but uncited implementation details. The change preserves strong answer_relevancy and response_completeness_[geval] while reducing grounding drift.",
+      "expected_impact": "Improves citation_quality_[geval] and faithfulness by preventing unsupported extrapolations from being mixed with grounded facts; estimated gain +0.25 to +0.40 on citation_quality_[geval] and +0.15 to +0.25 on faithfulness.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Require section 1: 'Supported by provided context' with citations on each claim.",
+        "Require section 2: 'Assumptions / Recommendations' only when the user explicitly asks for suggestions.",
+        "Add prompt rule: 'Do not mix unsupported recommendations into the factual answer section.'",
+        "Label any extrapolated content as not directly supported by the provided context."
+      ]
+    },
+    {
+      "title": "Adopt a grounding-first answer format",
+      "category": "prompt",
+      "priority": "high",
+      "description": "Change the answer format so claims and citations are directly paired, for example as bullets with inline source markers or a structured 'Supported Answer' followed by citations. This improves evaluator recognition of grounding and addresses the current pattern where answers are relevant and complete but citation_quality_[geval] still fails because attribution is weak or absent.",
+      "expected_impact": "Improves citation_quality_[geval] and modestly improves faithfulness by making evidence linkage explicit; estimated gain +0.30 to +0.50 on citation_quality_[geval] and +0.10 to +0.20 on faithfulness.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Format answers as bullet points where each factual bullet ends with [Source: <chunk_id>].",
+        "For longer responses, use sections such as 'Supported Answer' and 'Citations'.",
+        "Include explicit statements when details are missing from context rather than filling gaps.",
+        "Prefer short grounded statements over uncited elaboration."
+      ]
+    },
+    {
+      "title": "Add a claim-to-source alignment step before final generation",
+      "category": "workflow",
+      "priority": "high",
+      "description": "Insert an intermediate workflow stage that extracts candidate claims, maps each claim to a retrieved chunk, and removes or labels unsupported claims before final answer generation. This directly targets citation_quality_[geval], the sole systematic failing metric, and reduces unsupported expansion in sparse-context tasks.",
+      "expected_impact": "Improves citation_quality_[geval] by structurally enforcing grounding before answer synthesis; estimated gain +0.40 to +0.60.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Generate a list of candidate claims before drafting the final answer.",
+        "Map each claim to a specific retrieved chunk_id.",
+        "Drop claims with no supporting chunk or label them as unsupported.",
+        "Pass only supported claims and their source mappings into the final answer generation step."
+      ]
+    },
+    {
+      "title": "Add a post-generation citation validator with regeneration triggers",
+      "category": "workflow",
+      "priority": "high",
+      "description": "Validate the final response before returning it by checking whether material claims include citations and whether cited chunk IDs exist in retrieved context. If citation coverage is too low or unsupported implementation details are detected, trigger regeneration. This provides operational protection against formatting drift and directly improves citation_quality_[geval].",
+      "expected_impact": "Improves citation_quality_[geval] by blocking uncited or weakly grounded outputs from reaching users; estimated gain +0.25 to +0.45.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Check that each material sentence or bullet contains a citation.",
+        "Verify that each cited chunk_id exists in the retrieved context payload.",
+        "Trigger regeneration when material claim citation coverage is below 0.8.",
+        "Trigger regeneration when unsupported named entities, schemas, thresholds, or implementation hooks are detected."
+      ]
+    },
+    {
+      "title": "Constrain use of outside knowledge and best-practice gap filling",
+      "category": "prompt",
+      "priority": "high",
+      "description": "Explicitly instruct the model not to fill missing details with prior knowledge, best practices, or plausible implementation patterns unless the user explicitly asks for recommendations beyond the provided context. This addresses the repeated pattern of answer expansion beyond source support and improves grounding metrics without sacrificing the already strong answer_relevancy metric.",
+      "expected_impact": "Improves citation_quality_[geval] and faithfulness by reducing unsupported elaboration; estimated gain +0.25 to +0.40 on citation_quality_[geval] and +0.20 to +0.30 on faithfulness.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Add prompt rule: 'Do not fill missing details with general best practices unless explicitly requested.'",
+        "Add prompt rule: 'Do not infer exact schemas, workflows, thresholds, implementation hooks, or evaluation rules unless explicitly stated in context.'",
+        "Require the model to state when the context does not define a requested detail.",
+        "Keep recommendations separate from factual answers."
+      ]
+    },
+    {
+      "title": "Introduce sparse-context fallback behavior",
+      "category": "prompt",
+      "priority": "high",
+      "description": "When retrieved context is short or high-level, force the model to answer narrowly, cite only what is explicitly supported, and state that additional detail requires more source context. This directly addresses the sparse-context failure pattern where citation_quality_[geval] collapses to 0.0 because the model answers with confident specificity unsupported by evidence.",
+      "expected_impact": "Improves citation_quality_[geval] and faithfulness in low-evidence scenarios; estimated gain +0.25 to +0.45 on citation_quality_[geval] and +0.20 to +0.30 on faithfulness.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Add prompt rule: 'When context is sparse or high-level, answer only with what is explicitly supported.'",
+        "Add required fallback sentence: 'Additional detail would require more source context.'",
+        "Use qualified phrasing such as 'the context indicates' or 'the provided material specifies'.",
+        "Avoid confident operational specificity when source material is minimal."
+      ]
+    },
+    {
+      "title": "Lower generation temperature to reduce unsupported elaboration",
+      "category": "parameter",
+      "priority": "high",
+      "description": "Reduce temperature from an estimated current setting near 0.7 to 0.2-0.3 to make outputs more conservative and more tightly anchored to retrieved context. This is appropriate because answer_relevancy and response_completeness_[geval] are already strong, while citation_quality_[geval] is systematically failing due to over-elaboration.",
+      "expected_impact": "Improves citation_quality_[geval] and faithfulness by reducing creative expansion beyond evidence; estimated gain +0.10 to +0.20 on citation_quality_[geval] and +0.05 to +0.15 on faithfulness.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Set temperature to 0.2-0.3 for grounded answer generation.",
+        "Run an A/B test comparing current temperature versus 0.2 and 0.3.",
+        "Measure impact on citation_quality_[geval], answer_relevancy, and response_completeness_[geval]."
+      ]
+    },
+    {
+      "title": "Add citation coverage thresholds as generation guardrails",
+      "category": "parameter",
+      "priority": "high",
+      "description": "Introduce explicit generation-time or post-generation thresholds such as minimum citation coverage and zero tolerance for uncited material claims. This directly targets citation_quality_[geval] and complements prompt-only fixes with enforceable acceptance criteria.",
+      "expected_impact": "Improves citation_quality_[geval] by preventing low-attribution responses from being accepted; estimated gain +0.20 to +0.35.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Set min_citation_coverage to 0.8.",
+        "Set max_uncited_material_claims to 0.",
+        "Reject or regenerate outputs that fail these thresholds.",
+        "Log citation coverage per response for monitoring."
+      ]
+    },
+    {
+      "title": "Split grounded-answer mode from advisory mode",
+      "category": "architecture",
+      "priority": "high",
+      "description": "Separate the system into a default grounded-answer mode that only returns context-supported facts and an advisory mode that is used only when the user explicitly asks for recommendations or design suggestions. This addresses the current blending of factual answering and speculative advising, which is harming citation_quality_[geval] in all failed traces.",
+      "expected_impact": "Improves citation_quality_[geval] by reducing unsupported expansion in standard QA flows; estimated gain +0.30 to +0.50.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Default all retrieval-augmented QA requests to grounded-answer mode.",
+        "Enable advisory mode only when the user explicitly requests recommendations, design options, or extrapolation.",
+        "In advisory mode, separate context-supported facts from recommendations in the output schema.",
+        "Track mode selection in traces for later evaluation."
+      ]
+    },
+    {
+      "title": "Add a context sufficiency gate before answer generation",
+      "category": "workflow",
+      "priority": "high",
+      "description": "Compute simple sufficiency signals such as retrieved context token count, number of supporting chunks, and query coverage before generation. If context is insufficient, switch to narrow-answer mode, trigger additional retrieval, or return an explicit insufficient-context response. This improves citation_quality_[geval] in sparse-context cases and helps prevent unsupported specificity.",
+      "expected_impact": "Improves citation_quality_[geval] and contextual_recall in low-evidence scenarios; estimated gain +0.30 to +0.50 on citation_quality_[geval].",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Calculate retrieved context token count before generation.",
+        "Calculate number of unique supporting chunks.",
+        "Define thresholds such as supporting_chunks < 2 or context_tokens < 250 for insufficient context.",
+        "Route insufficient-context cases to narrow-answer mode or an additional retrieval pass."
+      ]
+    },
+    {
+      "title": "Restore retrieval and grounding instrumentation across all traces",
+      "category": "workflow",
+      "priority": "high",
+      "description": "Re-enable logging and evaluation inputs required for contextual_precision, contextual_recall, and faithfulness on every trace. Although this may not directly raise current quality scores, it is essential for distinguishing whether future citation_quality_[geval] failures are caused by retrieval insufficiency, generation behavior, or both. This is especially important because retrieval quality could not be confirmed in the current dataset.",
+      "expected_impact": "Improves root-cause accuracy and observability for contextual_precision, contextual_recall, and faithfulness; expected diagnostic accuracy improvement greater than 50%.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Persist retrieved documents and chunk IDs for every trace.",
+        "Persist reranker scores and final prompt context.",
+        "Persist cited chunk IDs and answer sentence-to-source mappings.",
+        "Re-enable contextual_precision, contextual_recall, and faithfulness evaluation for all runs."
+      ]
+    },
+    {
+      "title": "Pass retrieval metadata explicitly into the generator",
+      "category": "workflow",
+      "priority": "medium",
+      "description": "Ensure the generator always receives doc_id, chunk_id, title, and where possible section or span metadata for each retrieved chunk. This makes it easier for the model to produce evaluator-recognizable citations and improves citation_quality_[geval] without major architectural change.",
+      "expected_impact": "Improves citation_quality_[geval] by reducing missing or malformed source references; estimated gain +0.15 to +0.30.",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Include doc_id in every retrieved context item.",
+        "Include chunk_id in every retrieved context item.",
+        "Include title and section metadata when available.",
+        "Expose these identifiers directly in the prompt template."
+      ]
+    },
+    {
+      "title": "Tune retrieval breadth and chunk granularity for better source mapping",
+      "category": "parameter",
+      "priority": "medium",
+      "description": "Increase retrieval top_k and adjust chunk_size and overlap to produce more granular, citation-friendly evidence units. This may improve citation_quality_[geval] and contextual_recall, especially in sparse-context tasks where a single short document is insufficient to support detailed answers.",
+      "expected_impact": "Improves citation_quality_[geval], contextual_recall, and contextual_precision by increasing available evidence and making claim-to-chunk mapping easier; estimated gain +0.10 to +0.25 on citation_quality_[geval] and +0.15 to +0.30 on contextual_recall.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Increase retrieval top_k from an estimated 3 to 5-8.",
+        "Reduce chunk_size from an estimated 800 to 300-500.",
+        "Increase chunk overlap from an estimated 50 to 80-120.",
+        "Evaluate whether finer chunks improve citation attachment and retrieval metrics."
+      ]
+    },
+    {
+      "title": "Limit answer length adaptively based on evidence volume",
+      "category": "parameter",
+      "priority": "medium",
+      "description": "Reduce max_tokens or apply adaptive verbosity limits so answer length is proportional to retrieved evidence. This addresses the pattern where response_completeness_[geval] is already perfect at 1.0, but excessive detail unsupported by context harms citation_quality_[geval].",
+      "expected_impact": "Improves citation_quality_[geval] while preserving most of the current response_completeness_[geval]; estimated gain +0.10 to +0.20 on citation_quality_[geval].",
+      "implementation_complexity": "easy",
+      "specific_changes": [
+        "Reduce max_tokens from an estimated 800 to 400-500 for grounded QA.",
+        "Apply adaptive limits such as target_answer_tokens <= 150 when retrieved_context_tokens < 300.",
+        "Monitor for any regression in response_completeness_[geval]."
+      ]
+    },
+    {
+      "title": "Adopt a structured citation-aware response schema",
+      "category": "architecture",
+      "priority": "medium",
+      "description": "Move from free-form text-only outputs to a structured schema containing answer text plus explicit claims and source arrays. This improves evaluator alignment, makes citation extraction more reliable, and supports future automation for faithfulness and unsupported-claim detection.",
+      "expected_impact": "Improves citation_quality_[geval] measurement stability and debugging speed, while supporting future gains in faithfulness and observability.",
+      "implementation_complexity": "medium",
+      "specific_changes": [
+        "Return fields such as answer and claims[].",
+        "For each claim, include text and sources arrays with chunk IDs.",
+        "Optionally include a Used Sources section in the rendered answer.",
+        "Update evaluation tooling to consume the structured schema directly."
+      ]
+    }
+  ],
   "next_steps": [
-    "구조화된 평가 결과로 다시 실행하세요"
-  ]
+    "Implement the top five high-priority changes first: inline citation enforcement, supported-vs-recommendations separation, claim-to-source alignment or citation validator, temperature reduction to 0.2-0.3, and sparse-context fallback behavior.",
+    "Create an A/B test comparing the current prompt against a grounding-first prompt with mandatory inline citations and unsupported-claim restrictions.",
+    "Add response-level monitoring for citation_quality_[geval], citation coverage ratio, uncited material claim count, and regeneration rate.",
+    "Restore evaluation instrumentation so every trace logs retrieved chunks, reranker scores, final prompt context, cited chunk IDs, and sentence-to-source mappings.",
+    "Re-enable contextual_precision, contextual_recall, and faithfulness scoring for all traces to separate retrieval and generation causes in the next evaluation cycle.",
+    "Run a parameter sweep on temperature, top_p or top_k, and max_tokens while holding the new prompt constant, and compare effects on citation_quality_[geval], answer_relevancy, and response_completeness_[geval].",
+    "Prototype a context sufficiency gate and narrow-answer fallback for sparse-context queries, then evaluate on the SLA-like traces that previously produced unsupported specificity.",
+    "Plan a second sprint for medium-complexity workflow and architecture changes, including grounded-versus-advisory mode separation and a structured citation-aware response schema."
+  ],
+  "version": "1"
 }
