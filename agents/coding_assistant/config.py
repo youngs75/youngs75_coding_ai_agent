@@ -1,8 +1,11 @@
 """Coding Assistant 에이전트 설정.
 
 Generator-Verifier 분리 원칙 (RubricRewards 논문):
-- generation_model: 코드 생성용 (요구사항만 보고 작업)
-- verification_model: 검증용 (더 넓은 맥락에서 판단)
+- generation → strong 티어 (코드 생성용)
+- verification → default 티어 (검증용)
+
+레거시 환경변수(CODING_GEN_MODEL, CODING_VERIFY_MODEL)가 설정되면
+티어 시스템보다 우선 적용된다.
 
 MCP 도구 연동:
 - code_tools: 파일 I/O, 코드 검색, 코드 실행 MCP 서버
@@ -12,21 +15,28 @@ from __future__ import annotations
 
 import os
 
+from langchain_core.language_models import BaseChatModel
 from pydantic import Field
 
 from youngs75_a2a.core.config import BaseAgentConfig
+from youngs75_a2a.core.model_tiers import (
+    ModelTier,
+    TierConfig,
+    create_chat_model,
+)
 
 
 class CodingConfig(BaseAgentConfig):
     """Coding Assistant 에이전트 설정."""
 
-    generation_model: str = Field(
-        default_factory=lambda: os.getenv("CODING_GEN_MODEL", "gpt-5.4"),
-        description="코드 생성용 모델",
+    # 레거시 호환: 명시적 모델 오버라이드 (설정 시 티어보다 우선)
+    generation_model: str | None = Field(
+        default_factory=lambda: os.getenv("CODING_GEN_MODEL"),
+        description="코드 생성용 모델 (명시적 오버라이드)",
     )
-    verification_model: str = Field(
-        default_factory=lambda: os.getenv("CODING_VERIFY_MODEL", "gpt-5.4"),
-        description="코드 검증용 모델",
+    verification_model: str | None = Field(
+        default_factory=lambda: os.getenv("CODING_VERIFY_MODEL"),
+        description="코드 검증용 모델 (명시적 오버라이드)",
     )
 
     # 허용 파일 확장자
@@ -47,10 +57,43 @@ class CodingConfig(BaseAgentConfig):
     # ReAct 루프 최대 도구 호출 횟수
     max_tool_calls: int = Field(default=10)
 
-    def _resolve_model_name(self, purpose: str) -> str:
-        """목적별 모델 분기 — Generator/Verifier 분리."""
-        if purpose == "generation":
+    # Coding 전용 purpose → tier 매핑
+    purpose_tiers: dict[str, str] = Field(
+        default_factory=lambda: {
+            "generation": ModelTier.STRONG,
+            "verification": ModelTier.DEFAULT,
+            "parsing": ModelTier.FAST,
+            "default": ModelTier.DEFAULT,
+        },
+    )
+
+    def get_model(
+        self,
+        purpose: str = "default",
+        *,
+        structured: type | None = None,
+    ) -> BaseChatModel:
+        """목적별 모델 반환 — 레거시 오버라이드 우선, 없으면 티어 해석."""
+        explicit = self._get_explicit_override(purpose)
+        if explicit is not None:
+            tier_config = self.get_tier_config(purpose)
+            override_config = TierConfig(
+                model=explicit,
+                provider=tier_config.provider,
+                context_window=tier_config.context_window,
+                temperature=tier_config.temperature,
+            )
+            return create_chat_model(
+                override_config,
+                temperature=self.temperature,
+                structured=structured,
+            )
+        return super().get_model(purpose, structured=structured)
+
+    def _get_explicit_override(self, purpose: str) -> str | None:
+        """purpose에 대한 명시적 모델 오버라이드를 반환한다."""
+        if purpose == "generation" and self.generation_model:
             return self.generation_model
-        if purpose == "verification":
+        if purpose == "verification" and self.verification_model:
             return self.verification_model
-        return self.default_model
+        return None

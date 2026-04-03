@@ -1,3 +1,33 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"youngs75_a2a" = "."
+"youngs75_a2a.core" = "core"
+"youngs75_a2a.core.memory" = "core/memory"
+"youngs75_a2a.core.skills" = "core/skills"
+"youngs75_a2a.core.subagents" = "core/subagents"
+"youngs75_a2a.agents" = "agents"
+"youngs75_a2a.agents.coding_assistant" = "agents/coding_assistant"
+"youngs75_a2a.agents.deep_research" = "agents/deep_research"
+"youngs75_a2a.agents.deep_research.nodes" = "agents/deep_research/nodes"
+"youngs75_a2a.agents.deep_research.subgraphs" = "agents/deep_research/subgraphs"
+"youngs75_a2a.agents.orchestrator" = "agents/orchestrator"
+"youngs75_a2a.agents.simple_react" = "agents/simple_react"
+"youngs75_a2a.a2a" = "a2a"
+"youngs75_a2a.eval_pipeline" = "eval_pipeline"
+"youngs75_a2a.eval_pipeline.llm" = "eval_pipeline/llm"
+"youngs75_a2a.eval_pipeline.loop1_dataset" = "eval_pipeline/loop1_dataset"
+"youngs75_a2a.eval_pipeline.loop2_evaluation" = "eval_pipeline/loop2_evaluation"
+"youngs75_a2a.eval_pipeline.loop3_remediation" = "eval_pipeline/loop3_remediation"
+"youngs75_a2a.eval_pipeline.observability" = "eval_pipeline/observability"
+"youngs75_a2a.mcp_servers" = "mcp_servers"
+"youngs75_a2a.mcp_servers.code_tools" = "mcp_servers/code_tools"
+"youngs75_a2a.cli" = "cli"
+"youngs75_a2a.utils" = "utils"
+"youngs75_a2a.scripts" = "scripts"
+
 [project]
 name = "youngs75-coding-ai-agent"
 version = "0.1.0"
@@ -15,7 +45,13 @@ dependencies = [
     "pydantic-settings>=2.2,<3",
     "python-dotenv>=1.2.2",
     "structlog>=25,<26",
+    "tiktoken>=0.9",
+    "rich>=14,<15",
+    "prompt-toolkit>=3.0,<4",
 ]
+
+[project.scripts]
+youngs75-agent = "youngs75_a2a.cli.app:run_cli"
 
 [dependency-groups]
 dev = [

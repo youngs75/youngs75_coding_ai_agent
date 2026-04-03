@@ -1,22 +1,39 @@
 """에이전트 설정 기본 클래스.
 
 모든 에이전트 Config는 이 클래스를 상속하여 일관된 설정 관리를 제공한다.
-환경변수 오버라이드, LangGraph RunnableConfig 변환을 지원한다.
+환경변수 오버라이드, 멀티티어 모델 해석, LangGraph RunnableConfig 변환을 지원한다.
+
+모델 해석 경로:
+- 레거시: _resolve_model_name(purpose) + model_provider → init_chat_model()
+- 티어:  purpose_tiers[purpose] → model_tiers[tier] → create_chat_model()
+
+기본 get_model()은 레거시 경로를 유지한다 (ResearchConfig 등 하위 호환).
+티어 기반 해석은 서브클래스에서 get_model()을 오버라이드하여 사용한다.
 """
 
 from __future__ import annotations
 
 import os
 from typing import Any
-from pydantic import BaseModel, Field
+
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+
+from youngs75_a2a.core.model_tiers import (
+    TierConfig,
+    build_default_purpose_tiers,
+    build_default_tiers,
+    create_chat_model,
+    resolve_tier_config,
+)
 
 
 class BaseAgentConfig(BaseModel):
     """모든 에이전트 Config의 기본 클래스."""
 
+    # 레거시 필드 (하위 호환 — ResearchConfig 등에서 사용)
     model_provider: str = Field(
         default_factory=lambda: os.getenv("MODEL_PROVIDER", "openai"),
     )
@@ -29,6 +46,10 @@ class BaseAgentConfig(BaseModel):
     max_retries: int = Field(default=3)
     mcp_servers: dict[str, str] = Field(default_factory=dict)
 
+    # 멀티티어 모델 설정
+    model_tiers: dict[str, TierConfig] = Field(default_factory=build_default_tiers)
+    purpose_tiers: dict[str, str] = Field(default_factory=build_default_purpose_tiers)
+
     model_config = {"extra": "allow"}
 
     def get_model(
@@ -39,9 +60,8 @@ class BaseAgentConfig(BaseModel):
     ) -> BaseChatModel:
         """목적별 LLM 모델을 반환한다.
 
-        Args:
-            purpose: 모델 용도 (서브클래스에서 오버라이드하여 용도별 모델 분기)
-            structured: with_structured_output에 전달할 스키마 클래스
+        기본 구현은 _resolve_model_name + model_provider 레거시 경로를 사용한다.
+        티어 시스템을 사용하려면 서브클래스에서 get_model()을 오버라이드하라.
         """
         model_name = self._resolve_model_name(purpose)
         llm = init_chat_model(
@@ -56,6 +76,10 @@ class BaseAgentConfig(BaseModel):
     def _resolve_model_name(self, purpose: str) -> str:
         """목적별 모델명 결정. 서브클래스에서 오버라이드."""
         return self.default_model
+
+    def get_tier_config(self, purpose: str = "default") -> TierConfig:
+        """목적에 해당하는 TierConfig를 반환한다."""
+        return resolve_tier_config(purpose, self.model_tiers, self.purpose_tiers)
 
     def get_mcp_endpoint(self, server_name: str) -> str | None:
         """MCP 서버 엔드포인트를 반환한다."""
