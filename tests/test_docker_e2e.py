@@ -83,7 +83,7 @@ async def query_agent(url: str, query: str) -> str:
         return "[응답 파싱 실패]"
 
 
-async def test_agent_card(url: str, name: str) -> bool:
+async def check_agent_card(url: str, name: str) -> bool:
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.get(f"{url}/.well-known/agent-card.json")
         if resp.status_code == 200:
@@ -122,7 +122,7 @@ async def main():
     print("\n3️⃣  AgentCard 조회")
     for name, url in AGENT_SERVICES.items():
         if agent_ok.get(name):
-            await test_agent_card(url, name)
+            await check_agent_card(url, name)
 
     # 4. 질의 테스트
     print("\n4️⃣  A2A 프로토콜 질의 테스트")

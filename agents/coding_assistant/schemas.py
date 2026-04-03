@@ -1,6 +1,7 @@
 """Coding Assistant 상태 스키마.
 
 parse → execute(ReAct) → verify 간 데이터를 전달하는 상태 정의.
+CoALA 메모리 체계 통합: semantic_context로 프로젝트 규칙/컨벤션 주입.
 """
 
 from typing import Annotated, Any
@@ -8,6 +9,8 @@ from typing import Annotated, Any
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
+
+from youngs75_a2a.core.reducers import override_reducer
 
 
 class ParseResult(TypedDict, total=False):
@@ -29,6 +32,15 @@ class VerifyResult(TypedDict, total=False):
 class CodingState(TypedDict, total=False):
     """Coding Assistant 에이전트 상태."""
     messages: Annotated[list[BaseMessage], add_messages]
+
+    # CoALA Semantic Memory — 프로젝트 규칙/컨벤션 (덮어쓰기 가능)
+    semantic_context: Annotated[list[str], override_reducer]
+
+    # Skills 컨텍스트 — 활성 스킬 메타데이터 (L1)
+    skill_context: Annotated[list[str], override_reducer]
+
+    # Episodic Memory — 이전 실행 이력
+    episodic_log: Annotated[list[str], override_reducer]
 
     # parse_request 출력
     parse_result: ParseResult

@@ -7,7 +7,10 @@ prompt-toolkit + rich 기반 대화형 루프.
 from __future__ import annotations
 
 import asyncio
+import logging
+from typing import Any
 
+from langchain_core.messages import AIMessage, HumanMessage
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
@@ -16,31 +19,271 @@ from youngs75_a2a.cli.commands import handle_command
 from youngs75_a2a.cli.config import CLIConfig
 from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
+from youngs75_a2a.core.base_agent import BaseGraphAgent
+from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+from youngs75_a2a.core.skills.loader import SkillLoader
+from youngs75_a2a.core.skills.registry import SkillRegistry
+
+logger = logging.getLogger(__name__)
+
+# 노드 이름 → 한국어 상태 레이블
+_NODE_LABELS: dict[str, str] = {
+    # coding_assistant
+    "parse_request": "요청 분석 중...",
+    "execute_code": "코드 생성 중...",
+    "execute_tools": "도구 실행 중...",
+    "verify_result": "코드 검증 중...",
+    # deep_research
+    "clarify_with_user": "질문 명확화...",
+    "write_research_brief": "연구 브리프 작성...",
+    "research_supervisor": "연구 수행 중...",
+    "final_report_generation": "보고서 작성 중...",
+    # simple_react
+    "react_agent": "처리 중...",
+    # orchestrator
+    "classify": "요청 분류 중...",
+    "delegate": "에이전트 위임 중...",
+    "respond": "응답 생성 중...",
+}
+
+# Episodic 메모리 안전장치 상수 (Agent-as-a-Judge)
+_EPISODIC_MAX_ITEMS = 5
+_EPISODIC_MAX_CHARS = 200
 
 
-async def _run_agent_turn(user_input: str, session: CLISession, renderer: CLIRenderer) -> None:
-    """에이전트에 메시지를 전달하고 응답을 출력한다.
+def _truncate(text: str, max_chars: int = _EPISODIC_MAX_CHARS) -> str:
+    """텍스트를 최대 길이로 잘라낸다."""
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3] + "..."
 
-    현재는 에이전트 그래프와의 통합 준비 단계로,
-    실제 LLM 호출은 에이전트 인스턴스 연결 후 활성화된다.
-    """
+
+def _build_episodic_summary(
+    user_input: str,
+    passed: bool,
+    response_summary: str,
+) -> str:
+    """에피소딕 메모리에 저장할 요약 문자열을 생성한다."""
+    status = "passed" if passed else "[주의] failed"
+    request_brief = _truncate(user_input, 60)
+    summary = f"[{status}] 요청: {request_brief} | 결과: {response_summary}"
+    return _truncate(summary)
+
+
+def _save_episodic_memory(
+    session: CLISession,
+    user_input: str,
+    response: str,
+    passed: bool = True,
+) -> None:
+    """실행 결과를 에피소딕 메모리로 저장한다."""
+    response_brief = _truncate(response, 80)
+    summary = _build_episodic_summary(user_input, passed, response_brief)
+
+    tags = ["episodic"]
+    if not passed:
+        tags.append("주의")
+
+    item = MemoryItem(
+        type=MemoryType.EPISODIC,
+        content=summary,
+        tags=tags,
+        session_id=session.session_id,
+    )
+    session.memory.put(item)
+
+
+async def _create_agent(name: str) -> BaseGraphAgent:
+    """에이전트를 비동기로 생성한다."""
+    if name == "coding_assistant":
+        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+        return await CodingAssistantAgent.create(config=CodingConfig())
+
+    if name == "deep_research":
+        from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
+        from youngs75_a2a.agents.deep_research.config import ResearchConfig
+
+        return await DeepResearchAgent.create(config=ResearchConfig())
+
+    if name == "simple_react":
+        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+        from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
+
+        return await SimpleMCPReActAgent.create(config=SimpleReActConfig())
+
+    if name == "orchestrator":
+        from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
+        from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
+
+        return await OrchestratorAgent.create(config=OrchestratorConfig())
+
+    raise ValueError(f"알 수 없는 에이전트: {name}")
+
+
+async def _get_or_create_agent(
+    session: CLISession, renderer: CLIRenderer
+) -> BaseGraphAgent | None:
+    """세션에서 에이전트를 가져오거나 새로 생성한다."""
+    name = session.info.agent_name
+    cached = session.get_cached_agent(name)
+    if cached is not None:
+        return cached
+
+    renderer.system_message(f"[{name}] 에이전트 초기화 중...")
+    try:
+        agent = await _create_agent(name)
+        session.cache_agent(name, agent)
+        renderer.system_message(f"[{name}] 에이전트 준비 완료")
+        return agent
+    except Exception as e:
+        logger.exception("에이전트 초기화 실패")
+        renderer.error(f"에이전트 초기화 실패: {e}")
+        return None
+
+
+def _build_input_state(
+    agent_name: str,
+    user_input: str,
+    session: CLISession,
+) -> dict[str, Any]:
+    """에이전트별 입력 상태를 구성한다."""
+    state: dict[str, Any] = {
+        "messages": [HumanMessage(content=user_input)],
+    }
+    if agent_name == "coding_assistant":
+        state["iteration"] = 0
+        state["max_iterations"] = 3
+        # Semantic Memory 주입
+        semantic_items = session.memory.list_by_type(MemoryType.SEMANTIC)
+        if semantic_items:
+            state["semantic_context"] = [item.content for item in semantic_items]
+        # Skills 컨텍스트 주입
+        skill_entries = session.skills.get_context_entries()
+        if skill_entries:
+            state["skill_context"] = skill_entries
+        # Episodic Memory 주입 — 세션 스코프, 최대 5개
+        episodic_items = session.memory.list_by_type(
+            MemoryType.EPISODIC, session_id=session.session_id,
+        )
+        recent = episodic_items[:_EPISODIC_MAX_ITEMS]
+        if recent:
+            state["episodic_log"] = [item.content for item in recent]
+
+    elif agent_name == "orchestrator":
+        state["selected_agent"] = None
+        state["agent_response"] = None
+
+    return state
+
+
+def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
+    """에이전트별 최종 응답을 추출한다."""
+    if agent_name == "coding_assistant":
+        parts: list[str] = []
+        code = data.get("generated_code", "")
+        if code:
+            parts.append(code)
+        verify = data.get("verify_result")
+        if isinstance(verify, dict):
+            if verify.get("passed"):
+                parts.append("\n검증 통과")
+            else:
+                issues = verify.get("issues", [])
+                parts.append("\n검증 이슈:\n- " + "\n- ".join(issues) if issues else "\n검증 실패")
+                suggestions = verify.get("suggestions", [])
+                if suggestions:
+                    parts.append("제안:\n- " + "\n- ".join(suggestions))
+        return "\n".join(parts) if parts else data.get("last_ai_message", "응답을 생성하지 못했습니다.")
+
+    if agent_name == "deep_research":
+        return data.get("final_report") or data.get("last_ai_message", "보고서를 생성하지 못했습니다.")
+
+    if agent_name == "orchestrator":
+        # orchestrator: agent_response 또는 마지막 AI 메시지
+        agent_response = data.get("agent_response")
+        if agent_response:
+            selected = data.get("selected_agent", "unknown")
+            return f"[{selected}] {agent_response}"
+        return data.get("last_ai_message", "응답을 생성하지 못했습니다.")
+
+    # simple_react 및 기타
+    return data.get("last_ai_message", "응답을 생성하지 못했습니다.")
+
+
+async def _run_agent_turn(
+    user_input: str, session: CLISession, renderer: CLIRenderer
+) -> None:
+    """에이전트에 메시지를 전달하고 응답을 출력한다."""
     session.add_message("user", user_input)
 
-    # 에이전트 그래프 연동 (추후 Phase에서 활성화)
-    # agent = _get_or_create_agent(session.info.agent_name)
-    # async for event in agent.graph.astream({"messages": [HumanMessage(content=user_input)]}):
-    #     ...
+    agent = await _get_or_create_agent(session, renderer)
+    if agent is None:
+        return
 
-    response = f"[{session.info.agent_name}] 에이전트가 연결되면 여기에 응답이 표시됩니다."
+    input_state = _build_input_state(session.info.agent_name, user_input, session)
+
+    # 에이전트 그래프 스트리밍 실행
+    response_data: dict[str, Any] = {}
+    last_node = ""
+    passed = True
+    try:
+        async for chunk in agent.graph.astream(input_state):
+            for node_name, update in chunk.items():
+                if node_name.startswith("__"):
+                    continue
+                # 노드 변경 시 진행 상태 출력
+                if node_name != last_node:
+                    label = _NODE_LABELS.get(node_name, node_name)
+                    renderer.system_message(f"  > {label}")
+                    last_node = node_name
+                # 응답에 필요한 필드 수집
+                if isinstance(update, dict):
+                    for key in ("generated_code", "verify_result", "final_report",
+                                "selected_agent", "agent_response"):
+                        if key in update:
+                            response_data[key] = update[key]
+                    if "messages" in update:
+                        for msg in update["messages"]:
+                            if isinstance(msg, AIMessage) and msg.content:
+                                response_data["last_ai_message"] = msg.content
+    except Exception as e:
+        logger.exception("에이전트 실행 오류")
+        renderer.error(f"에이전트 실행 오류: {e}")
+        return
+
+    # 검증 결과에서 passed 여부 추출
+    verify = response_data.get("verify_result")
+    if isinstance(verify, dict):
+        passed = verify.get("passed", True)
+
+    response = _extract_response(session.info.agent_name, response_data)
     renderer.agent_message(response)
     session.add_message("assistant", response)
+
+    # Episodic Memory 저장
+    _save_episodic_memory(session, user_input, response, passed=passed)
+
+
+def _init_skill_registry(skills_dir: str | None) -> SkillRegistry:
+    """스킬 레지스트리를 초기화한다."""
+    registry = SkillRegistry()
+    if skills_dir:
+        loader = SkillLoader(skills_dir)
+        registry = SkillRegistry(loader=loader)
+        discovered = registry.discover()
+        if discovered:
+            logger.info("스킬 %d개 발견: %s", len(discovered), discovered)
+    return registry
 
 
 async def _main_loop(config: CLIConfig) -> None:
     """대화형 메인 루프."""
     console = Console()
     renderer = CLIRenderer(console)
-    session = CLISession(agent_name=config.default_agent)
+    skill_registry = _init_skill_registry(config.skills_dir)
+    session = CLISession(agent_name=config.default_agent, skill_registry=skill_registry)
 
     prompt_session: PromptSession[str] = PromptSession(
         history=FileHistory(config.history_file),

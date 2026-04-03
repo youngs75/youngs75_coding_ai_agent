@@ -46,6 +46,12 @@ class BaseAgentConfig(BaseModel):
     max_retries: int = Field(default=3)
     mcp_servers: dict[str, str] = Field(default_factory=dict)
 
+    # Skills 시스템
+    skills_dir: str | None = Field(
+        default_factory=lambda: os.getenv("SKILLS_DIR"),
+        description="스킬 파일 디렉토리 경로",
+    )
+
     # 멀티티어 모델 설정
     model_tiers: dict[str, TierConfig] = Field(default_factory=build_default_tiers)
     purpose_tiers: dict[str, str] = Field(default_factory=build_default_purpose_tiers)

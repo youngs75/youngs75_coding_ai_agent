@@ -17,6 +17,9 @@ def test_step1_graph_structure():
 
     config = CodingConfig()
     agent = CodingAssistantAgent(config=config)
+    # CodingAssistantAgent는 MCP 비동기 로딩을 위해 auto_build=False.
+    # 그래프 구조 검증만 하므로 수동으로 빌드한다.
+    agent.build_graph()
 
     assert agent.graph is not None, "그래프가 빌드되지 않음"
 
@@ -68,7 +71,7 @@ async def test_step2_llm_integration():
     from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
 
     config = CodingConfig()
-    agent = CodingAssistantAgent(config=config)
+    agent = await CodingAssistantAgent.create(config=config)
 
     result = await agent.graph.ainvoke({
         "messages": [HumanMessage(content="파이썬으로 피보나치 수열의 n번째 값을 반환하는 함수를 작성해줘")],

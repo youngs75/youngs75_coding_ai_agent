@@ -1,0 +1,35 @@
+# CLI 대화형 에이전트 인터페이스용 Dockerfile
+#
+# 빌드 컨텍스트: 프로젝트 최상위 (youngs75_a2a의 부모)
+# 사용법:
+#   docker compose -f docker/docker-compose.yml run --rm cli
+#   docker compose -f docker/docker-compose.yml run --rm cli youngs75-agent
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# 시스템 의존성 설치 (curl: 헬스체크, git: uv 동작)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv 설치 — 빠른 파이썬 패키지 관리자
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# youngs75_a2a 패키지 전체 복사
+COPY youngs75_a2a/ /app/youngs75_a2a/
+
+# pyproject.toml · uv.lock 복사 후 의존성 설치
+COPY youngs75_a2a/pyproject.toml /app/pyproject.toml
+COPY youngs75_a2a/uv.lock /app/uv.lock
+
+# 패키지를 editable 모드로 설치 (CLI 엔트리포인트 등록)
+RUN uv pip install --system -e .
+
+ENV PYTHONPATH=/app
+# 대화형 모드를 위해 버퍼링 비활성화
+ENV PYTHONUNBUFFERED=1
+
+# youngs75-agent CLI 엔트리포인트 실행
+ENTRYPOINT ["youngs75-agent"]

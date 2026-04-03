@@ -21,3 +21,7 @@ class CLIConfig(BaseModel):
     theme: str = Field(
         default_factory=lambda: os.getenv("CLI_THEME", "monokai"),
     )
+    skills_dir: str | None = Field(
+        default_factory=lambda: os.getenv("SKILLS_DIR"),
+        description="스킬 파일 디렉토리 경로",
+    )

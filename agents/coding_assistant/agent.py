@@ -149,6 +149,24 @@ class CodingAssistantAgent(BaseGraphAgent):
             tool_descriptions=tool_descriptions,
         )
 
+        # Semantic Memory 주입 — 프로젝트 규칙/컨벤션
+        semantic_context = state.get("semantic_context", [])
+        if semantic_context:
+            system_prompt += "\n\n## 프로젝트 컨텍스트 (Semantic Memory)\n"
+            system_prompt += "\n".join(f"- {ctx}" for ctx in semantic_context)
+
+        # Skills 컨텍스트 주입 — 활성 스킬 정보
+        skill_context = state.get("skill_context", [])
+        if skill_context:
+            system_prompt += "\n\n## 사용 가능한 스킬\n"
+            system_prompt += "\n".join(f"- {ctx}" for ctx in skill_context)
+
+        # Episodic Memory 주입 — 이전 실행 이력 참조
+        episodic_log = state.get("episodic_log", [])
+        if episodic_log:
+            system_prompt += "\n\n## 이전 실행 이력 (Episodic Memory)\n"
+            system_prompt += "\n".join(f"- {entry}" for entry in episodic_log)
+
         # 컨텍스트 메시지 구성
         context_parts = [
             f"작업 유형: {parse_result.get('task_type', 'generate')}",

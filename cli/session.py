@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from youngs75_a2a.core.memory.store import MemoryStore
+from youngs75_a2a.core.skills.registry import SkillRegistry
 
 
 class SessionInfo(BaseModel):
@@ -25,10 +27,16 @@ class SessionInfo(BaseModel):
 class CLISession:
     """CLI 세션 — 대화 상태와 메모리를 관리한다."""
 
-    def __init__(self, agent_name: str = "coding_assistant"):
+    def __init__(
+        self,
+        agent_name: str = "coding_assistant",
+        skill_registry: SkillRegistry | None = None,
+    ):
         self.info = SessionInfo(agent_name=agent_name)
         self.memory = MemoryStore()
+        self.skills = skill_registry or SkillRegistry()
         self._history: list[dict[str, str]] = []
+        self._agents: dict[str, Any] = {}
 
     @property
     def session_id(self) -> str:
@@ -46,6 +54,14 @@ class CLISession:
     def clear_history(self) -> None:
         self._history.clear()
         self.info.message_count = 0
+
+    def get_cached_agent(self, name: str) -> Any | None:
+        """캐싱된 에이전트 인스턴스 반환."""
+        return self._agents.get(name)
+
+    def cache_agent(self, name: str, agent: Any) -> None:
+        """에이전트 인스턴스 캐싱."""
+        self._agents[name] = agent
 
     def switch_agent(self, agent_name: str) -> None:
         """에이전트 전환."""

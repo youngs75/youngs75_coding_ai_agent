@@ -14,7 +14,7 @@ youngs75_coding_ai_agent/
 │   ├── deep_research/         # DeepResearch 에이전트
 │   ├── orchestrator/          # 오케스트레이터
 │   └── simple_react/          # SimpleReAct 에이전트
-├── a2a/                       # A2A 프로토콜 통합
+├── a2a_local/                 # A2A 프로토콜 통합 (a2a-sdk 네이밍 충돌 방지)
 ├── mcp_servers/               # MCP 서버
 │   └── code_tools/            # 파일 I/O, 코드 검색, 코드 실행 MCP 서버
 ├── eval_pipeline/             # DeepEval 기반 평가 파이프라인 (Langfuse 연동)
