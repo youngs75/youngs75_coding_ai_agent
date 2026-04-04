@@ -25,7 +25,13 @@ def test_step1_graph_structure():
 
     # 노드 확인
     node_names = set(agent.graph.get_graph().nodes.keys())
-    expected = {"parse_request", "execute_code", "verify_result", "__start__", "__end__"}
+    expected = {
+        "parse_request",
+        "execute_code",
+        "verify_result",
+        "__start__",
+        "__end__",
+    }
     assert expected.issubset(node_names), f"누락된 노드: {expected - node_names}"
 
     print("[PASS] 그래프 구조 검증 통과")
@@ -73,15 +79,25 @@ async def test_step2_llm_integration():
     config = CodingConfig()
     agent = await CodingAssistantAgent.create(config=config)
 
-    result = await agent.graph.ainvoke({
-        "messages": [HumanMessage(content="파이썬으로 피보나치 수열의 n번째 값을 반환하는 함수를 작성해줘")],
-        "iteration": 0,
-        "max_iterations": 2,
-    })
+    result = await agent.graph.ainvoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="파이썬으로 피보나치 수열의 n번째 값을 반환하는 함수를 작성해줘"
+                )
+            ],
+            "iteration": 0,
+            "max_iterations": 2,
+        }
+    )
 
     print("\n[결과]")
-    print(f"  parse_result: {json.dumps(result.get('parse_result', {}), ensure_ascii=False, indent=2)}")
-    print(f"  verify_result: {json.dumps(result.get('verify_result', {}), ensure_ascii=False, indent=2)}")
+    print(
+        f"  parse_result: {json.dumps(result.get('parse_result', {}), ensure_ascii=False, indent=2)}"
+    )
+    print(
+        f"  verify_result: {json.dumps(result.get('verify_result', {}), ensure_ascii=False, indent=2)}"
+    )
     print(f"  iteration: {result.get('iteration')}")
     print(f"  execution_log: {result.get('execution_log')}")
     print(f"\n  generated_code (앞 500자):\n{result.get('generated_code', '')[:500]}")

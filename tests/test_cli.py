@@ -17,7 +17,6 @@ from rich.console import Console
 
 from youngs75_a2a.cli.app import (
     _EPISODIC_MAX_ITEMS,
-    _build_episodic_summary,
     _build_input_state,
     _create_checkpointer,
     _extract_response,
@@ -25,7 +24,7 @@ from youngs75_a2a.cli.app import (
     _run_agent_turn,
     _save_episodic_memory,
 )
-from youngs75_a2a.cli.commands import CommandResult, handle_command
+from youngs75_a2a.cli.commands import handle_command
 from youngs75_a2a.cli.config import CLIConfig
 from youngs75_a2a.cli.eval_runner import (
     EvalResult,
@@ -79,6 +78,7 @@ class TestCLIConfig:
 
     def test_create_checkpointer_memory(self):
         from langgraph.checkpoint.memory import MemorySaver
+
         config = CLIConfig(checkpointer_backend="memory")
         cp = _create_checkpointer(config)
         assert isinstance(cp, MemorySaver)
@@ -86,6 +86,7 @@ class TestCLIConfig:
     def test_create_checkpointer_sqlite_fallback(self):
         """sqlite 패키지 미설치 시 MemorySaver로 대체."""
         from langgraph.checkpoint.memory import MemorySaver
+
         config = CLIConfig(checkpointer_backend="sqlite")
         cp = _create_checkpointer(config)
         assert isinstance(cp, MemorySaver)
@@ -145,9 +146,11 @@ class TestCLISession:
 
     def test_skill_registry_custom(self):
         registry = SkillRegistry()
-        registry.register(Skill(
-            metadata=SkillMetadata(name="test_skill", description="테스트"),
-        ))
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(name="test_skill", description="테스트"),
+            )
+        )
         s = CLISession(skill_registry=registry)
         assert len(s.skills.list_skills()) == 1
 
@@ -157,6 +160,7 @@ class TestCLISession:
 
     def test_checkpointer_custom(self):
         from langgraph.checkpoint.memory import MemorySaver
+
         cp = MemorySaver()
         s = CLISession(checkpointer=cp)
         assert s.checkpointer is cp
@@ -185,9 +189,11 @@ class TestCLISession:
 
     def test_activate_skill_found(self):
         registry = SkillRegistry()
-        registry.register(Skill(
-            metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
-        ))
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
+            )
+        )
         s = CLISession(skill_registry=registry)
         assert s.activate_skill("code_review") == "code_review"
 
@@ -270,24 +276,32 @@ class TestCommands:
 
     def test_skill_list_with_skills(self):
         registry = SkillRegistry()
-        registry.register(Skill(
-            metadata=SkillMetadata(name="test_skill", description="테스트 스킬"),
-        ))
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(name="test_skill", description="테스트 스킬"),
+            )
+        )
         session = CLISession(skill_registry=registry)
         result = handle_command("/skill list", session, _make_renderer())
         assert result.handled
 
     def test_skill_activate_success(self):
         registry = SkillRegistry()
-        registry.register(Skill(
-            metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
-        ))
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(name="code_review", description="코드 리뷰"),
+            )
+        )
         session = CLISession(skill_registry=registry)
-        result = handle_command("/skill activate code_review", session, _make_renderer())
+        result = handle_command(
+            "/skill activate code_review", session, _make_renderer()
+        )
         assert result.handled
 
     def test_skill_activate_not_found(self):
-        result = handle_command("/skill activate nonexistent", CLISession(), _make_renderer())
+        result = handle_command(
+            "/skill activate nonexistent", CLISession(), _make_renderer()
+        )
         assert result.handled
 
     def test_skill_activate_no_name(self):
@@ -325,7 +339,9 @@ class TestCommands:
 class TestBuildInputState:
     def test_coding_assistant_state(self):
         session = CLISession()
-        state = _build_input_state("coding_assistant", "피보나치 함수 작성해줘", session)
+        state = _build_input_state(
+            "coding_assistant", "피보나치 함수 작성해줘", session
+        )
         assert len(state["messages"]) == 1
         assert state["messages"][0].content == "피보나치 함수 작성해줘"
         assert state["iteration"] == 0
@@ -345,16 +361,20 @@ class TestBuildInputState:
 
     def test_coding_with_semantic_memory(self):
         session = CLISession()
-        session.memory.put(MemoryItem(
-            type=MemoryType.SEMANTIC,
-            content="프로젝트는 PEP 8 스타일 가이드를 따른다",
-            tags=["convention"],
-        ))
-        session.memory.put(MemoryItem(
-            type=MemoryType.SEMANTIC,
-            content="모든 함수에 타입 힌트를 추가해야 한다",
-            tags=["convention"],
-        ))
+        session.memory.put(
+            MemoryItem(
+                type=MemoryType.SEMANTIC,
+                content="프로젝트는 PEP 8 스타일 가이드를 따른다",
+                tags=["convention"],
+            )
+        )
+        session.memory.put(
+            MemoryItem(
+                type=MemoryType.SEMANTIC,
+                content="모든 함수에 타입 힌트를 추가해야 한다",
+                tags=["convention"],
+            )
+        )
         state = _build_input_state("coding_assistant", "함수 작성", session)
         assert "semantic_context" in state
         assert len(state["semantic_context"]) == 2
@@ -369,20 +389,24 @@ class TestBuildInputState:
 
     def test_coding_with_skill_context(self):
         registry = SkillRegistry()
-        registry.register(Skill(
-            metadata=SkillMetadata(
-                name="code_review",
-                description="코드 리뷰 수행",
-                tags=["review", "quality"],
-            ),
-        ))
-        registry.register(Skill(
-            metadata=SkillMetadata(
-                name="test_gen",
-                description="테스트 코드 자동 생성",
-                tags=["test"],
-            ),
-        ))
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(
+                    name="code_review",
+                    description="코드 리뷰 수행",
+                    tags=["review", "quality"],
+                ),
+            )
+        )
+        registry.register(
+            Skill(
+                metadata=SkillMetadata(
+                    name="test_gen",
+                    description="테스트 코드 자동 생성",
+                    tags=["test"],
+                ),
+            )
+        )
         session = CLISession(skill_registry=registry)
         state = _build_input_state("coding_assistant", "함수 작성", session)
         assert "skill_context" in state
@@ -431,13 +455,26 @@ class TestBuildInputState:
         """retrieve_skills limit=3 으로 최대 3개 스킬만 주입되는지 확인."""
         session = CLISession()
         # 서로 다른 코드 패턴을 4개 이상 축적
-        for i, (code, desc) in enumerate([
-            ("def func_a(): return 'a' * 100", "함수 A 생성"),
-            ("class Builder:\n    def build(self): return 'built_item'", "빌더 클래스 생성"),
-            ("async def fetch_data(url): return await client.get(url)", "비동기 데이터 조회"),
-            ("def parse_csv(path):\n    import csv\n    return list(csv.reader(open(path)))", "CSV 파싱"),
-        ]):
-            session.memory.accumulate_skill(code=code, description=desc, tags=["python"])
+        for i, (code, desc) in enumerate(
+            [
+                ("def func_a(): return 'a' * 100", "함수 A 생성"),
+                (
+                    "class Builder:\n    def build(self): return 'built_item'",
+                    "빌더 클래스 생성",
+                ),
+                (
+                    "async def fetch_data(url): return await client.get(url)",
+                    "비동기 데이터 조회",
+                ),
+                (
+                    "def parse_csv(path):\n    import csv\n    return list(csv.reader(open(path)))",
+                    "CSV 파싱",
+                ),
+            ]
+        ):
+            session.memory.accumulate_skill(
+                code=code, description=desc, tags=["python"]
+            )
         state = _build_input_state("coding_assistant", "함수 작성", session)
         assert "procedural_skills" in state
         assert len(state["procedural_skills"]) <= 3
@@ -487,7 +524,11 @@ class TestExtractResponse:
     def test_coding_with_code_and_fail(self):
         data = {
             "generated_code": "def fib(n): ...",
-            "verify_result": {"passed": False, "issues": ["타입 힌트 누락"], "suggestions": []},
+            "verify_result": {
+                "passed": False,
+                "issues": ["타입 힌트 누락"],
+                "suggestions": [],
+            },
         }
         resp = _extract_response("coding_assistant", data)
         assert "검증 이슈" in resp
@@ -517,7 +558,10 @@ class TestExtractResponse:
         assert resp == "검색 결과입니다."
 
     def test_orchestrator_with_agent_response(self):
-        data = {"selected_agent": "coding_assistant", "agent_response": "코드 생성 완료"}
+        data = {
+            "selected_agent": "coding_assistant",
+            "agent_response": "코드 생성 완료",
+        }
         resp = _extract_response("orchestrator", data)
         assert "[coding_assistant]" in resp
         assert "코드 생성 완료" in resp
@@ -549,7 +593,11 @@ class TestGetOrCreateAgent:
         renderer = _make_renderer()
         fake_agent = MagicMock(spec=["graph"])
 
-        with patch("youngs75_a2a.cli.app._create_agent", new_callable=AsyncMock, return_value=fake_agent):
+        with patch(
+            "youngs75_a2a.cli.app._create_agent",
+            new_callable=AsyncMock,
+            return_value=fake_agent,
+        ):
             result = await _get_or_create_agent(session, renderer)
 
         assert result is fake_agent
@@ -560,7 +608,11 @@ class TestGetOrCreateAgent:
         session = CLISession()
         renderer = _make_renderer()
 
-        with patch("youngs75_a2a.cli.app._create_agent", new_callable=AsyncMock, side_effect=RuntimeError("연결 실패")):
+        with patch(
+            "youngs75_a2a.cli.app._create_agent",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("연결 실패"),
+        ):
             result = await _get_or_create_agent(session, renderer)
 
         assert result is None
@@ -578,17 +630,39 @@ class TestRunAgentTurn:
 
         async def fake_astream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "def fib(n): ...", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={
+                    "output": {
+                        "generated_code": "def fib(n): ...",
+                        "messages": [ai_msg],
+                    }
+                },
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": [], "suggestions": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={
+                    "output": {
+                        "verify_result": {
+                            "passed": True,
+                            "issues": [],
+                            "suggestions": [],
+                        }
+                    }
+                },
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -612,15 +686,24 @@ class TestRunAgentTurn:
 
         async def fake_astream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "react_agent", node="react_agent")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="Hello")},
-                              node="react_agent")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content=" World")},
-                              node="react_agent")
-            yield _make_event("on_chain_end", "react_agent",
-                              data={"output": {"messages": [ai_msg]}},
-                              node="react_agent")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="Hello")},
+                node="react_agent",
+            )
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content=" World")},
+                node="react_agent",
+            )
+            yield _make_event(
+                "on_chain_end",
+                "react_agent",
+                data={"output": {"messages": [ai_msg]}},
+                node="react_agent",
+            )
 
         fake_graph.astream_events = fake_astream_events
         session.switch_agent("simple_react")
@@ -641,7 +724,7 @@ class TestRunAgentTurn:
 
         async def failing_astream_events(input_state, config=None, version="v2"):
             raise RuntimeError("LLM API 오류")
-            yield  # noqa: unreachable — async generator 시그니처 유지
+            yield  # noqa: F841 — async generator 시그니처 유지
 
         fake_graph.astream_events = failing_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -658,7 +741,11 @@ class TestRunAgentTurn:
         session = CLISession()
         renderer = _make_renderer()
 
-        with patch("youngs75_a2a.cli.app._create_agent", new_callable=AsyncMock, side_effect=RuntimeError("초기화 실패")):
+        with patch(
+            "youngs75_a2a.cli.app._create_agent",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("초기화 실패"),
+        ):
             await _run_agent_turn("test", session, renderer)
 
         # user 메시지만 추가
@@ -671,6 +758,7 @@ class TestRunAgentTurn:
 class TestOrchestratorCLI:
     def test_orchestrator_in_available_agents(self):
         from youngs75_a2a.cli.commands import AVAILABLE_AGENTS
+
         assert "orchestrator" in AVAILABLE_AGENTS
 
     def test_agent_switch_to_orchestrator(self):
@@ -693,8 +781,12 @@ class TestOrchestratorCLI:
 class TestEpisodicMemory:
     def test_episodic_memory_saved_after_turn(self):
         session = CLISession()
-        _save_episodic_memory(session, "피보나치 함수 작성", "코드 생성 완료", passed=True)
-        items = session.memory.list_by_type(MemoryType.EPISODIC, session_id=session.session_id)
+        _save_episodic_memory(
+            session, "피보나치 함수 작성", "코드 생성 완료", passed=True
+        )
+        items = session.memory.list_by_type(
+            MemoryType.EPISODIC, session_id=session.session_id
+        )
         assert len(items) == 1
         assert "passed" in items[0].content
         assert "피보나치" in items[0].content
@@ -702,7 +794,9 @@ class TestEpisodicMemory:
     def test_episodic_memory_failed_has_warning_tag(self):
         session = CLISession()
         _save_episodic_memory(session, "버그 수정", "타입 오류 발생", passed=False)
-        items = session.memory.list_by_type(MemoryType.EPISODIC, session_id=session.session_id)
+        items = session.memory.list_by_type(
+            MemoryType.EPISODIC, session_id=session.session_id
+        )
         assert len(items) == 1
         assert "주의" in items[0].tags
         assert "[주의] failed" in items[0].content
@@ -748,17 +842,26 @@ class TestEpisodicMemory:
 
         async def fake_astream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "code", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"generated_code": "code", "messages": [ai_msg]}},
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -766,7 +869,9 @@ class TestEpisodicMemory:
 
         await _run_agent_turn("함수 작성", session, renderer)
 
-        items = session.memory.list_by_type(MemoryType.EPISODIC, session_id=session.session_id)
+        items = session.memory.list_by_type(
+            MemoryType.EPISODIC, session_id=session.session_id
+        )
         assert len(items) == 1
         assert "passed" in items[0].content
 
@@ -784,7 +889,11 @@ class TestProceduralMemoryCLI:
         renderer = _make_renderer()
         fake_agent = MagicMock(spec=["graph"])
 
-        with patch("youngs75_a2a.cli.app._create_agent", new_callable=AsyncMock, return_value=fake_agent) as mock_create:
+        with patch(
+            "youngs75_a2a.cli.app._create_agent",
+            new_callable=AsyncMock,
+            return_value=fake_agent,
+        ) as mock_create:
             await _get_or_create_agent(session, renderer)
             mock_create.assert_called_once_with(
                 "coding_assistant",
@@ -830,17 +939,31 @@ class TestProceduralMemoryCLI:
         async def fake_astream_events(input_state, config=None, version="v2"):
             captured_input_state.update(input_state)
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "def sort(arr): ...", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={
+                    "output": {
+                        "generated_code": "def sort(arr): ...",
+                        "messages": [ai_msg],
+                    }
+                },
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -886,25 +1009,42 @@ class TestTokenStreamingIntegration:
         async def fake_astream_events(input_state, config=None, version="v2"):
             # parse 노드
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             # execute 노드 — 토큰 스트리밍
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="def ")},
-                              node="execute_code")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="hello():")},
-                              node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "def hello():", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="def ")},
+                node="execute_code",
+            )
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="hello():")},
+                node="execute_code",
+            )
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={
+                    "output": {"generated_code": "def hello():", "messages": [ai_msg]}
+                },
+                node="execute_code",
+            )
             # verify 노드
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -933,38 +1073,63 @@ class TestTokenStreamingIntegration:
         # tool_call을 포함한 AI 메시지
         tool_ai_msg = MagicMock(spec=AIMessage)
         tool_ai_msg.content = ""
-        tool_ai_msg.tool_calls = [{"name": "read_file", "args": {"path": "test.py"}, "id": "tc1"}]
+        tool_ai_msg.tool_calls = [
+            {"name": "read_file", "args": {"path": "test.py"}, "id": "tc1"}
+        ]
 
         final_ai_msg = AIMessage(content="완료된 코드입니다.")
 
         async def fake_astream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             # 첫 번째 execute — 도구 호출 결정
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"messages": [tool_ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"messages": [tool_ai_msg]}},
+                node="execute_code",
+            )
             # tools 노드
             yield _make_event("on_chain_start", "execute_tools", node="execute_tools")
-            yield _make_event("on_chain_end", "execute_tools",
-                              data={"output": {"messages": []}},
-                              node="execute_tools")
+            yield _make_event(
+                "on_chain_end",
+                "execute_tools",
+                data={"output": {"messages": []}},
+                node="execute_tools",
+            )
             # 두 번째 execute — 실제 코드 생성 + 스트리밍
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="result = 42")},
-                              node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "result = 42", "messages": [final_ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="result = 42")},
+                node="execute_code",
+            )
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={
+                    "output": {
+                        "generated_code": "result = 42",
+                        "messages": [final_ai_msg],
+                    }
+                },
+                node="execute_code",
+            )
             # verify
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fake_astream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -989,20 +1154,32 @@ class TestTokenStreamingIntegration:
         async def fake_astream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
             # 빈 content 청크
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="")},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="")},
+                node="execute_code",
+            )
             # None content 청크 (chunk 없음)
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": None},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": None},
+                node="execute_code",
+            )
             # 정상 content 청크
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="결과 코드")},
-                              node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "결과 코드", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="결과 코드")},
+                node="execute_code",
+            )
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"generated_code": "결과 코드", "messages": [ai_msg]}},
+                node="execute_code",
+            )
 
         fake_graph.astream_events = fake_astream_events
         session.switch_agent("simple_react")
@@ -1026,9 +1203,12 @@ class TestTokenStreamingIntegration:
 
         async def failing_midstream(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="partial ")},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="partial ")},
+                node="execute_code",
+            )
             raise RuntimeError("연결 끊김")
 
         fake_graph.astream_events = failing_midstream
@@ -1053,18 +1233,27 @@ class TestTokenStreamingIntegration:
 
         async def no_stream_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
             # 토큰 스트리밍 없이 바로 chain_end
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "x = 1", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"generated_code": "x = 1", "messages": [ai_msg]}},
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = no_stream_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -1090,7 +1279,11 @@ class TestCheckpointerIntegration:
         renderer = _make_renderer()
         fake_agent = MagicMock(spec=["graph"])
 
-        with patch("youngs75_a2a.cli.app._create_agent", new_callable=AsyncMock, return_value=fake_agent) as mock_create:
+        with patch(
+            "youngs75_a2a.cli.app._create_agent",
+            new_callable=AsyncMock,
+            return_value=fake_agent,
+        ) as mock_create:
             await _get_or_create_agent(session, renderer)
             mock_create.assert_called_once_with(
                 "coding_assistant",
@@ -1110,9 +1303,12 @@ class TestCheckpointerIntegration:
 
         async def capture_config(input_state, config=None, version="v2"):
             captured_config.update(config or {})
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"messages": [ai_msg]}},
+                node="execute_code",
+            )
 
         fake_graph.astream_events = capture_config
         fake_agent = MagicMock(graph=fake_graph)
@@ -1137,9 +1333,13 @@ class TestCheckpointerIntegration:
             async def capture(input_state, config=None, version="v2"):
                 configs.append(config or {})
                 ai_msg = AIMessage(content="응답")
-                yield _make_event("on_chain_end", "react_agent",
-                                  data={"output": {"messages": [ai_msg]}},
-                                  node="react_agent")
+                yield _make_event(
+                    "on_chain_end",
+                    "react_agent",
+                    data={"output": {"messages": [ai_msg]}},
+                    node="react_agent",
+                )
+
             return capture
 
         for sess in [session1, session2]:
@@ -1177,9 +1377,12 @@ class TestCheckpointerIntegration:
             nonlocal turn_count
             msg = ai_msgs[turn_count]
             turn_count += 1
-            yield _make_event("on_chain_end", "react_agent",
-                              data={"output": {"messages": [msg]}},
-                              node="react_agent")
+            yield _make_event(
+                "on_chain_end",
+                "react_agent",
+                data={"output": {"messages": [msg]}},
+                node="react_agent",
+            )
 
         session.switch_agent("simple_react")
         fake_graph = MagicMock()
@@ -1232,23 +1435,48 @@ class TestStreamingCheckpointerE2E:
             captured_state.update(input_state)
             # parse
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             # execute + 스트리밍
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
             for token in ["def ", "sort", "(arr)", ":\n", "    ", "return sorted(arr)"]:
-                yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                                  data={"chunk": AIMessageChunk(content=token)},
-                                  node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "def sort(arr):\n    return sorted(arr)", "messages": [ai_msg]}},
-                              node="execute_code")
+                yield _make_event(
+                    "on_chat_model_stream",
+                    "ChatOpenAI",
+                    data={"chunk": AIMessageChunk(content=token)},
+                    node="execute_code",
+                )
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={
+                    "output": {
+                        "generated_code": "def sort(arr):\n    return sorted(arr)",
+                        "messages": [ai_msg],
+                    }
+                },
+                node="execute_code",
+            )
             # verify
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": [], "suggestions": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={
+                    "output": {
+                        "verify_result": {
+                            "passed": True,
+                            "issues": [],
+                            "suggestions": [],
+                        }
+                    }
+                },
+                node="verify_result",
+            )
 
         fake_graph.astream_events = full_pipeline_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -1277,7 +1505,8 @@ class TestStreamingCheckpointerE2E:
 
         # 5. Episodic 메모리가 저장됨
         ep_items = session.memory.list_by_type(
-            MemoryType.EPISODIC, session_id=session.session_id,
+            MemoryType.EPISODIC,
+            session_id=session.session_id,
         )
         assert len(ep_items) == 1
         assert "passed" in ep_items[0].content
@@ -1300,20 +1529,32 @@ class TestStreamingCheckpointerE2E:
             turn_states.append(dict(input_state))
             ai_msg = AIMessage(content="코드 결과")
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chat_model_stream", "ChatOpenAI",
-                              data={"chunk": AIMessageChunk(content="코드 출력")},
-                              node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "x = 1", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chat_model_stream",
+                "ChatOpenAI",
+                data={"chunk": AIMessageChunk(content="코드 출력")},
+                node="execute_code",
+            )
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"generated_code": "x = 1", "messages": [ai_msg]}},
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": True, "issues": []}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={"output": {"verify_result": {"passed": True, "issues": []}}},
+                node="verify_result",
+            )
 
         fake_graph.astream_events = events_factory
         fake_agent = MagicMock(graph=fake_graph)
@@ -1338,7 +1579,8 @@ class TestStreamingCheckpointerE2E:
         # 히스토리 및 episodic 누적 확인
         assert session.info.message_count == 4
         ep_items = session.memory.list_by_type(
-            MemoryType.EPISODIC, session_id=session.session_id,
+            MemoryType.EPISODIC,
+            session_id=session.session_id,
         )
         assert len(ep_items) == 2
 
@@ -1352,17 +1594,34 @@ class TestStreamingCheckpointerE2E:
 
         async def fail_verify_events(input_state, config=None, version="v2"):
             yield _make_event("on_chain_start", "parse_request", node="parse_request")
-            yield _make_event("on_chain_end", "parse_request",
-                              data={"output": {"parse_result": {"task_type": "generate"}}},
-                              node="parse_request")
+            yield _make_event(
+                "on_chain_end",
+                "parse_request",
+                data={"output": {"parse_result": {"task_type": "generate"}}},
+                node="parse_request",
+            )
             yield _make_event("on_chain_start", "execute_code", node="execute_code")
-            yield _make_event("on_chain_end", "execute_code",
-                              data={"output": {"generated_code": "bad code", "messages": [ai_msg]}},
-                              node="execute_code")
+            yield _make_event(
+                "on_chain_end",
+                "execute_code",
+                data={"output": {"generated_code": "bad code", "messages": [ai_msg]}},
+                node="execute_code",
+            )
             yield _make_event("on_chain_start", "verify_result", node="verify_result")
-            yield _make_event("on_chain_end", "verify_result",
-                              data={"output": {"verify_result": {"passed": False, "issues": ["타입 오류"], "suggestions": ["타입 힌트 추가"]}}},
-                              node="verify_result")
+            yield _make_event(
+                "on_chain_end",
+                "verify_result",
+                data={
+                    "output": {
+                        "verify_result": {
+                            "passed": False,
+                            "issues": ["타입 오류"],
+                            "suggestions": ["타입 힌트 추가"],
+                        }
+                    }
+                },
+                node="verify_result",
+            )
 
         fake_graph.astream_events = fail_verify_events
         fake_agent = MagicMock(graph=fake_graph)
@@ -1371,7 +1630,8 @@ class TestStreamingCheckpointerE2E:
         await _run_agent_turn("코드 작성", session, renderer)
 
         ep_items = session.memory.list_by_type(
-            MemoryType.EPISODIC, session_id=session.session_id,
+            MemoryType.EPISODIC,
+            session_id=session.session_id,
         )
         assert len(ep_items) == 1
         assert "주의" in ep_items[0].tags
@@ -1384,13 +1644,18 @@ class TestStreamingCheckpointerE2E:
 class TestEvalCommands:
     def test_eval_command_handled(self):
         mock_result = EvalResult(success=False, error_message="테스트 환경")
-        with patch("youngs75_a2a.cli.eval_runner._run_evaluation_sync", return_value=mock_result):
+        with patch(
+            "youngs75_a2a.cli.eval_runner._run_evaluation_sync",
+            return_value=mock_result,
+        ):
             result = handle_command("/eval", CLISession(), _make_renderer())
         assert result.handled
 
     def test_eval_status_command_handled(self):
-        with patch("youngs75_a2a.cli.commands.load_last_eval_results",
-                    return_value=EvalResult(success=False, error_message="결과 없음")):
+        with patch(
+            "youngs75_a2a.cli.commands.load_last_eval_results",
+            return_value=EvalResult(success=False, error_message="결과 없음"),
+        ):
             result = handle_command("/eval status", CLISession(), _make_renderer())
         assert result.handled
 
@@ -1399,9 +1664,13 @@ class TestEvalCommands:
         assert result.handled
 
     def test_eval_remediate_status_command_handled(self):
-        with patch("youngs75_a2a.cli.commands.load_last_remediation_report",
-                    return_value=RemediationResult(success=False, error_message="리포트 없음")):
-            result = handle_command("/eval remediate status", CLISession(), _make_renderer())
+        with patch(
+            "youngs75_a2a.cli.commands.load_last_remediation_report",
+            return_value=RemediationResult(success=False, error_message="리포트 없음"),
+        ):
+            result = handle_command(
+                "/eval remediate status", CLISession(), _make_renderer()
+            )
         assert result.handled
 
 
@@ -1416,7 +1685,10 @@ class TestEvalRunner:
 
     def test_format_success(self):
         result = EvalResult(
-            success=True, total=3, passed=2, failed=1,
+            success=True,
+            total=3,
+            passed=2,
+            failed=1,
             results=[
                 {"id": "a1", "input": "질문1", "scores": {"m": 0.9}, "passed": True},
                 {"id": "a2", "input": "질문2", "scores": {"m": 0.8}, "passed": True},
@@ -1433,8 +1705,10 @@ class TestEvalRunner:
         assert "파일 없음" in format_eval_summary(result)
 
     def test_load_missing_file(self):
-        with patch("youngs75_a2a.cli.eval_runner._DEFAULT_RESULTS_FILE",
-                    Path("/nonexistent/eval_results.json")):
+        with patch(
+            "youngs75_a2a.cli.eval_runner._DEFAULT_RESULTS_FILE",
+            Path("/nonexistent/eval_results.json"),
+        ):
             result = load_last_eval_results()
         assert not result.success
 
@@ -1461,7 +1735,9 @@ class TestEvalRunner:
 
 class TestRemediationRunner:
     def test_remediation_result_success(self):
-        result = RemediationResult(success=True, report="dummy", report_path="/tmp/r.json")
+        result = RemediationResult(
+            success=True, report="dummy", report_path="/tmp/r.json"
+        )
         assert result.success
         assert result.report == "dummy"
 
@@ -1487,8 +1763,9 @@ class TestRemediationRunner:
         assert "비어있습니다" in format_remediation_summary(result)
 
     def test_load_missing_report(self):
-        with patch("youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR",
-                    Path("/nonexistent")):
+        with patch(
+            "youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR", Path("/nonexistent")
+        ):
             result = load_last_remediation_report()
         assert not result.success
 
@@ -1512,10 +1789,14 @@ class TestRemediationRunner:
             report_dir = tmp_path.parent
             with patch("youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR", report_dir):
                 # 파일명을 맞추기 위해 직접 경로로 테스트
-                from youngs75_a2a.cli.eval_runner import load_last_remediation_report as _load
+                from youngs75_a2a.cli.eval_runner import (
+                    load_last_remediation_report as _load,
+                )
+
                 # load_last_remediation_report는 remediation_report.json 파일명을 기대하므로
                 # 임시 파일 대신 remediation_report.json으로 복사
                 import shutil
+
                 report_path = report_dir / "remediation_report.json"
                 shutil.copy(tmp_path, report_path)
                 result = _load()
@@ -1532,6 +1813,7 @@ class TestRemediationRunner:
 class TestPromptRegistry:
     def test_initial_prompts_registered(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         assert "parse" in registry.list_prompts()
         assert "execute" in registry.list_prompts()
@@ -1539,40 +1821,47 @@ class TestPromptRegistry:
 
     def test_get_prompt_latest(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         prompt = registry.get_prompt("parse")
         assert "요청을 분석" in prompt
 
     def test_get_prompt_v1(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         prompt = registry.get_prompt("parse", version="v1")
         assert "요청을 분석" in prompt
 
     def test_get_prompt_invalid_name(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         with pytest.raises(KeyError):
             registry.get_prompt("nonexistent")
 
     def test_get_prompt_invalid_version(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         with pytest.raises(ValueError):
             registry.get_prompt("parse", version="v99")
 
     def test_current_version(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         assert registry.get_current_version("parse") == "v1"
 
     def test_list_versions(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         assert registry.list_versions("execute") == ["v1"]
 
     def test_apply_remediation(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
 
         changes = [
@@ -1598,6 +1887,7 @@ class TestPromptRegistry:
 
     def test_apply_remediation_multiple(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
 
         changes = [
@@ -1621,6 +1911,7 @@ class TestPromptRegistry:
 
     def test_apply_remediation_unknown_target(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
 
         changes = [
@@ -1636,6 +1927,7 @@ class TestPromptRegistry:
 
     def test_apply_remediation_name_mapping(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
 
         changes = [
@@ -1652,6 +1944,7 @@ class TestPromptRegistry:
 
     def test_execute_prompt_contains_citation_guide(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         prompt = registry.get_prompt("execute")
         assert "인용 형식 규칙" in prompt
@@ -1660,6 +1953,7 @@ class TestPromptRegistry:
 
     def test_verify_prompt_contains_citation_quality_check(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+
         registry = PromptRegistry()
         prompt = registry.get_prompt("verify")
         assert "인용 품질" in prompt
@@ -1670,6 +1964,7 @@ class TestPromptRegistry:
             RESEARCHER_SYSTEM_PROMPT,
             FINAL_REPORT_PROMPT,
         )
+
         assert "인용 형식 규칙" in RESEARCHER_SYSTEM_PROMPT
         assert "출처 인용 형식" in FINAL_REPORT_PROMPT
         assert "참고 자료" in FINAL_REPORT_PROMPT
@@ -1678,6 +1973,7 @@ class TestPromptRegistry:
         from youngs75_a2a.eval_pipeline.loop2_evaluation.prompts import (
             CITATION_QUALITY_PROMPT,
         )
+
         assert "Code-specific citation policy" in CITATION_QUALITY_PROMPT
         assert "file path and line number" in CITATION_QUALITY_PROMPT
 
@@ -1686,6 +1982,7 @@ class TestPromptRegistry:
             get_prompt_registry,
             reset_prompt_registry,
         )
+
         reset_prompt_registry()
         r1 = get_prompt_registry()
         r2 = get_prompt_registry()

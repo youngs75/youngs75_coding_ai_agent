@@ -5,7 +5,7 @@ A2A AgentExecutor 구현 - 2가지 버전
 2. LGAgentExecutor: LangGraph CompiledStateGraph를 A2A로 래핑
 """
 
-from typing import Any, AsyncIterator, Callable
+from typing import Any, Callable
 import asyncio
 import logging
 from langgraph.graph.state import CompiledStateGraph
@@ -15,8 +15,8 @@ from langchain_core.runnables import RunnableConfig
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import InternalError, Part, TaskState, TextPart, DataPart, TaskNotFoundError
-from a2a.utils import new_agent_text_message, new_task, get_data_parts
+from a2a.types import InternalError, Part, TaskState, TextPart, TaskNotFoundError
+from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,8 @@ class BaseAgentExecutor(AgentExecutor):
                 )
                 timeout_msg = new_agent_text_message(
                     f"실행 시간 초과 ({self._execution_timeout}초)",
-                    task.context_id, task.id,
+                    task.context_id,
+                    task.id,
                 )
                 await updater.failed(message=timeout_msg)
                 return
@@ -171,6 +172,7 @@ class BaseAgentExecutor(AgentExecutor):
 # ---------------------------------------------------------------------------
 # 스트리밍: graph.astream()으로 노드 단위 스트리밍
 # 취소:     스트림 루프 폴링 + asyncio.Task.cancel() 하이브리드
+
 
 class LGAgentExecutor(AgentExecutor):
     """LangGraph CompiledStateGraph를 A2A로 래핑하는 Executor.
@@ -284,7 +286,7 @@ class LGAgentExecutor(AgentExecutor):
                     if partial and partial != accumulated_text:
                         # 증분(delta)만 전송
                         if partial.startswith(accumulated_text):
-                            delta = partial[len(accumulated_text):]
+                            delta = partial[len(accumulated_text) :]
                         else:
                             delta = partial
                         accumulated_text = partial
@@ -314,7 +316,8 @@ class LGAgentExecutor(AgentExecutor):
                 )
                 timeout_msg = new_agent_text_message(
                     f"실행 시간 초과 ({self._execution_timeout}초)",
-                    task.context_id, task.id,
+                    task.context_id,
+                    task.id,
                 )
                 await updater.failed(message=timeout_msg)
                 return

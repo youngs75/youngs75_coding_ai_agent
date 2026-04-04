@@ -19,7 +19,9 @@ async def final_report_generation(state: AgentState, config: RunnableConfig) -> 
     notes = state.get("notes") or []
     raw_notes = state.get("raw_notes") or []
     all_findings = notes + raw_notes
-    findings_text = "\n\n---\n\n".join(all_findings) if all_findings else "연구 결과가 없습니다."
+    findings_text = (
+        "\n\n---\n\n".join(all_findings) if all_findings else "연구 결과가 없습니다."
+    )
 
     prompt = FINAL_REPORT_PROMPT.format(
         date=get_today_str(),
@@ -28,10 +30,12 @@ async def final_report_generation(state: AgentState, config: RunnableConfig) -> 
     )
 
     try:
-        response = await llm.ainvoke([
-            SystemMessage(content="당신은 전문 보고서 작성자입니다."),
-            HumanMessage(content=prompt),
-        ])
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content="당신은 전문 보고서 작성자입니다."),
+                HumanMessage(content=prompt),
+            ]
+        )
         return {"final_report": response.content}
     except Exception as e:
         logger.error(f"최종 보고서 생성 실패: {e}")

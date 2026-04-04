@@ -88,7 +88,9 @@ class SkillLoader:
             if ref_path.exists():
                 content = ref_path.read_text(encoding="utf-8")
             updated_refs.append(
-                SkillReference(path=ref.path, description=ref.description, content=content)
+                SkillReference(
+                    path=ref.path, description=ref.description, content=content
+                )
             )
         return skill.model_copy(update={"references": updated_refs})
 
@@ -120,6 +122,7 @@ class SkillLoader:
         """
         try:
             import yaml
+
             return yaml.safe_load(raw)
         except ImportError:
             # PyYAML 없으면 JSON 폴백 시도

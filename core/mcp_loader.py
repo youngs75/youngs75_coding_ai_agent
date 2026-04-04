@@ -75,7 +75,9 @@ class MCPToolLoader:
                     )
                     return self._tools
                 except Exception as e:
-                    logger.warning(f"MCP 도구 로딩 시도 {attempt + 1}/{self._max_retries} 실패: {e}")
+                    logger.warning(
+                        f"MCP 도구 로딩 시도 {attempt + 1}/{self._max_retries} 실패: {e}"
+                    )
                     if attempt < self._max_retries - 1:
                         await asyncio.sleep(1.0 * (attempt + 1))
 

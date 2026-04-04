@@ -31,8 +31,8 @@ from a2a.types import MessageSendParams, SendMessageRequest
 
 AGENTS = {
     "simple": {"url": "http://localhost:18081", "name": "SimpleReAct"},
-    "deep":   {"url": "http://localhost:18082", "name": "DeepResearch"},
-    "a2a":    {"url": "http://localhost:18083", "name": "DeepResearchA2A"},
+    "deep": {"url": "http://localhost:18082", "name": "DeepResearch"},
+    "a2a": {"url": "http://localhost:18083", "name": "DeepResearchA2A"},
 }
 
 
@@ -50,7 +50,7 @@ async def send_query(client: A2AClient, query: str) -> str:
         if hasattr(obj, "artifacts") and obj.artifacts:
             texts = []
             for artifact in obj.artifacts:
-                for part in (artifact.parts or []):
+                for part in artifact.parts or []:
                     root = getattr(part, "root", part)
                     if hasattr(root, "text") and root.text and len(root.text) > 10:
                         texts.append(root.text)
@@ -64,7 +64,9 @@ async def send_query(client: A2AClient, query: str) -> str:
 async def main():
     parser = argparse.ArgumentParser(description="A2A 대화형 클라이언트")
     parser.add_argument(
-        "--agent", choices=["simple", "deep", "a2a"], default="simple",
+        "--agent",
+        choices=["simple", "deep", "a2a"],
+        default="simple",
         help="연결할 에이전트: simple(18081), deep(18082), a2a(18083)",
     )
     args = parser.parse_args()
@@ -83,7 +85,7 @@ async def main():
             print(f"✓ {name} 연결 성공: {health}")
         except Exception as e:
             print(f"❌ {name}({url})에 연결할 수 없습니다: {e}")
-            print(f"   docker compose up -d 를 먼저 실행하세요.")
+            print("   docker compose up -d 를 먼저 실행하세요.")
             sys.exit(1)
 
     print()
@@ -128,7 +130,7 @@ async def main():
                     client = A2AClient(httpx_client=hc, url=current_url)
                     print(f"  → {current_name}({current_url})로 전환\n")
                 else:
-                    print(f"  사용법: /switch simple|deep|a2a\n")
+                    print("  사용법: /switch simple|deep|a2a\n")
                 continue
 
             if query == "/health":
@@ -144,13 +146,15 @@ async def main():
                     resp = await hc.get(f"{current_url}/.well-known/agent-card.json")
                     card = resp.json()
                     print(f"  📋 {card.get('name')} — {card.get('description')}")
-                    print(f"     streaming={card.get('capabilities', {}).get('streaming')}\n")
+                    print(
+                        f"     streaming={card.get('capabilities', {}).get('streaming')}\n"
+                    )
                 except Exception as e:
                     print(f"  ❌ {e}\n")
                 continue
 
             # A2A 질의
-            print(f"  ⏳ 처리 중...")
+            print("  ⏳ 처리 중...")
             try:
                 response = await send_query(client, query)
                 print(f"\n🤖 [{current_name}] Agent:\n{response}\n")

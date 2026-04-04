@@ -15,6 +15,7 @@ class OrchestratorState(TypedDict):
     selected_agent: 라우팅 결정된 에이전트 이름
     agent_response: 하위 에이전트의 응답
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     selected_agent: Optional[str]
     agent_response: Optional[str]

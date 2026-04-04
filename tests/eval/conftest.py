@@ -42,7 +42,9 @@ def sample_golden_items() -> list[dict]:
             "id": "test002",
             "input": "가용성은 어떻게 측정하나요?",
             "expected_output": "가용성은 1 - (장애 시간 / 총 시간)으로 산출하고 월 단위로 보고합니다.",
-            "context": ["가용성: 1 - (장애 시간 / 총 시간)으로 산출하고 월 단위로 보고합니다."],
+            "context": [
+                "가용성: 1 - (장애 시간 / 총 시간)으로 산출하고 월 단위로 보고합니다."
+            ],
             "source_file": "00_sla.md",
             "synthetic_input_quality": 0.90,
             "approved": True,

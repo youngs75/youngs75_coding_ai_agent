@@ -19,12 +19,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
-from a2a.types import AgentCard, AgentSkill, SendMessageResponse
+from a2a.types import AgentCard, SendMessageResponse
 
 from .discovery import AgentCardEntry, AgentCardRegistry, DiscoveryResult
 from .resilience import (
@@ -45,10 +43,10 @@ logger = logging.getLogger(__name__)
 class RoutingMode(str, Enum):
     """라우팅 모드."""
 
-    SKILL_BASED = "skill_based"        # 스킬 매칭 기반
-    ROUND_ROBIN = "round_robin"        # 라운드 로빈
-    LEAST_LOADED = "least_loaded"      # 최소 부하
-    WEIGHTED = "weighted"              # 가중치 기반 (성능 + 비용)
+    SKILL_BASED = "skill_based"  # 스킬 매칭 기반
+    ROUND_ROBIN = "round_robin"  # 라운드 로빈
+    LEAST_LOADED = "least_loaded"  # 최소 부하
+    WEIGHTED = "weighted"  # 가중치 기반 (성능 + 비용)
 
 
 @dataclass
@@ -142,10 +140,7 @@ class TaskDelegator:
         try:
             response = await client.send_message(content)
             latency_ms = (time.time() - start_time) * 1000
-            logger.info(
-                f"태스크 위임 성공: {agent_name} ({url}) "
-                f"[{latency_ms:.0f}ms]"
-            )
+            logger.info(f"태스크 위임 성공: {agent_name} ({url}) [{latency_ms:.0f}ms]")
             return DelegationResult(
                 success=True,
                 agent_name=agent_name,
@@ -584,10 +579,7 @@ class AgentRouter:
         if not results:
             return []
 
-        targets = [
-            {"url": r.entry.url, "name": r.entry.card.name}
-            for r in results
-        ]
+        targets = [{"url": r.entry.url, "name": r.entry.card.name} for r in results]
         if max_agents > 0:
             targets = targets[:max_agents]
 

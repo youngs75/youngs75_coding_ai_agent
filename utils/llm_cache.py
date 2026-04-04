@@ -31,7 +31,7 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -216,9 +216,7 @@ class LLMCache:
         removed = 0
 
         with self._lock:
-            expired_keys = [
-                k for k, v in self._store.items() if now > v.expires_at
-            ]
+            expired_keys = [k for k, v in self._store.items() if now > v.expires_at]
             for k in expired_keys:
                 del self._store[k]
                 self._metrics.expirations += 1

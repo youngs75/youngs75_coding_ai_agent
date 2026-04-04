@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.calibration_cases import CalibrationCase
+from youngs75_a2a.eval_pipeline.loop2_evaluation.calibration_cases import (
+    CalibrationCase,
+)
 from youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer import (
     CaseScore,
     PromptEvaluation,
@@ -209,7 +211,9 @@ def test_load_langfuse_failure_hints_maps_metrics(tmp_path: Path):
     assert len(hints["response_completeness"]) == 1
     assert len(hints["citation_quality"]) == 1
     assert len(hints["safety"]) == 1
-    assert hints["response_completeness"][0]["source_metric"] == "eval.answer_completeness"
+    assert (
+        hints["response_completeness"][0]["source_metric"] == "eval.answer_completeness"
+    )
 
 
 def test_optimize_all_prompts_forwards_langfuse_hints(monkeypatch):

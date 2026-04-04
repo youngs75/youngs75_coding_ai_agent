@@ -6,7 +6,11 @@ from langchain_core.runnables import RunnableConfig
 
 from youngs75_a2a.agents.deep_research.config import ResearchConfig
 from youngs75_a2a.agents.deep_research.schemas import AgentState
-from youngs75_a2a.agents.deep_research.prompts import RESEARCH_BRIEF_PROMPT, SUPERVISOR_PROMPT, get_today_str
+from youngs75_a2a.agents.deep_research.prompts import (
+    RESEARCH_BRIEF_PROMPT,
+    SUPERVISOR_PROMPT,
+    get_today_str,
+)
 
 logger = logging.getLogger(__name__)
 

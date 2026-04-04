@@ -28,7 +28,9 @@ RAG, Agent, Custom 메트릭을 한곳에서 생성하고 관리합니다.
 
 from __future__ import annotations
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.agent_metrics import create_agent_metrics
+from youngs75_a2a.eval_pipeline.loop2_evaluation.agent_metrics import (
+    create_agent_metrics,
+)
 from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
     SafetyMetric,
     create_bias_metric,

@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import os
 import random
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # 테스트 대상 모듈을 scripts/ 디렉토리에서 직접 임포트하기 위해
 # sys.path 조작 대신 importlib 사용
-import importlib
 import sys
 from pathlib import Path
 
@@ -24,7 +23,7 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 # langfuse_demo 모듈 임포트
-import langfuse_demo as demo
+import langfuse_demo as demo  # noqa: E402
 
 
 # ── 시나리오 생성 테스트 ──────────────────────────────────
@@ -278,8 +277,7 @@ class TestSendTrace:
 
         # 스코어 이름 확인
         score_names = [
-            call_args.kwargs["name"]
-            for call_args in mock_trace.score.call_args_list
+            call_args.kwargs["name"] for call_args in mock_trace.score.call_args_list
         ]
         for expected_name in scenario.scores:
             assert expected_name in score_names
@@ -369,7 +367,7 @@ class TestPrintScenarioSummary:
 
 # ── setup_langfuse.py 유닛 테스트 ─────────────────────────
 
-import setup_langfuse
+import setup_langfuse  # noqa: E402
 
 
 class TestSetupLangfuseEnvValidation:
@@ -436,7 +434,9 @@ class TestSetupLangfuseHealthCheck:
         """서버 연결 실패 시 False를 반환합니다."""
         from urllib.error import URLError
 
-        with patch("setup_langfuse.urlopen", side_effect=URLError("Connection refused")):
+        with patch(
+            "setup_langfuse.urlopen", side_effect=URLError("Connection refused")
+        ):
             result = setup_langfuse.check_health(
                 "http://localhost:3100",
                 max_retries=2,
@@ -478,7 +478,7 @@ class TestSetupLangfuseLoadDotenv:
 # youngs75_a2a 패키지 설치 여부에 따라 조건부 실행
 _HAS_YOUNGS75 = True
 try:
-    from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+    from youngs75_a2a.eval_pipeline.observability.callback_handler import (  # noqa: F401
         AgentMetricsCollector as _AMC,
     )
 except ImportError:
@@ -540,8 +540,7 @@ class TestMetricsCollectorIntegration:
 
         # 값 검증
         calls_dict = {
-            c.kwargs["name"]: c.kwargs["value"]
-            for c in mock_score.call_args_list
+            c.kwargs["name"]: c.kwargs["value"] for c in mock_score.call_args_list
         }
         assert calls_dict["agent.total_tokens"] == 1310.0
         assert calls_dict["agent.prompt_tokens"] == 850.0
@@ -575,8 +574,7 @@ class TestMetricsCollectorIntegration:
             collector.push_to_langfuse(trace_id="demo-error-trace")
 
         calls_dict = {
-            c.kwargs["name"]: c.kwargs["value"]
-            for c in mock_score.call_args_list
+            c.kwargs["name"]: c.kwargs["value"] for c in mock_score.call_args_list
         }
         assert calls_dict["agent.error_count"] == 2.0
 

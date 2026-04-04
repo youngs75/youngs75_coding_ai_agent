@@ -11,7 +11,6 @@ import argparse
 import asyncio
 
 
-
 async def _main():
     parser = argparse.ArgumentParser(description="Full closed-loop demo")
     parser.add_argument("--num-goldens", type=int, default=5)
@@ -24,7 +23,9 @@ async def _main():
     # ── Loop 1: Dataset ──────────────────────────────────────
     print("\n[Loop 1] Dataset Generation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
+    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import (
+        build_golden_dataset,
+    )
 
     golden_items = build_golden_dataset(
         num_goldens=args.num_goldens,
@@ -39,7 +40,9 @@ async def _main():
     # ── Loop 2: Evaluation ───────────────────────────────────
     print("[Loop 2] Evaluation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import evaluate_golden_dataset
+    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+        evaluate_golden_dataset,
+    )
 
     eval_results = evaluate_golden_dataset(metric_categories=["rag", "custom"])
     passed = sum(1 for r in eval_results if r["passed"])
@@ -54,7 +57,9 @@ async def _main():
     # ── Loop 3: Remediation ──────────────────────────────────
     print("[Loop 3] Remediation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import run_remediation
+    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+        run_remediation,
+    )
 
     report = await run_remediation()
     print(f"  → Summary: {report.summary[:200]}")

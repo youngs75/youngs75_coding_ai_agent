@@ -54,9 +54,15 @@ def export_to_review_csv(
 
     # CSV 칼럼 정의
     fieldnames = [
-        "id", "input", "expected_output", "context",
-        "source_file", "synthetic_input_quality",
-        "approved", "feedback", "reviewer",
+        "id",
+        "input",
+        "expected_output",
+        "context",
+        "source_file",
+        "synthetic_input_quality",
+        "approved",
+        "feedback",
+        "reviewer",
     ]
 
     # 출력 디렉토리 생성
@@ -75,17 +81,19 @@ def export_to_review_csv(
             else:
                 context_str = str(context_list)
 
-            writer.writerow({
-                "id": item.get("id", ""),
-                "input": item.get("input", ""),
-                "expected_output": item.get("expected_output", ""),
-                "context": context_str,
-                "source_file": item.get("source_file", ""),
-                "synthetic_input_quality": item.get("synthetic_input_quality", 0.0),
-                # Human Review 필드: 리뷰어가 직접 채울 빈 칼럼
-                "approved": "",
-                "feedback": "",
-                "reviewer": "",
-            })
+            writer.writerow(
+                {
+                    "id": item.get("id", ""),
+                    "input": item.get("input", ""),
+                    "expected_output": item.get("expected_output", ""),
+                    "context": context_str,
+                    "source_file": item.get("source_file", ""),
+                    "synthetic_input_quality": item.get("synthetic_input_quality", 0.0),
+                    # Human Review 필드: 리뷰어가 직접 채울 빈 칼럼
+                    "approved": "",
+                    "feedback": "",
+                    "reviewer": "",
+                }
+            )
 
     return output_path

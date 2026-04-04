@@ -13,6 +13,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass

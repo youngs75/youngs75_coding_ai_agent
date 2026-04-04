@@ -25,7 +25,6 @@ from youngs75_a2a.core.model_tiers import (
     TierConfig,
     build_default_purpose_tiers,
     build_default_tiers,
-    create_chat_model,
     resolve_tier_config,
 )
 
@@ -95,10 +94,7 @@ class BaseAgentConfig(BaseModel):
     def from_runnable_config(cls, config: RunnableConfig) -> "BaseAgentConfig":
         """LangGraph RunnableConfig에서 설정을 추출한다."""
         configurable = (config or {}).get("configurable", {})
-        return cls(**{
-            k: v for k, v in configurable.items()
-            if k in cls.model_fields
-        })
+        return cls(**{k: v for k, v in configurable.items() if k in cls.model_fields})
 
     def to_langgraph_configurable(self) -> dict[str, Any]:
         """LangGraph configurable dict로 변환한다."""

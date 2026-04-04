@@ -62,8 +62,12 @@ def main():
         action="store_true",
         help="prefix score가 없는 trace도 결과에 포함",
     )
-    parser.add_argument("--output", type=str, default=None, help="모니터링 스냅샷 저장 경로")
-    parser.add_argument("--failed-output", type=str, default=None, help="실패 샘플 저장 경로")
+    parser.add_argument(
+        "--output", type=str, default=None, help="모니터링 스냅샷 저장 경로"
+    )
+    parser.add_argument(
+        "--failed-output", type=str, default=None, help="실패 샘플 저장 경로"
+    )
     args = parser.parse_args()
 
     if args.mode == "external-deepeval":

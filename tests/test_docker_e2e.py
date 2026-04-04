@@ -50,6 +50,7 @@ DOCKER_INTERNAL_ENDPOINTS: dict[str, str] = {
 
 # ─── 헬퍼 함수 ──────────────────────────────────────────
 
+
 async def _is_service_reachable(url: str, timeout: float = 2.0) -> bool:
     """서비스에 연결 가능한지 빠르게 확인한다."""
     try:
@@ -102,7 +103,9 @@ async def _get_agent_card(url: str) -> dict[str, Any] | None:
     return None
 
 
-async def _send_a2a_message(url: str, query: str, timeout: float = 60.0) -> dict[str, Any]:
+async def _send_a2a_message(
+    url: str, query: str, timeout: float = 60.0
+) -> dict[str, Any]:
     """A2A 프로토콜로 메시지를 보내고 응답을 받는다."""
     request_payload = {
         "jsonrpc": "2.0",
@@ -124,6 +127,7 @@ async def _send_a2a_message(url: str, query: str, timeout: float = 60.0) -> dict
 
 # ─── pytest 픽스처 ───────────────────────────────────────
 
+
 @pytest.fixture(scope="module")
 async def docker_available():
     """Docker 서비스가 실행 중인지 확인하는 모듈 레벨 픽스처."""
@@ -142,6 +146,7 @@ async def _skip_if_service_down(url: str, name: str):
 
 # ─── MCP 서비스 헬스체크 테스트 ──────────────────────────
 
+
 class TestMCPServiceHealth:
     """MCP 서버 3종의 접근성을 검증한다."""
 
@@ -152,12 +157,17 @@ class TestMCPServiceHealth:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{url}/mcp")
             # MCP 서버는 GET /mcp에 대해 응답 (405 또는 200)
-            assert resp.status_code in (200, 405), f"{name}: 예상치 못한 상태 {resp.status_code}"
+            assert resp.status_code in (200, 405), (
+                f"{name}: 예상치 못한 상태 {resp.status_code}"
+            )
 
-    @pytest.mark.parametrize("name,url", [
-        ("Tavily", "http://localhost:3001"),
-        ("Serper", "http://localhost:3002"),
-    ])
+    @pytest.mark.parametrize(
+        "name,url",
+        [
+            ("Tavily", "http://localhost:3001"),
+            ("Serper", "http://localhost:3002"),
+        ],
+    )
     async def test_mcp_with_env_keys(self, docker_available, name: str, url: str):
         """API 키가 필요한 MCP 서비스가 정상 기동되었는지 확인한다.
 
@@ -171,6 +181,7 @@ class TestMCPServiceHealth:
 
 # ─── Agent 서비스 헬스체크 테스트 ────────────────────────
 
+
 class TestAgentServiceHealth:
     """Agent 서버 3종의 /health 엔드포인트를 검증한다."""
 
@@ -183,7 +194,9 @@ class TestAgentServiceHealth:
         assert health.get("status") == "healthy", f"{name}: {health}"
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
-    async def test_agent_health_includes_metadata(self, docker_available, name: str, url: str):
+    async def test_agent_health_includes_metadata(
+        self, docker_available, name: str, url: str
+    ):
         """/health 응답에 agent 이름과 port 정보가 포함되는지 확인한다."""
         await _skip_if_service_down(url, name)
         health = await _get_health(url)
@@ -193,6 +206,7 @@ class TestAgentServiceHealth:
 
 
 # ─── AgentCard (A2A 프로토콜) 테스트 ────────────────────
+
 
 class TestAgentCard:
     """A2A AgentCard 조회 및 필수 필드 검증."""
@@ -205,7 +219,9 @@ class TestAgentCard:
         assert card is not None, f"{name}: AgentCard 조회 실패"
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
-    async def test_agent_card_required_fields(self, docker_available, name: str, url: str):
+    async def test_agent_card_required_fields(
+        self, docker_available, name: str, url: str
+    ):
         """AgentCard에 필수 필드(name, version, capabilities)가 있는지 확인한다."""
         await _skip_if_service_down(url, name)
         card = await _get_agent_card(url)
@@ -215,7 +231,9 @@ class TestAgentCard:
         assert "capabilities" in card, "capabilities 필드 누락"
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
-    async def test_agent_card_streaming_capability(self, docker_available, name: str, url: str):
+    async def test_agent_card_streaming_capability(
+        self, docker_available, name: str, url: str
+    ):
         """AgentCard의 streaming 설정이 boolean 값인지 확인한다."""
         await _skip_if_service_down(url, name)
         card = await _get_agent_card(url)
@@ -227,6 +245,7 @@ class TestAgentCard:
 
 # ─── A2A 프로토콜 요청/응답 테스트 ──────────────────────
 
+
 class TestA2AProtocol:
     """Agent 서비스에 A2A 프로토콜로 메시지를 전송하고 응답을 검증한다."""
 
@@ -234,7 +253,9 @@ class TestA2AProtocol:
     async def test_a2a_message_send(self, docker_available, name: str, url: str):
         """A2A message/send 호출이 유효한 JSON-RPC 응답을 반환하는지 확인한다."""
         await _skip_if_service_down(url, name)
-        result = await _send_a2a_message(url, "안녕하세요, 간단히 테스트입니다.", timeout=120.0)
+        result = await _send_a2a_message(
+            url, "안녕하세요, 간단히 테스트입니다.", timeout=120.0
+        )
         # JSON-RPC 응답 구조 확인
         assert "jsonrpc" in result, "jsonrpc 필드 누락"
         assert result["jsonrpc"] == "2.0"
@@ -252,11 +273,14 @@ class TestA2AProtocol:
         """DeepResearch 에이전트에 연구 질의가 정상 처리되는지 확인한다."""
         url = AGENT_SERVICES["DeepResearch"]
         await _skip_if_service_down(url, "DeepResearch")
-        result = await _send_a2a_message(url, "LLM이란 무엇인가 한 문장으로 설명해줘", timeout=120.0)
+        result = await _send_a2a_message(
+            url, "LLM이란 무엇인가 한 문장으로 설명해줘", timeout=120.0
+        )
         assert "result" in result, f"에러 응답: {result.get('error')}"
 
 
 # ─── CLI → Agent 연동 체인 테스트 ────────────────────────
+
 
 class TestCLIToAgentChain:
     """CLI 컨테이너에서 Agent 서비스로의 연동 체인을 검증한다.
@@ -266,7 +290,9 @@ class TestCLIToAgentChain:
     """
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
-    async def test_agent_accepts_cli_format_request(self, docker_available, name: str, url: str):
+    async def test_agent_accepts_cli_format_request(
+        self, docker_available, name: str, url: str
+    ):
         """CLI가 보내는 것과 동일한 형식의 A2A 요청을 Agent가 수락하는지 확인한다."""
         await _skip_if_service_down(url, name)
         # CLI에서 사용하는 A2AClient 형식과 동일한 요청
@@ -311,6 +337,7 @@ class TestCLIToAgentChain:
 
 # ─── Agent → MCP 서비스 체인 테스트 ─────────────────────
 
+
 class TestAgentToMCPChain:
     """Agent 서비스가 MCP 도구를 정상적으로 호출하는지 검증한다.
 
@@ -350,6 +377,7 @@ class TestAgentToMCPChain:
 
 # ─── 네트워크 연결성 테스트 ──────────────────────────────
 
+
 class TestNetworkConnectivity:
     """Docker 네트워크(youngs75_net) 내 서비스 간 연결성을 검증한다."""
 
@@ -379,6 +407,7 @@ class TestNetworkConnectivity:
 
 
 # ─── 에러 핸들링 테스트 ─────────────────────────────────
+
 
 class TestErrorHandling:
     """서비스 장애 시 graceful degradation을 검증한다."""
@@ -433,7 +462,9 @@ class TestErrorHandling:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 try:
                     resp = await client.get(f"{url}/health")
-                    assert resp.status_code == 200, f"{name}: /health 응답 지연 또는 실패"
+                    assert resp.status_code == 200, (
+                        f"{name}: /health 응답 지연 또는 실패"
+                    )
                 except httpx.TimeoutException:
                     pytest.fail(f"{name}: /health 응답 2초 초과")
 
@@ -445,6 +476,7 @@ class TestErrorHandling:
 
 
 # ─── Docker 설정 검증 테스트 (정적 분석) ────────────────
+
 
 class TestDockerConfigValidation:
     """docker-compose.yml 및 Dockerfile 설정의 정합성을 검증한다.
@@ -465,9 +497,15 @@ class TestDockerConfigValidation:
             config = yaml.safe_load(f)
 
         services = config.get("services", {})
-        required = ["mcp-tavily", "mcp-arxiv", "mcp-serper",
-                     "agent-simple-react", "agent-deep-research",
-                     "agent-deep-research-a2a", "cli"]
+        required = [
+            "mcp-tavily",
+            "mcp-arxiv",
+            "mcp-serper",
+            "agent-simple-react",
+            "agent-deep-research",
+            "agent-deep-research-a2a",
+            "cli",
+        ]
         for svc in required:
             assert svc in services, f"필수 서비스 '{svc}' 누락"
 
@@ -529,8 +567,12 @@ class TestDockerConfigValidation:
 
         # CLI는 대화형이므로 healthcheck 불필요
         services_needing_health = [
-            "mcp-tavily", "mcp-arxiv", "mcp-serper",
-            "agent-simple-react", "agent-deep-research", "agent-deep-research-a2a",
+            "mcp-tavily",
+            "mcp-arxiv",
+            "mcp-serper",
+            "agent-simple-react",
+            "agent-deep-research",
+            "agent-deep-research-a2a",
         ]
         for svc_name in services_needing_health:
             svc = config.get("services", {}).get(svc_name, {})
@@ -555,11 +597,19 @@ class TestDockerConfigValidation:
         with open(compose_path) as f:
             config = yaml.safe_load(f)
 
-        agent_services = ["agent-simple-react", "agent-deep-research", "agent-deep-research-a2a"]
+        agent_services = [
+            "agent-simple-react",
+            "agent-deep-research",
+            "agent-deep-research-a2a",
+        ]
         for svc_name in agent_services:
             deps = config.get("services", {}).get(svc_name, {}).get("depends_on", {})
             for dep_name, dep_config in deps.items():
-                condition = dep_config.get("condition") if isinstance(dep_config, dict) else None
+                condition = (
+                    dep_config.get("condition")
+                    if isinstance(dep_config, dict)
+                    else None
+                )
                 assert condition == "service_healthy", (
                     f"'{svc_name}' → '{dep_name}': "
                     f"condition이 'service_healthy'가 아님 (현재: {condition})"
@@ -575,7 +625,9 @@ class TestDockerConfigValidation:
 
         content = dockerfile.read_text()
         assert "PYTHONPATH" in content, "PYTHONPATH 환경변수 미설정"
-        assert "PYTHONUNBUFFERED" in content, "PYTHONUNBUFFERED 미설정 (대화형 모드 필수)"
+        assert "PYTHONUNBUFFERED" in content, (
+            "PYTHONUNBUFFERED 미설정 (대화형 모드 필수)"
+        )
 
     def test_dockerfile_cli_entrypoint(self):
         """Dockerfile.cli의 ENTRYPOINT가 youngs75-agent인지 확인한다."""
@@ -609,16 +661,23 @@ class TestDockerConfigValidation:
 
         # MCP URL이 Docker 내부 서비스명을 사용하는지 확인
         assert "TAVILY_MCP_URL" in env_dict, "CLI: TAVILY_MCP_URL 미설정"
-        assert "mcp-tavily" in env_dict["TAVILY_MCP_URL"], "CLI: TAVILY_MCP_URL이 내부 네트워크 주소가 아님"
+        assert "mcp-tavily" in env_dict["TAVILY_MCP_URL"], (
+            "CLI: TAVILY_MCP_URL이 내부 네트워크 주소가 아님"
+        )
 
         assert "ARXIV_MCP_URL" in env_dict, "CLI: ARXIV_MCP_URL 미설정"
-        assert "mcp-arxiv" in env_dict["ARXIV_MCP_URL"], "CLI: ARXIV_MCP_URL이 내부 네트워크 주소가 아님"
+        assert "mcp-arxiv" in env_dict["ARXIV_MCP_URL"], (
+            "CLI: ARXIV_MCP_URL이 내부 네트워크 주소가 아님"
+        )
 
         assert "SERPER_MCP_URL" in env_dict, "CLI: SERPER_MCP_URL 미설정"
-        assert "mcp-serper" in env_dict["SERPER_MCP_URL"], "CLI: SERPER_MCP_URL이 내부 네트워크 주소가 아님"
+        assert "mcp-serper" in env_dict["SERPER_MCP_URL"], (
+            "CLI: SERPER_MCP_URL이 내부 네트워크 주소가 아님"
+        )
 
 
 # ─── 통합 시나리오 테스트 ───────────────────────────────
+
 
 class TestIntegrationScenario:
     """전체 시스템의 통합 시나리오를 검증한다."""
@@ -663,12 +722,16 @@ class TestIntegrationScenario:
                 available[name] = url
 
         if len(available) < 2:
-            pytest.skip(f"동시 테스트에 2개 이상의 Agent 필요 (현재 {len(available)}개)")
+            pytest.skip(
+                f"동시 테스트에 2개 이상의 Agent 필요 (현재 {len(available)}개)"
+            )
 
         tasks = []
         for name, url in available.items():
             tasks.append(_send_a2a_message(url, "간단한 테스트", timeout=120.0))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        success_count = sum(1 for r in results if isinstance(r, dict) and "jsonrpc" in r)
+        success_count = sum(
+            1 for r in results if isinstance(r, dict) and "jsonrpc" in r
+        )
         assert success_count >= 1, "동시 질의에서 성공한 Agent가 없음"

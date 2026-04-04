@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from youngs75_a2a.core.skills.loader import SkillLoader
 from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.skills.schemas import Skill, SkillLevel, SkillMetadata, SkillReference
+from youngs75_a2a.core.skills.schemas import (
+    Skill,
+    SkillLevel,
+    SkillMetadata,
+    SkillReference,
+)
 
 
 # ── SkillMetadata / Skill ──
@@ -28,17 +32,23 @@ class TestSkillSchemas:
         assert skill.loaded_level == SkillLevel.L1_METADATA
 
     def test_skill_loaded_level_l2(self):
-        skill = Skill(metadata=SkillMetadata(name="s", description="d"), body="prompt text")
+        skill = Skill(
+            metadata=SkillMetadata(name="s", description="d"), body="prompt text"
+        )
         assert skill.loaded_level == SkillLevel.L2_BODY
 
     def test_skill_loaded_level_l3(self):
         refs = [SkillReference(path="f.md", content="loaded")]
-        skill = Skill(metadata=SkillMetadata(name="s", description="d"), body="x", references=refs)
+        skill = Skill(
+            metadata=SkillMetadata(name="s", description="d"), body="x", references=refs
+        )
         assert skill.loaded_level == SkillLevel.L3_REFERENCES
 
     def test_as_context_entry(self):
         skill = Skill(
-            metadata=SkillMetadata(name="review", description="코드 리뷰", tags=["quality"]),
+            metadata=SkillMetadata(
+                name="review", description="코드 리뷰", tags=["quality"]
+            ),
         )
         entry = skill.as_context_entry()
         assert "review" in entry
@@ -58,38 +68,46 @@ class TestSkillLoader:
     def skills_dir(self, tmp_path: Path) -> Path:
         # JSON 스킬 파일
         (tmp_path / "code_review.json").write_text(
-            json.dumps({
-                "name": "code_review",
-                "description": "코드 리뷰 수행",
-                "tags": ["review", "quality"],
-                "body": "당신은 코드 리뷰어입니다.",
-                "references": [
-                    {"path": "checklist.md", "description": "체크리스트"},
-                ],
-            }),
+            json.dumps(
+                {
+                    "name": "code_review",
+                    "description": "코드 리뷰 수행",
+                    "tags": ["review", "quality"],
+                    "body": "당신은 코드 리뷰어입니다.",
+                    "references": [
+                        {"path": "checklist.md", "description": "체크리스트"},
+                    ],
+                }
+            ),
             encoding="utf-8",
         )
         # 참조 파일
-        (tmp_path / "checklist.md").write_text("- [ ] 타입 힌트\n- [ ] 에러 처리", encoding="utf-8")
+        (tmp_path / "checklist.md").write_text(
+            "- [ ] 타입 힌트\n- [ ] 에러 처리", encoding="utf-8"
+        )
 
         # 두 번째 스킬
         (tmp_path / "test_gen.json").write_text(
-            json.dumps({
-                "name": "test_gen",
-                "description": "테스트 코드 생성",
-                "tags": ["testing"],
-                "body": "테스트를 생성하세요.",
-            }),
+            json.dumps(
+                {
+                    "name": "test_gen",
+                    "description": "테스트 코드 생성",
+                    "tags": ["testing"],
+                    "body": "테스트를 생성하세요.",
+                }
+            ),
             encoding="utf-8",
         )
 
         # 비활성 스킬
         (tmp_path / "disabled.json").write_text(
-            json.dumps({
-                "name": "disabled_skill",
-                "description": "비활성",
-                "enabled": False,
-            }),
+            json.dumps(
+                {
+                    "name": "disabled_skill",
+                    "description": "비활성",
+                    "enabled": False,
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -138,21 +156,25 @@ class TestSkillRegistry:
     @pytest.fixture()
     def registry(self, tmp_path: Path) -> SkillRegistry:
         (tmp_path / "alpha.json").write_text(
-            json.dumps({
-                "name": "alpha",
-                "description": "Alpha 스킬",
-                "tags": ["a"],
-                "body": "Alpha body",
-            }),
+            json.dumps(
+                {
+                    "name": "alpha",
+                    "description": "Alpha 스킬",
+                    "tags": ["a"],
+                    "body": "Alpha body",
+                }
+            ),
             encoding="utf-8",
         )
         (tmp_path / "beta.json").write_text(
-            json.dumps({
-                "name": "beta",
-                "description": "Beta 스킬",
-                "tags": ["b"],
-                "body": "Beta body",
-            }),
+            json.dumps(
+                {
+                    "name": "beta",
+                    "description": "Beta 스킬",
+                    "tags": ["b"],
+                    "body": "Beta body",
+                }
+            ),
             encoding="utf-8",
         )
         loader = SkillLoader(tmp_path)
@@ -196,6 +218,9 @@ class TestSkillRegistry:
 
     def test_manual_register(self):
         reg = SkillRegistry()
-        skill = Skill(metadata=SkillMetadata(name="manual", description="수동 등록"), body="content")
+        skill = Skill(
+            metadata=SkillMetadata(name="manual", description="수동 등록"),
+            body="content",
+        )
         reg.register(skill)
         assert reg.get("manual") is not None

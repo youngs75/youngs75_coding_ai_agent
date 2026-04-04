@@ -14,6 +14,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass
@@ -48,7 +49,7 @@ class LangfuseLGAgentExecutor(LGAgentExecutor):
         """요청마다 Langfuse 트레이스로 감싸서 실행한다."""
         task_id = getattr(context, "task_id", "unknown")
         with enrich_trace(
-            user_id=f"a2a-client",
+            user_id="a2a-client",
             session_id=f"coding-{task_id}",
             tags=["coding-assistant", "a2a"],
         ):
@@ -87,18 +88,22 @@ async def main():
     app = server_app.build()
 
     async def health(request):
-        return JSONResponse({
-            "status": "healthy",
-            "agent": "coding-assistant",
-            "model": model,
-            "langfuse": langfuse_active,
-            "nodes": ["parse_request", "execute_code", "verify_result"],
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "agent": "coding-assistant",
+                "model": model,
+                "langfuse": langfuse_active,
+                "nodes": ["parse_request", "execute_code", "verify_result"],
+            }
+        )
 
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
-    print(f"🚀 CodingAssistant A2A 서버 시작")
-    print(f"   포트: {port}, 모델: {model}, Langfuse: {'ON' if langfuse_active else 'OFF'}")
+    print("🚀 CodingAssistant A2A 서버 시작")
+    print(
+        f"   포트: {port}, 모델: {model}, Langfuse: {'ON' if langfuse_active else 'OFF'}"
+    )
 
     uv_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(uv_config)

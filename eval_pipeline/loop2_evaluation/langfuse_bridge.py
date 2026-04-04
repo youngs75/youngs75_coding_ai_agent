@@ -131,7 +131,11 @@ from typing import Any, Literal
 
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.observability.langfuse import client, enabled, score_trace
+from youngs75_a2a.eval_pipeline.observability.langfuse import (
+    client,
+    enabled,
+    score_trace,
+)
 from youngs75_a2a.eval_pipeline.settings import get_settings
 
 
@@ -297,7 +301,11 @@ def fetch_traces(
             traces.append(summary)
 
     if exclude_scored_prefix:
-        traces = [trace for trace in traces if not _has_score_prefix(trace, exclude_scored_prefix)]
+        traces = [
+            trace
+            for trace in traces
+            if not _has_score_prefix(trace, exclude_scored_prefix)
+        ]
 
     return _deterministic_sample(
         traces,
@@ -367,7 +375,9 @@ def trace_to_testcase(trace: Any) -> LLMTestCase | None:
         if hasattr(trace, "input") and trace.input:
             if isinstance(trace.input, dict):
                 input_text = (
-                    trace.input.get("query", "") or trace.input.get("input", "") or str(trace.input)
+                    trace.input.get("query", "")
+                    or trace.input.get("input", "")
+                    or str(trace.input)
                 )
             else:
                 input_text = str(trace.input)

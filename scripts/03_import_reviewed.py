@@ -12,14 +12,20 @@ from pathlib import Path
 
 
 from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
-from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import augment_with_feedback
+from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import (
+    augment_with_feedback,
+)
 from youngs75_a2a.eval_pipeline.settings import get_settings
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Import reviewed CSV and augment with LLM")
+    parser = argparse.ArgumentParser(
+        description="Import reviewed CSV and augment with LLM"
+    )
     parser.add_argument("--csv-path", type=str, default=None, help="Reviewed CSV path")
-    parser.add_argument("--skip-augment", action="store_true", help="Skip LLM augmentation")
+    parser.add_argument(
+        "--skip-augment", action="store_true", help="Skip LLM augmentation"
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -40,7 +46,9 @@ def main():
     if not args.skip_augment:
         items_with_feedback = [i for i in items if i.get("feedback")]
         if items_with_feedback:
-            print(f"[Step 3] Augmenting {len(items_with_feedback)} items with LLM feedback...")
+            print(
+                f"[Step 3] Augmenting {len(items_with_feedback)} items with LLM feedback..."
+            )
             items = augment_with_feedback(items)
 
             import json

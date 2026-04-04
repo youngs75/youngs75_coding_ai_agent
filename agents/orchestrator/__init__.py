@@ -1,2 +1,2 @@
-from .agent import OrchestratorAgent
-from .config import OrchestratorConfig
+from .agent import OrchestratorAgent as OrchestratorAgent
+from .config import OrchestratorConfig as OrchestratorConfig

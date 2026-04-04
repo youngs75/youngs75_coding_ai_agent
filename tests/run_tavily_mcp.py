@@ -8,10 +8,12 @@ Docker 없이 로컬에서 바로 실행 가능한 Tavily 웹 검색 MCP 서버.
 
 import os
 import sys
+
 sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass

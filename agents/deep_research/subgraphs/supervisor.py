@@ -10,9 +10,9 @@ import asyncio
 import logging
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import START, END, StateGraph
+from langgraph.graph import START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from youngs75_a2a.core.tool_call_utils import tc_name, tc_id, tc_args
@@ -44,9 +44,11 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
         and iterations < rc.supervisor_force_conduct_research_until_iteration
         and state.get("research_brief")
     ):
-        messages.append(HumanMessage(
-            content=f"연구 브리프를 분석하여 ConductResearch 도구를 사용해 연구를 시작하세요.\n\n{state['research_brief']}"
-        ))
+        messages.append(
+            HumanMessage(
+                content=f"연구 브리프를 분석하여 ConductResearch 도구를 사용해 연구를 시작하세요.\n\n{state['research_brief']}"
+            )
+        )
 
     response = await llm_with_tools.ainvoke(messages)
     return {"supervisor_messages": [response]}
@@ -101,15 +103,19 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
         if name == "ConductResearch":
             conduct_calls.append(call)
         elif name == "ResearchComplete":
-            tool_messages.append(ToolMessage(
-                content="연구 완료 신호 접수됨",
-                tool_call_id=call_id,
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content="연구 완료 신호 접수됨",
+                    tool_call_id=call_id,
+                )
+            )
         else:
-            tool_messages.append(ToolMessage(
-                content=f"알 수 없는 도구: {name}",
-                tool_call_id=call_id,
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content=f"알 수 없는 도구: {name}",
+                    tool_call_id=call_id,
+                )
+            )
 
     # 병렬 연구 실행
     all_notes = []
@@ -134,7 +140,12 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
                     return {"call_id": call_id, "result": result, "topic": topic}
                 except Exception as e:
                     logger.error(f"연구 실행 실패 ({topic}): {e}")
-                    return {"call_id": call_id, "result": None, "topic": topic, "error": str(e)}
+                    return {
+                        "call_id": call_id,
+                        "result": None,
+                        "topic": topic,
+                        "error": str(e),
+                    }
 
         tasks = [run_one(call) for call in conduct_calls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -149,10 +160,12 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
             topic = r["topic"]
 
             if r.get("error"):
-                tool_messages.append(ToolMessage(
-                    content=f"연구 실패 ({topic}): {r['error']}",
-                    tool_call_id=call_id,
-                ))
+                tool_messages.append(
+                    ToolMessage(
+                        content=f"연구 실패 ({topic}): {r['error']}",
+                        tool_call_id=call_id,
+                    )
+                )
                 continue
 
             result = r.get("result") or {}
@@ -163,10 +176,12 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
                 all_notes.append(compressed)
             all_raw_notes.extend(raw)
 
-            tool_messages.append(ToolMessage(
-                content=compressed or f"연구 완료: {topic}",
-                tool_call_id=call_id,
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content=compressed or f"연구 완료: {topic}",
+                    tool_call_id=call_id,
+                )
+            )
 
     # Grace period
     if rc.supervisor_research_grace_seconds > 0:

@@ -60,10 +60,12 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
             user_message = msg.content
             break
 
-    response = await llm.ainvoke([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ])
+    response = await llm.ainvoke(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+    )
 
     selected = response.content.strip().lower()
 
@@ -88,11 +90,15 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
     selected = state.get("selected_agent", "none")
 
     if selected == "none":
-        return {"agent_response": "죄송합니다. 현재 등록된 에이전트 중 적합한 것을 찾지 못했습니다. 질문을 다시 한번 구체적으로 말씀해 주세요."}
+        return {
+            "agent_response": "죄송합니다. 현재 등록된 에이전트 중 적합한 것을 찾지 못했습니다. 질문을 다시 한번 구체적으로 말씀해 주세요."
+        }
 
     url = oc.get_endpoint_url(selected)
     if not url:
-        return {"agent_response": f"에이전트 '{selected}'의 엔드포인트를 찾을 수 없습니다."}
+        return {
+            "agent_response": f"에이전트 '{selected}'의 엔드포인트를 찾을 수 없습니다."
+        }
 
     # 마지막 사용자 메시지 추출
     user_message = ""
@@ -122,7 +128,7 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
             obj = result.result
             if hasattr(obj, "artifacts") and obj.artifacts:
                 for artifact in obj.artifacts:
-                    for part in (artifact.parts or []):
+                    for part in artifact.parts or []:
                         root = getattr(part, "root", part)
                         if hasattr(root, "text") and root.text and len(root.text) > 5:
                             return {"agent_response": root.text}
@@ -133,7 +139,9 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     except Exception as e:
         logger.error(f"에이전트 '{selected}' 호출 실패: {e}")
-        return {"agent_response": f"에이전트 '{selected}' 호출 중 오류가 발생했습니다: {e}"}
+        return {
+            "agent_response": f"에이전트 '{selected}' 호출 중 오류가 발생했습니다: {e}"
+        }
 
 
 async def respond(state: OrchestratorState, config: RunnableConfig) -> dict:

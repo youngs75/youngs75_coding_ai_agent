@@ -22,10 +22,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langfuse import Langfuse
+from langfuse import Langfuse  # noqa: E402
 
-from youngs75_a2a.eval_pipeline.settings import get_settings
-from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
+from youngs75_a2a.eval_pipeline.settings import get_settings  # noqa: E402
+from youngs75_a2a.eval_pipeline.observability.langfuse import enabled  # noqa: E402
 
 
 def upload_golden_dataset(
@@ -86,15 +86,21 @@ def upload_golden_dataset(
             },
         )
         uploaded += 1
-        print(f"   [{uploaded}/{len(golden_data)}] {item['id']}: {item['input'][:50]}...")
+        print(
+            f"   [{uploaded}/{len(golden_data)}] {item['id']}: {item['input'][:50]}..."
+        )
 
     lf.flush()
-    print(f"\n🎉 완료: {uploaded}개 항목이 Langfuse 데이터셋 '{dataset_name}'에 등록되었습니다.")
+    print(
+        f"\n🎉 완료: {uploaded}개 항목이 Langfuse 데이터셋 '{dataset_name}'에 등록되었습니다."
+    )
     print(f"   확인: {settings.langfuse_host}/datasets/{dataset_name}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Golden Dataset → Langfuse Datasets 등록")
+    parser = argparse.ArgumentParser(
+        description="Golden Dataset → Langfuse Datasets 등록"
+    )
     parser.add_argument(
         "--dataset-name",
         default="coding-assistant-golden",

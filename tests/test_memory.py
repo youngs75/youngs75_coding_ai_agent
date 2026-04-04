@@ -202,8 +202,12 @@ class TestMemoryStore:
         assert store.total_count == 1
 
     def test_session_scoped(self, store):
-        store.put(_make_item("session A", memory_type=MemoryType.EPISODIC, session_id="s1"))
-        store.put(_make_item("session B", memory_type=MemoryType.EPISODIC, session_id="s2"))
+        store.put(
+            _make_item("session A", memory_type=MemoryType.EPISODIC, session_id="s1")
+        )
+        store.put(
+            _make_item("session B", memory_type=MemoryType.EPISODIC, session_id="s2")
+        )
         items = store.list_by_type(MemoryType.EPISODIC, session_id="s1")
         assert len(items) == 1
         assert items[0].content == "session A"
@@ -336,22 +340,29 @@ class TestIsNovel:
 
     def test_identical_content_not_novel(self):
         store = MemoryStore()
-        store.put(_make_item(
-            "def foo(): pass",
-            memory_type=MemoryType.PROCEDURAL,
-        ))
+        store.put(
+            _make_item(
+                "def foo(): pass",
+                memory_type=MemoryType.PROCEDURAL,
+            )
+        )
         assert store._is_novel("def foo(): pass", threshold=0.7) is False
 
     def test_different_content_is_novel(self):
         store = MemoryStore()
-        store.put(_make_item(
-            "def fibonacci(n): return n",
-            memory_type=MemoryType.PROCEDURAL,
-        ))
-        assert store._is_novel(
-            "class DatabaseConnection:\n    def connect(self): ...",
-            threshold=0.7,
-        ) is True
+        store.put(
+            _make_item(
+                "def fibonacci(n): return n",
+                memory_type=MemoryType.PROCEDURAL,
+            )
+        )
+        assert (
+            store._is_novel(
+                "class DatabaseConnection:\n    def connect(self): ...",
+                threshold=0.7,
+            )
+            is True
+        )
 
 
 # ── MemoryAwareState procedural ──
@@ -371,6 +382,7 @@ class TestCodingStateProcedural:
     def test_procedural_skills_field_exists(self):
         """CodingState에 procedural_skills 필드가 정의되어 있는지 확인."""
         from youngs75_a2a.agents.coding_assistant.schemas import CodingState
+
         annotations = CodingState.__annotations__
         assert "procedural_skills" in annotations
 
@@ -381,11 +393,8 @@ class TestCodingStateProcedural:
 class TestCoreImport:
     def test_memory_exports_from_core(self):
         from youngs75_a2a.core import (
-            MemoryAwareState,
-            MemoryItem,
             MemoryStore,
             MemoryType,
-            TwoStageSearch,
         )
 
         assert MemoryType.SEMANTIC.value == "semantic"

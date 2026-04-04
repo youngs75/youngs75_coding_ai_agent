@@ -19,7 +19,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 
@@ -223,11 +222,13 @@ class AgentCardRegistry:
                     max_score = max(max_score, score)
 
             if max_score > 0:
-                results.append(DiscoveryResult(
-                    entry=entry,
-                    match_score=max_score,
-                    matched_skills=matched_skills,
-                ))
+                results.append(
+                    DiscoveryResult(
+                        entry=entry,
+                        match_score=max_score,
+                        matched_skills=matched_skills,
+                    )
+                )
 
         results.sort(key=lambda r: r.match_score, reverse=True)
         return results
@@ -260,11 +261,13 @@ class AgentCardRegistry:
 
             if matched_tags:
                 score = len(set(matched_tags)) / len(tag_set) if tag_set else 0.0
-                results.append(DiscoveryResult(
-                    entry=entry,
-                    match_score=score,
-                    matched_tags=list(set(matched_tags)),
-                ))
+                results.append(
+                    DiscoveryResult(
+                        entry=entry,
+                        match_score=score,
+                        matched_tags=list(set(matched_tags)),
+                    )
+                )
 
         results.sort(key=lambda r: r.match_score, reverse=True)
         return results

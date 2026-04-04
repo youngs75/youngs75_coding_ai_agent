@@ -157,7 +157,9 @@ class BatchExecutor:
 
         start = time.perf_counter()
 
-        async def _run_one(index: int, task: Callable[[], Awaitable[Any]]) -> TaskResult:
+        async def _run_one(
+            index: int, task: Callable[[], Awaitable[Any]]
+        ) -> TaskResult:
             task_start = time.perf_counter()
             try:
                 if semaphore is not None:
@@ -229,9 +231,7 @@ class BatchExecutor:
         tasks = [lambda item=item: func(item) for item in items]
         return await self.execute(tasks)
 
-    async def _execute_with_timeout(
-        self, task: Callable[[], Awaitable[Any]]
-    ) -> Any:
+    async def _execute_with_timeout(self, task: Callable[[], Awaitable[Any]]) -> Any:
         """타임아웃을 적용하여 태스크를 실행한다."""
         if self._timeout_s is not None:
             return await asyncio.wait_for(task(), timeout=self._timeout_s)

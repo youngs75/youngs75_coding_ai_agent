@@ -17,11 +17,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langchain_core.messages import HumanMessage
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
+from langchain_core.messages import HumanMessage  # noqa: E402
+from langfuse import get_client  # noqa: E402
+from langfuse.langchain import CallbackHandler  # noqa: E402
 
-from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config
+from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config  # noqa: E402
 
 
 def _run_via_a2a_service(query: str, agent_url: str) -> str:
@@ -83,6 +83,7 @@ def _run_in_process(query: str) -> str:
 
     if loop and loop.is_running():
         import nest_asyncio
+
         nest_asyncio.apply()
 
     return asyncio.run(_run_in_process_async(query))

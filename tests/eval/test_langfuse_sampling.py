@@ -14,7 +14,11 @@ from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import fetch_tr
 
 class _FakeScore:
     def __init__(
-        self, name: str, value=None, data_type: str = "NUMERIC", comment: str | None = None
+        self,
+        name: str,
+        value=None,
+        data_type: str = "NUMERIC",
+        comment: str | None = None,
     ):
         self.name = name
         self.value = value
@@ -23,7 +27,9 @@ class _FakeScore:
 
 
 class _FakeTrace:
-    def __init__(self, trace_id: str, scores=None, *, input=None, output=None, metadata=None):
+    def __init__(
+        self, trace_id: str, scores=None, *, input=None, output=None, metadata=None
+    ):
         self.id = trace_id
         self.scores = scores or []
         self.input = input

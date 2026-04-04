@@ -49,7 +49,9 @@ class FailureCategory(BaseModel):
         description="카테고리명 (retrieval_failures, generation_failures, agent_failures, safety_failures)"
     )
     count: int = Field(default=0, description="해당 카테고리 실패 건수")
-    severity: str = Field(default="medium", description="심각도 (critical, high, medium, low)")
+    severity: str = Field(
+        default="medium", description="심각도 (critical, high, medium, low)"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -59,7 +61,10 @@ class FailureCategory(BaseModel):
             if "category" in data and "name" not in data:
                 data["name"] = data.pop("category")
         return data
-    patterns: list[str] = Field(default_factory=list, description="발견된 실패 패턴 목록")
+
+    patterns: list[str] = Field(
+        default_factory=list, description="발견된 실패 패턴 목록"
+    )
     root_causes: list[str] = Field(default_factory=list, description="추정 원인 목록")
 
 
@@ -115,12 +120,18 @@ class WorkflowRecommendation(BaseModel):
     """
 
     title: str = Field(description="추천 제목")
-    category: str = Field(description="카테고리 (prompt, workflow, parameter, architecture)")
+    category: str = Field(
+        description="카테고리 (prompt, workflow, parameter, architecture)"
+    )
     priority: str = Field(description="우선순위 (high, medium, low)")
     description: str = Field(description="상세 설명")
     expected_impact: str = Field(description="예상 영향")
-    implementation_complexity: str = Field(description="구현 복잡도 (easy, medium, hard)")
-    specific_changes: list[str] = Field(default_factory=list, description="구체적 변경 목록")
+    implementation_complexity: str = Field(
+        description="구현 복잡도 (easy, medium, hard)"
+    )
+    specific_changes: list[str] = Field(
+        default_factory=list, description="구체적 변경 목록"
+    )
 
 
 class RecommendationReport(BaseModel):
@@ -141,7 +152,9 @@ class RecommendationReport(BaseModel):
     failure_analysis: FailureAnalysis = Field(description="실패 분석")
     prompt_optimizations: list[PromptOptimization] = Field(default_factory=list)
     recommendations: list[WorkflowRecommendation] = Field(default_factory=list)
-    next_steps: list[str] = Field(default_factory=list, description="다음 단계 액션 아이템")
+    next_steps: list[str] = Field(
+        default_factory=list, description="다음 단계 액션 아이템"
+    )
     version: str = Field(default="1", description="리포트 버전")
 
     def get_prompt_changes(self) -> list[dict[str, str]]:
@@ -153,21 +166,27 @@ class RecommendationReport(BaseModel):
         """
         changes: list[dict[str, str]] = []
         for opt in self.prompt_optimizations:
-            changes.append({
-                "target_prompt": opt.target_prompt,
-                "issue": opt.current_issue,
-                "change": opt.suggested_change,
-                "metric": opt.expected_metric_improvement,
-            })
+            changes.append(
+                {
+                    "target_prompt": opt.target_prompt,
+                    "issue": opt.current_issue,
+                    "change": opt.suggested_change,
+                    "metric": opt.expected_metric_improvement,
+                }
+            )
         # recommendations 중 prompt 카테고리도 포함
         for rec in self.recommendations:
             if rec.category == "prompt":
-                changes.append({
-                    "target_prompt": rec.title,
-                    "issue": rec.description,
-                    "change": "; ".join(rec.specific_changes) if rec.specific_changes else rec.description,
-                    "metric": rec.expected_impact,
-                })
+                changes.append(
+                    {
+                        "target_prompt": rec.title,
+                        "issue": rec.description,
+                        "change": "; ".join(rec.specific_changes)
+                        if rec.specific_changes
+                        else rec.description,
+                        "metric": rec.expected_impact,
+                    }
+                )
         return changes
 
     def format_report(self) -> str:
@@ -181,7 +200,7 @@ class RecommendationReport(BaseModel):
             "REMEDIATION REPORT",
             f"{'=' * 60}",
             f"\n요약: {self.summary}",
-            f"\n실패 분석:",
+            "\n실패 분석:",
             f"  총 평가: {self.failure_analysis.total_evaluated}건",
             f"  총 실패: {self.failure_analysis.total_failed}건",
             f"  실패율: {self.failure_analysis.failure_rate:.1%}",
@@ -205,7 +224,9 @@ class RecommendationReport(BaseModel):
             lines.append(f"\n추천 사항 ({len(self.recommendations)}건):")
             for rec in self.recommendations:
                 lines.append(f"  - [{rec.priority.upper()}] {rec.title}")
-                lines.append(f"    카테고리: {rec.category}, 복잡도: {rec.implementation_complexity}")
+                lines.append(
+                    f"    카테고리: {rec.category}, 복잡도: {rec.implementation_complexity}"
+                )
                 lines.append(f"    영향: {rec.expected_impact}")
 
         if self.next_steps:
@@ -231,6 +252,7 @@ def save_remediation_report(
     """
     if output_dir is None:
         from youngs75_a2a.eval_pipeline.settings import get_settings
+
         settings = get_settings()
         output_dir = settings.data_dir / "eval_results"
     else:
@@ -258,6 +280,7 @@ def load_remediation_report(
     """
     if report_path is None:
         from youngs75_a2a.eval_pipeline.settings import get_settings
+
         settings = get_settings()
         report_path = settings.data_dir / "eval_results" / "remediation_report.json"
     else:

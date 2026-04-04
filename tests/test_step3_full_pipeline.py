@@ -15,10 +15,12 @@ Step 3: 전체 파이프라인 테스트 (MCP + LLM + A2A)
 import asyncio
 import os
 import sys
+
 sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv("../Day-03/.env")
 except ImportError:
     pass
@@ -59,12 +61,14 @@ async def test_simple_react_agent():
         return
 
     result = await asyncio.wait_for(
-        agent.graph.ainvoke({"messages": [HumanMessage(content="오늘 AI 관련 최신 뉴스 1개만 알려줘")]}),
+        agent.graph.ainvoke(
+            {"messages": [HumanMessage(content="오늘 AI 관련 최신 뉴스 1개만 알려줘")]}
+        ),
         timeout=60.0,
     )
 
     last_msg = result["messages"][-1]
-    print(f"✓ SimpleMCPReActAgent 실행 성공:")
+    print("✓ SimpleMCPReActAgent 실행 성공:")
     print(f"  응답 길이: {len(last_msg.content)}자")
     print(f"  응답 미리보기: {last_msg.content[:150]}...")
 
@@ -91,7 +95,13 @@ async def test_deep_research_full():
     print("  DeepResearch 실행 중... (1~2분 소요)")
     result = await asyncio.wait_for(
         agent.graph.ainvoke(
-            {"messages": [HumanMessage(content="2026년 LLM 에이전트 프레임워크 동향을 간략히 조사해줘")]},
+            {
+                "messages": [
+                    HumanMessage(
+                        content="2026년 LLM 에이전트 프레임워크 동향을 간략히 조사해줘"
+                    )
+                ]
+            },
             config={"configurable": rc.to_langgraph_configurable()},
         ),
         timeout=180.0,
@@ -101,12 +111,12 @@ async def test_deep_research_full():
     notes = result.get("notes") or []
     raw_notes = result.get("raw_notes") or []
 
-    print(f"✓ DeepResearchAgent 전체 파이프라인 성공:")
+    print("✓ DeepResearchAgent 전체 파이프라인 성공:")
     print(f"  최종 보고서: {len(report)}자")
     print(f"  압축 노트: {len(notes)}개")
     print(f"  원본 노트: {len(raw_notes)}개")
     if report:
-        print(f"  보고서 미리보기:")
+        print("  보고서 미리보기:")
         print(f"  {report[:300]}...")
 
 
@@ -133,6 +143,7 @@ async def test_a2a_end_to_end():
 
     async def health(request):
         return JSONResponse({"status": "ok"})
+
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
     config = uvicorn.Config(app, host="127.0.0.1", port=19877, log_level="error")
@@ -144,14 +155,18 @@ async def test_a2a_end_to_end():
         async with httpx.AsyncClient() as client:
             for _ in range(20):
                 try:
-                    resp = await client.get("http://127.0.0.1:19877/health", timeout=1.0)
+                    resp = await client.get(
+                        "http://127.0.0.1:19877/health", timeout=1.0
+                    )
                     if resp.status_code == 200:
                         break
                 except Exception:
                     await asyncio.sleep(0.5)
 
             # AgentCard 확인
-            resp = await client.get("http://127.0.0.1:19877/.well-known/agent.json", timeout=5.0)
+            resp = await client.get(
+                "http://127.0.0.1:19877/.well-known/agent.json", timeout=5.0
+            )
             if resp.status_code == 200:
                 agent_card = resp.json()
                 print(f"✓ A2A AgentCard 조회 성공: {agent_card.get('name')}")
@@ -179,7 +194,7 @@ async def main():
     if not key:
         print("❌ OPENAI_API_KEY 필요")
         sys.exit(1)
-    print(f"✓ OPENAI_API_KEY 확인")
+    print("✓ OPENAI_API_KEY 확인")
 
     mcp_ok = await test_mcp_tool_loading()
 

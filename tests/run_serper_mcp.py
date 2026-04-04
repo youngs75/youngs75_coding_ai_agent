@@ -21,7 +21,9 @@ mcp = FastMCP(
 )
 
 
-def _search_with_serper(query: str, max_results: int = 5, search_type: str = "search") -> str:
+def _search_with_serper(
+    query: str, max_results: int = 5, search_type: str = "search"
+) -> str:
     """Serper API로 검색."""
     import httpx
 
@@ -97,6 +99,7 @@ def google_news(query: str, max_results: int = 5) -> str:
         api_key = os.getenv("TAVILY_API_KEY")
         if api_key:
             from tavily import TavilyClient
+
             client = TavilyClient(api_key=api_key)
             results = client.search(query=query, max_results=max_results, topic="news")
             output = []
@@ -113,6 +116,6 @@ def google_news(query: str, max_results: int = 5) -> str:
 
 if __name__ == "__main__":
     has_serper = bool(os.getenv("SERPER_API_KEY"))
-    print(f"Serper MCP 서버 시작: http://0.0.0.0:3002/mcp")
+    print("Serper MCP 서버 시작: http://0.0.0.0:3002/mcp")
     print(f"  Serper API: {'활성' if has_serper else '없음 → Tavily 폴백'}")
     mcp.run(transport="streamable-http")

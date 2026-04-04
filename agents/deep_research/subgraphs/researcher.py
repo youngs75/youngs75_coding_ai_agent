@@ -6,7 +6,6 @@ MCP 도구를 사용하여 특정 주제에 대한 연구를 수행하고
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -70,11 +69,13 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> dict:
     # 첫 호출 시 시스템 메시지 주입
     messages = list(state.get("researcher_messages") or [])
     if not any(isinstance(m, SystemMessage) for m in messages):
-        sys_msg = SystemMessage(content=RESEARCHER_SYSTEM_PROMPT.format(
-            date=get_today_str(),
-            research_topic=state.get("research_topic", ""),
-            mcp_prompt=tool_descriptions,
-        ))
+        sys_msg = SystemMessage(
+            content=RESEARCHER_SYSTEM_PROMPT.format(
+                date=get_today_str(),
+                research_topic=state.get("research_topic", ""),
+                mcp_prompt=tool_descriptions,
+            )
+        )
         messages.insert(0, sys_msg)
 
     # 도구 바인딩
@@ -107,7 +108,6 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> di
     tools_by_name = _get_mcp_tools_by_name(tools)
 
     tool_messages = []
-    research_complete = False
 
     for call in tool_calls:
         name = tc_name(call)
@@ -115,27 +115,35 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> di
         args = tc_args(call)
 
         if name == "ResearchComplete":
-            research_complete = True
-            tool_messages.append(ToolMessage(
-                content="연구 완료",
-                tool_call_id=call_id or "unknown",
-            ))
+            # research_complete 신호 — tool_messages에 완료 메시지 추가로 처리
+            tool_messages.append(
+                ToolMessage(
+                    content="연구 완료",
+                    tool_call_id=call_id or "unknown",
+                )
+            )
         elif name == "ConductResearch":
-            tool_messages.append(ToolMessage(
-                content=f"연구 주제 '{args.get('research_topic', '')}' 접수됨",
-                tool_call_id=call_id or "unknown",
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content=f"연구 주제 '{args.get('research_topic', '')}' 접수됨",
+                    tool_call_id=call_id or "unknown",
+                )
+            )
         elif name in tools_by_name:
             result = await _execute_tool_safely(tools_by_name[name], args, config)
-            tool_messages.append(ToolMessage(
-                content=result,
-                tool_call_id=call_id or "unknown",
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content=result,
+                    tool_call_id=call_id or "unknown",
+                )
+            )
         else:
-            tool_messages.append(ToolMessage(
-                content=f"알 수 없는 도구: {name}",
-                tool_call_id=call_id or "unknown",
-            ))
+            tool_messages.append(
+                ToolMessage(
+                    content=f"알 수 없는 도구: {name}",
+                    tool_call_id=call_id or "unknown",
+                )
+            )
 
     new_iterations = iterations + 1
     return {
@@ -181,7 +189,11 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
     for msg in messages:
         if isinstance(msg, ToolMessage) and msg.content:
             raw_notes.append(msg.content)
-        elif isinstance(msg, AIMessage) and msg.content and not getattr(msg, "tool_calls", None):
+        elif (
+            isinstance(msg, AIMessage)
+            and msg.content
+            and not getattr(msg, "tool_calls", None)
+        ):
             raw_notes.append(msg.content)
 
     if not raw_notes:
@@ -191,9 +203,13 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
     llm = rc.get_model("compression")
 
     try:
-        response = await llm.ainvoke([
-            HumanMessage(content=COMPRESS_RESEARCH_PROMPT.format(findings=findings_text))
-        ])
+        response = await llm.ainvoke(
+            [
+                HumanMessage(
+                    content=COMPRESS_RESEARCH_PROMPT.format(findings=findings_text)
+                )
+            ]
+        )
         return {
             "compressed_research": response.content,
             "raw_notes": raw_notes,

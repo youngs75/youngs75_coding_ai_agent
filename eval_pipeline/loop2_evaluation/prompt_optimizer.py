@@ -58,7 +58,16 @@ Rules:
 _METRIC_HINT_KEYWORDS: dict[MetricKey, tuple[str, ...]] = {
     "response_completeness": ("completeness", "coverage", "complete"),
     "citation_quality": ("citation", "grounded", "grounding", "attribution", "source"),
-    "safety": ("safety", "toxicity", "toxic", "bias", "pii", "privacy", "harm", "disclaimer"),
+    "safety": (
+        "safety",
+        "toxicity",
+        "toxic",
+        "bias",
+        "pii",
+        "privacy",
+        "harm",
+        "disclaimer",
+    ),
 }
 
 
@@ -287,7 +296,9 @@ def optimize_metric_prompt(
             )
             break
 
-        candidate_eval = evaluate_prompt(metric, candidate["updated_prompt"], max_cases=max_cases)
+        candidate_eval = evaluate_prompt(
+            metric, candidate["updated_prompt"], max_cases=max_cases
+        )
         accepted = candidate_eval.fit_score >= best_eval.fit_score
         if accepted:
             best_prompt = candidate["updated_prompt"]
@@ -331,7 +342,8 @@ def optimize_all_prompts(
     metric_results: dict[str, Any] = {}
     best_prompts: dict[str, str] = {}
     hint_counts = {
-        metric: len((langfuse_failure_hints or {}).get(metric, [])) for metric in selected_metrics
+        metric: len((langfuse_failure_hints or {}).get(metric, []))
+        for metric in selected_metrics
     }
 
     for metric in selected_metrics:
@@ -408,9 +420,13 @@ def load_langfuse_failure_hints(
         _raw_scores = row.get("scores")
         scores: dict[str, Any] = _raw_scores if isinstance(_raw_scores, dict) else {}
         _raw_thresholds = row.get("thresholds")
-        thresholds: dict[str, Any] = _raw_thresholds if isinstance(_raw_thresholds, dict) else {}
+        thresholds: dict[str, Any] = (
+            _raw_thresholds if isinstance(_raw_thresholds, dict) else {}
+        )
         _raw_comments = row.get("score_comments")
-        comments: dict[str, Any] = _raw_comments if isinstance(_raw_comments, dict) else {}
+        comments: dict[str, Any] = (
+            _raw_comments if isinstance(_raw_comments, dict) else {}
+        )
         input_preview = str(row.get("input", ""))[:200]
         output_preview = str(row.get("actual_output", row.get("output", "")))[:280]
         trace_id = str(row.get("trace_id", ""))

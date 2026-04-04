@@ -17,7 +17,9 @@ from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import build_golden
 def main():
     parser = argparse.ArgumentParser(description="Build golden dataset (full Loop 1)")
     parser.add_argument("--num-goldens", type=int, default=10)
-    parser.add_argument("--skip-review", action="store_true", help="Skip human review step")
+    parser.add_argument(
+        "--skip-review", action="store_true", help="Skip human review step"
+    )
     parser.add_argument("--reviewed-csv", type=str, default=None)
     parser.add_argument("--corpus-dir", type=str, default=None)
     args = parser.parse_args()

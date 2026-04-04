@@ -18,7 +18,9 @@ class TestOpenRouterModel:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content="test response"))]
 
-        with patch.object(model._client.chat.completions, "create", return_value=mock_response):
+        with patch.object(
+            model._client.chat.completions, "create", return_value=mock_response
+        ):
             result = model.generate("test prompt")
             assert result == "test response"
 
@@ -32,9 +34,13 @@ class TestOpenRouterModel:
         model = OpenRouterModel(model_name="test-model", api_key="test-key")
 
         mock_response = MagicMock()
-        mock_response.choices = [MagicMock(message=MagicMock(content='{"answer": "hello"}'))]
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content='{"answer": "hello"}'))
+        ]
 
-        with patch.object(model._client.chat.completions, "create", return_value=mock_response):
+        with patch.object(
+            model._client.chat.completions, "create", return_value=mock_response
+        ):
             result = model.generate("test", schema=TestSchema)
             assert isinstance(result, TestSchema)
             assert result.answer == "hello"

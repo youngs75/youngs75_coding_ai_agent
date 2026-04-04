@@ -27,10 +27,14 @@ async def hitl_final_approval(state: HITLAgentState, config: RunnableConfig) -> 
     final_report = state.get("final_report", "")
     logger.info(f"HITL 승인 대기 중 (보고서 길이: {len(final_report)}자)")
 
-    user_response = interrupt({
-        "action": "최종 보고서를 검토하고 승인해 주세요.",
-        "report_preview": final_report[:500] + "..." if len(final_report) > 500 else final_report,
-    })
+    user_response = interrupt(
+        {
+            "action": "최종 보고서를 검토하고 승인해 주세요.",
+            "report_preview": final_report[:500] + "..."
+            if len(final_report) > 500
+            else final_report,
+        }
+    )
 
     # 응답 파싱
     if isinstance(user_response, dict):
@@ -64,7 +68,9 @@ async def revise_final_report(state: HITLAgentState, config: RunnableConfig) -> 
     revision_count = (state.get("revision_count") or 0) + 1
 
     if revision_count > rc.max_revision_loops:
-        logger.warning(f"최대 수정 횟수({rc.max_revision_loops}) 도달. 현재 보고서로 확정.")
+        logger.warning(
+            f"최대 수정 횟수({rc.max_revision_loops}) 도달. 현재 보고서로 확정."
+        )
         return Command(goto="__end__")
 
     feedback = state.get("human_feedback", "")

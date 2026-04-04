@@ -7,7 +7,9 @@ class TestCSVExportImport:
     """CSV 내보내기/가져오기 순수 로직 테스트."""
 
     def test_export_to_review_csv(self, tmp_data_dir):
-        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
+        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import (
+            export_to_review_csv,
+        )
 
         synthetic_data = [
             {
@@ -38,7 +40,9 @@ class TestCSVExportImport:
     def test_import_reviewed_csv(self, tmp_data_dir):
         import pandas as pd
 
-        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
+        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import (
+            import_reviewed_csv,
+        )
 
         csv_data = pd.DataFrame(
             [
@@ -80,7 +84,9 @@ class TestCSVExportImport:
     def test_import_all_items(self, tmp_data_dir):
         import pandas as pd
 
-        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
+        from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import (
+            import_reviewed_csv,
+        )
 
         csv_data = pd.DataFrame(
             [

@@ -15,24 +15,30 @@ from youngs75_a2a.core.subagents.schemas import (
 @pytest.fixture()
 def registry() -> SubAgentRegistry:
     reg = SubAgentRegistry(cost_sensitivity=0.3)
-    reg.register(SubAgentSpec(
-        name="coder",
-        description="코드 생성 에이전트",
-        capabilities=["code_generation", "refactoring"],
-        cost_weight=1.0,
-    ))
-    reg.register(SubAgentSpec(
-        name="reviewer",
-        description="코드 리뷰 에이전트",
-        capabilities=["code_review", "quality"],
-        cost_weight=0.5,
-    ))
-    reg.register(SubAgentSpec(
-        name="researcher",
-        description="리서치 에이전트",
-        capabilities=["research", "search"],
-        cost_weight=0.8,
-    ))
+    reg.register(
+        SubAgentSpec(
+            name="coder",
+            description="코드 생성 에이전트",
+            capabilities=["code_generation", "refactoring"],
+            cost_weight=1.0,
+        )
+    )
+    reg.register(
+        SubAgentSpec(
+            name="reviewer",
+            description="코드 리뷰 에이전트",
+            capabilities=["code_review", "quality"],
+            cost_weight=0.5,
+        )
+    )
+    reg.register(
+        SubAgentSpec(
+            name="researcher",
+            description="리서치 에이전트",
+            capabilities=["research", "search"],
+            cost_weight=0.8,
+        )
+    )
     return reg
 
 
@@ -59,18 +65,28 @@ class TestSubAgentRegistry:
         assert result.agent.name == "reviewer"
 
     def test_select_with_capabilities(self, registry):
-        result = registry.select("code_generation", required_capabilities=["code_generation"])
+        result = registry.select(
+            "code_generation", required_capabilities=["code_generation"]
+        )
         assert result is not None
         assert result.agent.name == "coder"  # coder만 code_generation 능력 보유
 
     def test_select_no_matching_capabilities(self, registry):
-        result = registry.select("task", required_capabilities=["nonexistent_capability"])
+        result = registry.select(
+            "task", required_capabilities=["nonexistent_capability"]
+        )
         assert result is None
 
     def test_record_usage_and_stats(self, registry):
-        registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True))
-        registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True))
-        registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=False))
+        registry.record_usage(
+            SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True)
+        )
+        registry.record_usage(
+            SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True)
+        )
+        registry.record_usage(
+            SubAgentUsageRecord(agent_name="coder", task_type="gen", success=False)
+        )
 
         stats = registry.usage_stats
         assert stats["coder"]["total"] == 3
@@ -78,8 +94,12 @@ class TestSubAgentRegistry:
         assert stats["coder"]["fail"] == 1
 
     def test_success_rate(self, registry):
-        registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True))
-        registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=False))
+        registry.record_usage(
+            SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True)
+        )
+        registry.record_usage(
+            SubAgentUsageRecord(agent_name="coder", task_type="gen", success=False)
+        )
         assert registry.get_success_rate("coder", "gen") == 0.5
         assert registry.get_success_rate("coder") == 0.5
 
@@ -90,9 +110,15 @@ class TestSubAgentRegistry:
     def test_quality_improves_selection(self, registry):
         # coder에 좋은 기록을 쌓으면 선택됨
         for _ in range(10):
-            registry.record_usage(SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True))
+            registry.record_usage(
+                SubAgentUsageRecord(agent_name="coder", task_type="gen", success=True)
+            )
         for _ in range(10):
-            registry.record_usage(SubAgentUsageRecord(agent_name="reviewer", task_type="gen", success=False))
+            registry.record_usage(
+                SubAgentUsageRecord(
+                    agent_name="reviewer", task_type="gen", success=False
+                )
+            )
 
         result = registry.select("gen")
         assert result is not None
@@ -101,12 +127,14 @@ class TestSubAgentRegistry:
     def test_disabled_agent_not_selected(self, registry):
         disabled = registry.get("researcher")
         assert disabled is not None
-        registry.register(SubAgentSpec(
-            name="researcher",
-            description="disabled",
-            capabilities=["research"],
-            status=SubAgentStatus.DISABLED,
-        ))
+        registry.register(
+            SubAgentSpec(
+                name="researcher",
+                description="disabled",
+                capabilities=["research"],
+                status=SubAgentStatus.DISABLED,
+            )
+        )
         available = registry.list_available()
         assert all(a.name != "researcher" for a in available)
 

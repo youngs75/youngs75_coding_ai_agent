@@ -173,7 +173,9 @@ class TestReportFormatAndChanges:
         report = RecommendationReport(
             summary="문제 없음",
             failure_analysis=FailureAnalysis(
-                total_evaluated=50, total_failed=0, failure_rate=0.0,
+                total_evaluated=50,
+                total_failed=0,
+                failure_rate=0.0,
             ),
         )
         assert report.get_prompt_changes() == []
@@ -182,7 +184,9 @@ class TestReportFormatAndChanges:
         report = RecommendationReport(
             summary="테스트",
             failure_analysis=FailureAnalysis(
-                total_evaluated=10, total_failed=1, failure_rate=0.1,
+                total_evaluated=10,
+                total_failed=1,
+                failure_rate=0.1,
             ),
         )
         assert report.version == "1"
@@ -191,7 +195,9 @@ class TestReportFormatAndChanges:
         report = RecommendationReport(
             summary="테스트",
             failure_analysis=FailureAnalysis(
-                total_evaluated=10, total_failed=1, failure_rate=0.1,
+                total_evaluated=10,
+                total_failed=1,
+                failure_rate=0.1,
             ),
             version="2",
         )
@@ -210,7 +216,9 @@ class TestSaveLoadReport:
         report = RecommendationReport(
             summary="테스트 리포트",
             failure_analysis=FailureAnalysis(
-                total_evaluated=50, total_failed=10, failure_rate=0.2,
+                total_evaluated=50,
+                total_failed=10,
+                failure_rate=0.2,
             ),
             next_steps=["다음 단계"],
         )
@@ -234,13 +242,17 @@ class TestSaveLoadReport:
 
 class TestAnalysisTools:
     def test_read_eval_results_empty_dir(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import read_eval_results
+        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+            read_eval_results,
+        )
 
         result = read_eval_results.invoke({"results_dir": str(tmp_path)})
         assert result == []
 
     def test_read_eval_results_with_data(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import read_eval_results
+        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+            read_eval_results,
+        )
 
         eval_data = [{"id": "t1", "scores": {"faithfulness": 0.8}, "passed": True}]
         with open(tmp_path / "eval_results.json", "w") as f:

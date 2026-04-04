@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import evaluate_golden_dataset, sample_golden_items
+from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    evaluate_golden_dataset,
+    sample_golden_items,
+)
 
 
 def _build_grouped_golden_items() -> list[dict]:

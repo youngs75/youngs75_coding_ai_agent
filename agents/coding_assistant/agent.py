@@ -20,7 +20,7 @@ import json
 from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
@@ -96,7 +96,9 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     def _get_parse_model(self) -> BaseChatModel:
         if self._parse_model is None:
-            self._parse_model = self._explicit_model or self._coding_config.get_model("default")
+            self._parse_model = self._explicit_model or self._coding_config.get_model(
+                "default"
+            )
         return self._parse_model
 
     def _get_gen_model(self) -> BaseChatModel:
@@ -144,7 +146,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         language = parse_result.get("language", "python")
 
         # 도구 설명 생성
-        tool_descriptions = self._mcp_loader.get_tool_descriptions() if self._tools else "사용 가능한 도구 없음"
+        tool_descriptions = (
+            self._mcp_loader.get_tool_descriptions()
+            if self._tools
+            else "사용 가능한 도구 없음"
+        )
 
         # 시스템 프롬프트 구성
         system_prompt = EXECUTE_SYSTEM_PROMPT.format(
@@ -184,18 +190,26 @@ class CodingAssistantAgent(BaseGraphAgent):
         if parse_result.get("requirements"):
             context_parts.append(f"요구사항: {', '.join(parse_result['requirements'])}")
         if parse_result.get("target_files"):
-            context_parts.append(f"대상 파일: {', '.join(parse_result['target_files'])}")
+            context_parts.append(
+                f"대상 파일: {', '.join(parse_result['target_files'])}"
+            )
 
         # 검증 실패 재시도 시 피드백 반영
         if verify_result and not verify_result.get("passed"):
             issues = verify_result.get("issues", [])
-            context_parts.append(f"\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issues))
+            context_parts.append(
+                "\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issues)
+            )
             context_parts.append("위 문제를 수정하여 다시 코드를 작성하세요.")
 
         context_msg = HumanMessage(content="\n".join(context_parts))
 
         # LLM에 도구 바인딩
-        llm_with_tools = self._get_gen_model().bind_tools(self._tools) if self._tools else self._get_gen_model()
+        llm_with_tools = (
+            self._get_gen_model().bind_tools(self._tools)
+            if self._tools
+            else self._get_gen_model()
+        )
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -237,7 +251,9 @@ class CodingAssistantAgent(BaseGraphAgent):
                 result = await _execute_tool_safely(tools_by_name[name], args)
                 # read_file 결과를 project_context에 축적
                 if name == "read_file":
-                    context_entries.append(f"[{args.get('path', '?')}]\n{result[:2000]}")
+                    context_entries.append(
+                        f"[{args.get('path', '?')}]\n{result[:2000]}"
+                    )
             else:
                 result = f"알 수 없는 도구: {name}"
 

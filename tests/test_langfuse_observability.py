@@ -403,7 +403,10 @@ class TestRunAgentTurnLangfuse:
             "youngs75_a2a.cli.app.safe_flush",
         ) as mock_flush:
             await _run_agent_turn(
-                "hello", session, renderer, langfuse_handler=mock_handler,
+                "hello",
+                session,
+                renderer,
+                langfuse_handler=mock_handler,
             )
         mock_flush.assert_called_once()
 
@@ -430,7 +433,10 @@ class TestRunAgentTurnLangfuse:
             "youngs75_a2a.cli.app.safe_flush",
         ) as mock_flush:
             await _run_agent_turn(
-                "hello", session, renderer, langfuse_handler=mock_handler,
+                "hello",
+                session,
+                renderer,
+                langfuse_handler=mock_handler,
             )
         # 에러 후에도 flush 호출
         mock_flush.assert_called_once()
@@ -512,7 +518,9 @@ class TestLangfuseModule:
 
     def test_build_langchain_config_basic(self):
         """build_langchain_config 기본 동작."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config
+        from youngs75_a2a.eval_pipeline.observability.langfuse import (
+            build_langchain_config,
+        )
 
         config = build_langchain_config(
             user_id="user-1",
@@ -526,7 +534,9 @@ class TestLangfuseModule:
 
     def test_build_langchain_config_no_callbacks(self):
         """콜백 미지정 시 callbacks 키 없음."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config
+        from youngs75_a2a.eval_pipeline.observability.langfuse import (
+            build_langchain_config,
+        )
 
         config = build_langchain_config(user_id="u1")
         assert "callbacks" not in config

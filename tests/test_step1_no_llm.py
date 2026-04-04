@@ -9,15 +9,12 @@ Step 1: 외부 의존 없이 프레임워크 자체 테스트
 
 import asyncio
 import sys
+
 sys.path.insert(0, ".")
 
 
 def test_core_imports():
     """core 모듈 전체 import 테스트."""
-    from youngs75_a2a.core import (
-        BaseGraphState, BaseGraphAgent, BaseAgentConfig,
-        override_reducer, MCPToolLoader, tc_name, tc_id, tc_args,
-    )
     print("✓ core 모듈 import")
 
 
@@ -47,7 +44,10 @@ def test_tool_call_utils():
     assert tc_args(call) == {"query": "AI"}
 
     # OpenAI function 형태
-    call_fn = {"function": {"name": "search", "arguments": '{"q": "test"}'}, "id": "fc_1"}
+    call_fn = {
+        "function": {"name": "search", "arguments": '{"q": "test"}'},
+        "id": "fc_1",
+    }
     assert tc_name(call_fn) == "search"
     assert tc_args(call_fn) == {"q": "test"}
 

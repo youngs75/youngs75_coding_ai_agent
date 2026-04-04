@@ -11,11 +11,15 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import evaluate_golden_dataset
+from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    evaluate_golden_dataset,
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run DeepEval evaluation on golden dataset")
+    parser = argparse.ArgumentParser(
+        description="Run DeepEval evaluation on golden dataset"
+    )
     parser.add_argument("--golden-path", type=str, default=None)
     parser.add_argument("--categories", nargs="+", default=["rag", "custom"])
     parser.add_argument("--sample-ratio", type=float, default=None)

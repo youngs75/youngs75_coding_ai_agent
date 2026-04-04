@@ -126,7 +126,11 @@ from typing import Any
 
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import fetch_traces, push_scores, trace_to_testcase
+from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import (
+    fetch_traces,
+    push_scores,
+    trace_to_testcase,
+)
 from youngs75_a2a.eval_pipeline.loop2_evaluation.metrics_registry import get_registry
 from youngs75_a2a.eval_pipeline.settings import get_settings
 
@@ -231,10 +235,12 @@ def sample_golden_items(
         residual_total = sum(residual_sizes.values())
         if residual_total > 0:
             raw_quota = {
-                key: remaining * (residual_sizes[key] / residual_total) for key in group_keys
+                key: remaining * (residual_sizes[key] / residual_total)
+                for key in group_keys
             }
             base_quota = {
-                key: min(residual_sizes[key], math.floor(raw_quota[key])) for key in group_keys
+                key: min(residual_sizes[key], math.floor(raw_quota[key]))
+                for key in group_keys
             }
             for key in group_keys:
                 group_allocations[key] += base_quota[key]
@@ -373,7 +379,9 @@ def evaluate_golden_dataset(
     """
     settings = get_settings()
     golden_path = golden_path or (settings.data_dir / "golden" / "golden_dataset.json")
-    output_path = output_path or (settings.data_dir / "eval_results" / "eval_results.json")
+    output_path = output_path or (
+        settings.data_dir / "eval_results" / "eval_results.json"
+    )
 
     # Golden Dataset 로드
     if not golden_path.exists():
@@ -723,7 +731,11 @@ def monitor_langfuse_scores(
             "failure_rate": 0.0,
             "generated_at": datetime.now(UTC).isoformat(),
         }
-        snapshot: dict[str, Any] = {"summary": summary, "samples": [], "failed_samples": []}
+        snapshot: dict[str, Any] = {
+            "summary": summary,
+            "samples": [],
+            "failed_samples": [],
+        }
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as file:
             json.dump(snapshot, file, ensure_ascii=False, indent=2)

@@ -15,6 +15,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass
@@ -87,17 +88,19 @@ async def main():
     app = server_app.build()
 
     async def health(request):
-        return JSONResponse({
-            "status": "healthy",
-            "agent": "orchestrator",
-            "model": model,
-            "registered_agents": [ep.name for ep in endpoints],
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "agent": "orchestrator",
+                "model": model,
+                "registered_agents": [ep.name for ep in endpoints],
+            }
+        )
 
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
     agent_list = ", ".join(ep.name for ep in endpoints)
-    print(f"🚀 Orchestrator A2A 서버 시작")
+    print("🚀 Orchestrator A2A 서버 시작")
     print(f"   포트: {port}, 모델: {model}")
     print(f"   등록 에이전트: {agent_list}")
 

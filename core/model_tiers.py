@@ -38,6 +38,7 @@ class ModelTier(str, Enum):
 
 # ── 모델별 비용/성능 메타데이터 ──
 
+
 class ModelCostInfo(BaseModel):
     """모델의 비용 및 성능 메타데이터.
 
@@ -170,7 +171,9 @@ def resolve_tier_config(
 
     해석 순서: purpose_tiers[purpose] → purpose_tiers["default"] → ModelTier.DEFAULT
     """
-    tier_name = purpose_tiers.get(purpose, purpose_tiers.get("default", ModelTier.DEFAULT))
+    tier_name = purpose_tiers.get(
+        purpose, purpose_tiers.get("default", ModelTier.DEFAULT)
+    )
     config = tiers.get(tier_name)
     if config is None:
         config = tiers.get(ModelTier.DEFAULT)

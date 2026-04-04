@@ -1877,7 +1877,7 @@ wheels = [
 [[package]]
 name = "youngs75-coding-ai-agent"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "langchain" },

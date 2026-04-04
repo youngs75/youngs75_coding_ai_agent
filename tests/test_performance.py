@@ -125,7 +125,9 @@ class TestTokenBudget:
 
     def test_over_budget(self):
         budget = TokenBudget(parse=5)  # 매우 작은 예산
-        is_over, info = budget.check("parse", "This text will exceed five tokens easily")
+        is_over, info = budget.check(
+            "parse", "This text will exceed five tokens easily"
+        )
         assert is_over
         assert info["over_by"] > 0
 
@@ -172,7 +174,7 @@ class TestPromptReport:
 #  llm_cache 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.utils.llm_cache import LLMCache, get_llm_cache, reset_llm_cache
+from youngs75_a2a.utils.llm_cache import LLMCache, get_llm_cache, reset_llm_cache  # noqa: E402
 
 
 class TestLLMCache:
@@ -293,7 +295,12 @@ class TestGlobalCache:
 #  profiler 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.utils.profiler import NodeProfile, Profiler, profile_async, profile_sync
+from youngs75_a2a.utils.profiler import (  # noqa: E402
+    NodeProfile,
+    Profiler,
+    profile_async,
+    profile_sync,
+)
 
 
 class TestNodeProfile:
@@ -442,7 +449,7 @@ class TestProfileDecorators:
 #  batch_executor 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.core.batch_executor import BatchExecutor, BatchResult, TaskResult
+from youngs75_a2a.core.batch_executor import BatchExecutor, BatchResult, TaskResult  # noqa: E402
 
 
 class TestTaskResult:
@@ -590,7 +597,7 @@ class TestBatchExecutor:
 #  model_tiers 비용/성능 분석 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.core.model_tiers import (
+from youngs75_a2a.core.model_tiers import (  # noqa: E402
     ModelCostInfo,
     ModelTier,
     TierConfig,
@@ -645,13 +652,17 @@ class TestRecommendTierForPurpose:
         tiers = build_default_tiers()
         tier_name, config, analysis = recommend_tier_for_purpose("parsing", tiers)
         # parsing은 speed 가중치가 높으므로 FAST 티어가 추천되어야 함
-        assert analysis["scores"][ModelTier.FAST] >= analysis["scores"][ModelTier.STRONG]
+        assert (
+            analysis["scores"][ModelTier.FAST] >= analysis["scores"][ModelTier.STRONG]
+        )
 
     def test_generation_prefers_strong(self):
         tiers = build_default_tiers()
         tier_name, config, analysis = recommend_tier_for_purpose("generation", tiers)
         # generation은 code 가중치가 높으므로 STRONG 티어가 추천되어야 함
-        assert analysis["scores"][ModelTier.STRONG] >= analysis["scores"][ModelTier.FAST]
+        assert (
+            analysis["scores"][ModelTier.STRONG] >= analysis["scores"][ModelTier.FAST]
+        )
 
     def test_unknown_purpose_returns_result(self):
         tiers = build_default_tiers()

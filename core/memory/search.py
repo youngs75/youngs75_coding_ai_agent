@@ -25,8 +25,7 @@ class MemorySearchStrategy(ABC):
     @abstractmethod
     def search(
         self, query: str, candidates: list[MemoryItem], limit: int
-    ) -> list[MemoryItem]:
-        ...
+    ) -> list[MemoryItem]: ...
 
 
 class TagBasedSearch(MemorySearchStrategy):

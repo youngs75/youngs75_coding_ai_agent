@@ -23,9 +23,9 @@ from dotenv import load_dotenv
 _package_root = Path(__file__).resolve().parent.parent
 load_dotenv(_package_root / ".env", override=True)
 
-from langfuse import Evaluation, Langfuse
-from youngs75_a2a.eval_pipeline.settings import get_settings
-from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
+from langfuse import Evaluation, Langfuse  # noqa: E402
+from youngs75_a2a.eval_pipeline.settings import get_settings  # noqa: E402
+from youngs75_a2a.eval_pipeline.observability.langfuse import enabled  # noqa: E402
 
 _settings = get_settings()
 
@@ -34,7 +34,9 @@ def _task(*, item, **kwargs) -> str:
     """각 dataset item에 대해 Coding Agent를 실행한다."""
     from youngs75_a2a.eval_pipeline.my_agent import run_coding_agent
 
-    query = item.input.get("query", "") if isinstance(item.input, dict) else str(item.input)
+    query = (
+        item.input.get("query", "") if isinstance(item.input, dict) else str(item.input)
+    )
     print(f"   🔧 에이전트 실행: {query[:60]}...")
 
     result = run_coding_agent(query)
@@ -57,7 +59,11 @@ def _response_completeness_evaluator(
     )
 
     query = input.get("query", "") if isinstance(input, dict) else str(input)
-    expected = expected_output.get("response", "") if isinstance(expected_output, dict) else str(expected_output)
+    expected = (
+        expected_output.get("response", "")
+        if isinstance(expected_output, dict)
+        else str(expected_output)
+    )
     actual = output if isinstance(output, str) else str(output)
 
     try:
@@ -83,7 +89,9 @@ def run_experiment(dataset_name: str, run_name: str | None) -> None:
     if not enabled():
         print("❌ Langfuse가 비활성화 상태입니다.")
         print(f"   LANGFUSE_HOST={_settings.langfuse_host}")
-        print(f"   LANGFUSE_PUBLIC_KEY={_settings.langfuse_public_key[:10] if _settings.langfuse_public_key else 'EMPTY'}...")
+        print(
+            f"   LANGFUSE_PUBLIC_KEY={_settings.langfuse_public_key[:10] if _settings.langfuse_public_key else 'EMPTY'}..."
+        )
         return
 
     lf = Langfuse()
@@ -106,7 +114,7 @@ def run_experiment(dataset_name: str, run_name: str | None) -> None:
     # 결과 요약
     scores = []
     for item_result in result.item_results:
-        for eval_result in (item_result.evaluations or []):
+        for eval_result in item_result.evaluations or []:
             try:
                 scores.append(float(eval_result.value))
             except (TypeError, ValueError, AttributeError):

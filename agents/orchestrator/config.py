@@ -8,6 +8,7 @@ from youngs75_a2a.core.config import BaseAgentConfig
 
 class AgentEndpoint(BaseAgentConfig):
     """하위 에이전트 엔드포인트 정보."""
+
     model_config = {"extra": "allow"}
 
     name: str
@@ -20,6 +21,7 @@ class OrchestratorConfig(BaseAgentConfig):
 
     agent_endpoints: 라우팅 대상 에이전트 목록
     """
+
     agent_endpoints: list[AgentEndpoint] = Field(default_factory=list)
 
     def get_agent_descriptions(self) -> str:

@@ -32,7 +32,6 @@ import argparse
 import os
 import random
 import sys
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,13 +95,28 @@ def _make_coding_scenarios(count: int) -> list[SimulatedScenario]:
     """coding_assistant 시나리오를 생성합니다."""
     tasks = [
         ("파이썬으로 피보나치 함수 구현해줘", "def fibonacci(n):\n    ..."),
-        ("FastAPI로 REST API 엔드포인트 만들어줘", "@app.get('/items')\nasync def get_items():"),
+        (
+            "FastAPI로 REST API 엔드포인트 만들어줘",
+            "@app.get('/items')\nasync def get_items():",
+        ),
         ("pandas DataFrame 정렬하는 코드 작성해줘", "df.sort_values(by='column')"),
         ("비동기 웹 크롤러 구현해줘", "async def crawl(url):"),
-        ("SQLAlchemy ORM 모델 정의해줘", "class User(Base):\n    __tablename__ = 'users'"),
-        ("pytest 테스트 코드 작성해줘", "def test_function():\n    assert result == expected"),
-        ("Docker Compose 설정 파일 만들어줘", "services:\n  web:\n    image: python:3.12"),
-        ("Redis 캐시 래퍼 클래스 구현해줘", "class RedisCache:\n    def __init__(self, client):"),
+        (
+            "SQLAlchemy ORM 모델 정의해줘",
+            "class User(Base):\n    __tablename__ = 'users'",
+        ),
+        (
+            "pytest 테스트 코드 작성해줘",
+            "def test_function():\n    assert result == expected",
+        ),
+        (
+            "Docker Compose 설정 파일 만들어줘",
+            "services:\n  web:\n    image: python:3.12",
+        ),
+        (
+            "Redis 캐시 래퍼 클래스 구현해줘",
+            "class RedisCache:\n    def __init__(self, client):",
+        ),
     ]
 
     scenarios = []
@@ -146,20 +160,28 @@ def _make_coding_scenarios(count: int) -> list[SimulatedScenario]:
 
         scores = {
             "quality.passed": (passed, "BOOLEAN"),
-            "quality.code_correctness": (random.uniform(0.6, 1.0) if passed else random.uniform(0.2, 0.6), "NUMERIC"),
+            "quality.code_correctness": (
+                random.uniform(0.6, 1.0) if passed else random.uniform(0.2, 0.6),
+                "NUMERIC",
+            ),
             "quality.response_time_ms": (sum(s.duration_ms for s in spans), "NUMERIC"),
-            "quality.risk_level": (random.choice(["low", "medium", "high"]), "CATEGORICAL"),
+            "quality.risk_level": (
+                random.choice(["low", "medium", "high"]),
+                "CATEGORICAL",
+            ),
         }
 
-        scenarios.append(SimulatedScenario(
-            agent_name="coding_assistant",
-            session_id=f"demo-session-{uuid.uuid4().hex[:8]}",
-            user_id=f"demo-user-{random.randint(1, 5)}",
-            user_input=task_input,
-            spans=spans,
-            scores=scores,
-            tags=["demo", "coding_assistant", f"env:local"],
-        ))
+        scenarios.append(
+            SimulatedScenario(
+                agent_name="coding_assistant",
+                session_id=f"demo-session-{uuid.uuid4().hex[:8]}",
+                user_id=f"demo-user-{random.randint(1, 5)}",
+                user_input=task_input,
+                spans=spans,
+                scores=scores,
+                tags=["demo", "coding_assistant", "env:local"],
+            )
+        )
 
     return scenarios
 
@@ -169,7 +191,10 @@ def _make_research_scenarios(count: int) -> list[SimulatedScenario]:
     topics = [
         ("LangGraph와 CrewAI 비교 분석해줘", "LangGraph vs CrewAI 비교 보고서..."),
         ("RAG 아키텍처 최신 트렌드 조사해줘", "2025년 RAG 아키텍처 트렌드..."),
-        ("멀티에이전트 시스템 설계 패턴 정리해줘", "멀티에이전트 시스템 설계 패턴 개요..."),
+        (
+            "멀티에이전트 시스템 설계 패턴 정리해줘",
+            "멀티에이전트 시스템 설계 패턴 개요...",
+        ),
         ("LLM 평가 방법론 비교해줘", "LLM 평가 프레임워크 비교 분석..."),
     ]
 
@@ -222,19 +247,24 @@ def _make_research_scenarios(count: int) -> list[SimulatedScenario]:
             "quality.completeness": (random.uniform(0.7, 1.0), "NUMERIC"),
             "quality.source_quality": (random.uniform(0.6, 0.95), "NUMERIC"),
             "quality.response_time_ms": (sum(s.duration_ms for s in spans), "NUMERIC"),
-            "quality.depth_level": (random.choice(["shallow", "moderate", "deep"]), "CATEGORICAL"),
+            "quality.depth_level": (
+                random.choice(["shallow", "moderate", "deep"]),
+                "CATEGORICAL",
+            ),
             "quality.total_tokens": (float(total_tokens), "NUMERIC"),
         }
 
-        scenarios.append(SimulatedScenario(
-            agent_name="deep_research",
-            session_id=f"demo-session-{uuid.uuid4().hex[:8]}",
-            user_id=f"demo-user-{random.randint(1, 5)}",
-            user_input=topic_input,
-            spans=spans,
-            scores=scores,
-            tags=["demo", "deep_research", "env:local"],
-        ))
+        scenarios.append(
+            SimulatedScenario(
+                agent_name="deep_research",
+                session_id=f"demo-session-{uuid.uuid4().hex[:8]}",
+                user_id=f"demo-user-{random.randint(1, 5)}",
+                user_input=topic_input,
+                spans=spans,
+                scores=scores,
+                tags=["demo", "deep_research", "env:local"],
+            )
+        )
 
     return scenarios
 
@@ -368,13 +398,15 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--count", "-n",
+        "--count",
+        "-n",
         type=int,
         default=3,
         help="에이전트별 시나리오 수 (기본: 3)",
     )
     parser.add_argument(
-        "--agent", "-a",
+        "--agent",
+        "-a",
         choices=["coding_assistant", "deep_research", "all"],
         default="all",
         help="시뮬레이션할 에이전트 (기본: all)",
@@ -423,7 +455,9 @@ def main() -> int:
 
     if not public_key or not secret_key:
         print()
-        print("  [오류] LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY가 설정되지 않았습니다.")
+        print(
+            "  [오류] LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY가 설정되지 않았습니다."
+        )
         print("  먼저 scripts/setup_langfuse.py를 실행하여 설정을 확인하세요.")
         return 1
 
@@ -452,11 +486,12 @@ def main() -> int:
         try:
             trace_id = send_trace(scenario, langfuse_client=lf)
             trace_ids.append(trace_id)
-            print(f"  [{i + 1}/{len(scenarios)}] {scenario.agent_name} "
-                  f"— trace_id={trace_id[:16]}...")
+            print(
+                f"  [{i + 1}/{len(scenarios)}] {scenario.agent_name} "
+                f"— trace_id={trace_id[:16]}..."
+            )
         except Exception as e:
-            print(f"  [{i + 1}/{len(scenarios)}] {scenario.agent_name} "
-                  f"— [오류] {e}")
+            print(f"  [{i + 1}/{len(scenarios)}] {scenario.agent_name} — [오류] {e}")
 
     # flush하여 모든 이벤트 전송 완료
     print()

@@ -115,7 +115,9 @@ def _show_help(renderer: CLIRenderer) -> None:
     )
 
 
-def _switch_agent(name: str, session: CLISession, renderer: CLIRenderer) -> CommandResult:
+def _switch_agent(
+    name: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
     name = name.strip()
     if not name:
         renderer.error("에이전트 이름을 지정하세요. 예: /agent coding_assistant")
@@ -150,7 +152,9 @@ def _show_memory(session: CLISession, renderer: CLIRenderer) -> None:
     renderer.system_message(f"메모리 항목 수: {count}")
 
 
-def _handle_skill(arg: str, session: CLISession, renderer: CLIRenderer) -> CommandResult:
+def _handle_skill(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
     """스킬 관련 커맨드를 처리한다."""
     sub_parts = arg.strip().split(maxsplit=1)
     sub = sub_parts[0].lower() if sub_parts else ""
@@ -163,7 +167,9 @@ def _handle_skill(arg: str, session: CLISession, renderer: CLIRenderer) -> Comma
             lines = ["등록된 스킬:"]
             for skill in skills:
                 level = skill.loaded_level.value
-                lines.append(f"  - {skill.name}: {skill.metadata.description} [{level}]")
+                lines.append(
+                    f"  - {skill.name}: {skill.metadata.description} [{level}]"
+                )
             renderer.system_message("\n".join(lines))
         return CommandResult()
 
@@ -187,7 +193,9 @@ def _handle_skill(arg: str, session: CLISession, renderer: CLIRenderer) -> Comma
     return CommandResult()
 
 
-def _handle_history(arg: str, session: CLISession, renderer: CLIRenderer) -> CommandResult:
+def _handle_history(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
     """대화 히스토리 커맨드를 처리한다."""
     sub = arg.strip().lower()
 
@@ -250,6 +258,7 @@ def _eval_run(renderer: CLIRenderer) -> CommandResult:
 
     if loop and loop.is_running():
         from youngs75_a2a.cli.eval_runner import _run_evaluation_sync
+
         result = _run_evaluation_sync()
     else:
         result = asyncio.run(run_evaluation_async())
@@ -282,7 +291,9 @@ def _eval_remediate(renderer: CLIRenderer) -> CommandResult:
 
     from youngs75_a2a.cli.eval_runner import run_remediation_async
 
-    renderer.system_message("Remediation Agent를 시작합니다... (시간이 걸릴 수 있습니다)")
+    renderer.system_message(
+        "Remediation Agent를 시작합니다... (시간이 걸릴 수 있습니다)"
+    )
 
     try:
         loop = asyncio.get_running_loop()
@@ -292,10 +303,9 @@ def _eval_remediate(renderer: CLIRenderer) -> CommandResult:
     if loop and loop.is_running():
         # 이미 이벤트 루프가 실행 중이면 동기적으로 처리
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(
-                asyncio.run, run_remediation_async()
-            ).result()
+            result = pool.submit(asyncio.run, run_remediation_async()).result()
     else:
         result = asyncio.run(run_remediation_async())
 
@@ -310,7 +320,10 @@ def _eval_remediate(renderer: CLIRenderer) -> CommandResult:
             changes = result.report.get_prompt_changes()
             if changes:
                 try:
-                    from youngs75_a2a.agents.coding_assistant.prompts import get_prompt_registry
+                    from youngs75_a2a.agents.coding_assistant.prompts import (
+                        get_prompt_registry,
+                    )
+
                     registry = get_prompt_registry()
                     updated = registry.apply_remediation(changes)
                     if updated:

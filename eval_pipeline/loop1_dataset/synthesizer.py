@@ -94,7 +94,9 @@ def generate_synthetic_dataset(
     """
     settings = get_settings()
     corpus_dir = corpus_dir or settings.local_corpus_dir
-    output_path = output_path or (settings.data_dir / "synthetic" / "synthetic_dataset.json")
+    output_path = output_path or (
+        settings.data_dir / "synthetic" / "synthetic_dataset.json"
+    )
 
     # OpenRouter 모델을 DeepEval Synthesizer에 전달
     model = get_deepeval_model()
@@ -124,7 +126,9 @@ def generate_synthetic_dataset(
         item = {
             "id": uuid4().hex[:12],  # 12자리 짧은 고유 ID
             "input": golden.input if hasattr(golden, "input") else "",
-            "expected_output": golden.expected_output if hasattr(golden, "expected_output") else "",
+            "expected_output": golden.expected_output
+            if hasattr(golden, "expected_output")
+            else "",
             "context": golden.context if hasattr(golden, "context") else [],
             "source_file": golden.source_file if hasattr(golden, "source_file") else "",
             "synthetic_input_quality": golden.synthetic_input_quality

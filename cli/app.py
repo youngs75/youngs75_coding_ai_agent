@@ -119,19 +119,25 @@ async def _create_agent(
         from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
         from youngs75_a2a.agents.deep_research.config import ResearchConfig
 
-        return await DeepResearchAgent.create(config=ResearchConfig(), checkpointer=checkpointer)
+        return await DeepResearchAgent.create(
+            config=ResearchConfig(), checkpointer=checkpointer
+        )
 
     if name == "simple_react":
         from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
         from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
 
-        return await SimpleMCPReActAgent.create(config=SimpleReActConfig(), checkpointer=checkpointer)
+        return await SimpleMCPReActAgent.create(
+            config=SimpleReActConfig(), checkpointer=checkpointer
+        )
 
     if name == "orchestrator":
         from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
         from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
 
-        return await OrchestratorAgent.create(config=OrchestratorConfig(), checkpointer=checkpointer)
+        return await OrchestratorAgent.create(
+            config=OrchestratorConfig(), checkpointer=checkpointer
+        )
 
     raise ValueError(f"알 수 없는 에이전트: {name}")
 
@@ -183,14 +189,16 @@ def _build_input_state(
             state["skill_context"] = skill_entries
         # Episodic Memory 주입 — 세션 스코프, 최대 5개
         episodic_items = session.memory.list_by_type(
-            MemoryType.EPISODIC, session_id=session.session_id,
+            MemoryType.EPISODIC,
+            session_id=session.session_id,
         )
         recent = episodic_items[:_EPISODIC_MAX_ITEMS]
         if recent:
             state["episodic_log"] = [item.content for item in recent]
         # Procedural Memory 주입 — 학습된 코드 패턴 (Voyager식 누적)
         procedural_items = session.memory.retrieve_skills(
-            query=user_input, limit=3,
+            query=user_input,
+            limit=3,
         )
         if procedural_items:
             state["procedural_skills"] = [item.content for item in procedural_items]
@@ -215,14 +223,24 @@ def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
                 parts.append("\n검증 통과")
             else:
                 issues = verify.get("issues", [])
-                parts.append("\n검증 이슈:\n- " + "\n- ".join(issues) if issues else "\n검증 실패")
+                parts.append(
+                    "\n검증 이슈:\n- " + "\n- ".join(issues)
+                    if issues
+                    else "\n검증 실패"
+                )
                 suggestions = verify.get("suggestions", [])
                 if suggestions:
                     parts.append("제안:\n- " + "\n- ".join(suggestions))
-        return "\n".join(parts) if parts else data.get("last_ai_message", "응답을 생성하지 못했습니다.")
+        return (
+            "\n".join(parts)
+            if parts
+            else data.get("last_ai_message", "응답을 생성하지 못했습니다.")
+        )
 
     if agent_name == "deep_research":
-        return data.get("final_report") or data.get("last_ai_message", "보고서를 생성하지 못했습니다.")
+        return data.get("final_report") or data.get(
+            "last_ai_message", "보고서를 생성하지 못했습니다."
+        )
 
     if agent_name == "orchestrator":
         # orchestrator: agent_response 또는 마지막 AI 메시지
@@ -277,7 +295,9 @@ async def _run_agent_turn(
     token_streamed = False
     try:
         async for event in agent.graph.astream_events(
-            input_state, config=run_config, version="v2",
+            input_state,
+            config=run_config,
+            version="v2",
         ):
             kind = event["event"]
             node = event.get("metadata", {}).get("langgraph_node", "")
@@ -312,8 +332,13 @@ async def _run_agent_turn(
                 metrics.record_node_end(node)
                 output = event["data"].get("output")
                 if isinstance(output, dict):
-                    for key in ("generated_code", "verify_result", "final_report",
-                                "selected_agent", "agent_response"):
+                    for key in (
+                        "generated_code",
+                        "verify_result",
+                        "final_report",
+                        "selected_agent",
+                        "agent_response",
+                    ):
                         if key in output:
                             response_data[key] = output[key]
                     if "messages" in output:
@@ -372,11 +397,13 @@ def _create_checkpointer(config: CLIConfig) -> Any:
     if config.checkpointer_backend == "sqlite":
         try:
             from langgraph.checkpoint.sqlite import SqliteSaver
+
             return SqliteSaver.from_conn_string(config.checkpointer_sqlite_path)
         except ImportError:
             logger.warning("langgraph-checkpoint-sqlite 미설치, MemorySaver로 대체")
 
     from langgraph.checkpoint.memory import MemorySaver
+
     return MemorySaver()
 
 
@@ -429,7 +456,10 @@ async def _main_loop(config: CLIConfig) -> None:
 
         # 에이전트 메시지 처리 (Langfuse 콜백 핸들러 자동 주입)
         await _run_agent_turn(
-            user_input, session, renderer, langfuse_handler=langfuse_handler,
+            user_input,
+            session,
+            renderer,
+            langfuse_handler=langfuse_handler,
         )
 
 

@@ -10,7 +10,6 @@ Coding Agent Harness의 핵심 도구를 제공하는 MCP 서버.
 
 from __future__ import annotations
 
-import fnmatch
 import os
 import subprocess
 import tempfile
@@ -53,7 +52,9 @@ def read_file(path: str, max_lines: int = 500) -> str:
 
     lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
     truncated = len(lines) > max_lines
-    content = "\n".join(f"{i+1:4d} | {line}" for i, line in enumerate(lines[:max_lines]))
+    content = "\n".join(
+        f"{i + 1:4d} | {line}" for i, line in enumerate(lines[:max_lines])
+    )
     if truncated:
         content += f"\n... ({len(lines) - max_lines}줄 생략, 총 {len(lines)}줄)"
     return content
@@ -70,7 +71,7 @@ def write_file(path: str, content: str) -> str:
     target = _safe_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"OK: {path} ({len(content)}자, {content.count(chr(10))+1}줄)"
+    return f"OK: {path} ({len(content)}자, {content.count(chr(10)) + 1}줄)"
 
 
 @mcp.tool()
@@ -88,10 +89,7 @@ def list_directory(path: str = ".", pattern: str = "*") -> str:
     matches = sorted(target.rglob(pattern) if "**" in pattern else target.glob(pattern))
     # 숨김 파일, __pycache__, .git 제외
     skip = {".git", "__pycache__", ".venv", "node_modules", ".mypy_cache"}
-    filtered = [
-        m for m in matches
-        if not any(part in skip for part in m.parts)
-    ]
+    filtered = [m for m in matches if not any(part in skip for part in m.parts)]
 
     if not filtered:
         return f"매칭 결과 없음: {path}/{pattern}"
@@ -108,7 +106,9 @@ def list_directory(path: str = ".", pattern: str = "*") -> str:
 
 
 @mcp.tool()
-def search_code(pattern: str, path: str = ".", file_pattern: str = "*.py", max_results: int = 50) -> str:
+def search_code(
+    pattern: str, path: str = ".", file_pattern: str = "*.py", max_results: int = 50
+) -> str:
     """프로젝트 코드에서 텍스트 패턴을 검색한다 (grep).
 
     Args:
@@ -122,7 +122,16 @@ def search_code(pattern: str, path: str = ".", file_pattern: str = "*.py", max_r
         return f"Error: 경로가 존재하지 않습니다 — {path}"
 
     try:
-        cmd = ["grep", "-rn", "--include", file_pattern, "-m", str(max_results), pattern, str(target)]
+        cmd = [
+            "grep",
+            "-rn",
+            "--include",
+            file_pattern,
+            "-m",
+            str(max_results),
+            pattern,
+            str(target),
+        ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         output = result.stdout.strip()
     except subprocess.TimeoutExpired:
@@ -144,9 +153,12 @@ def search_code(pattern: str, path: str = ".", file_pattern: str = "*.py", max_r
     return output
 
 
-def _search_python_fallback(pattern: str, target: Path, file_pattern: str, max_results: int) -> str:
+def _search_python_fallback(
+    pattern: str, target: Path, file_pattern: str, max_results: int
+) -> str:
     """grep이 없는 환경을 위한 Python 기반 검색."""
     import re
+
     try:
         regex = re.compile(pattern)
     except re.error:
@@ -178,7 +190,9 @@ def run_python(code: str, timeout: int = 30) -> str:
         code: 실행할 Python 코드
         timeout: 실행 제한 시간(초, 기본 30)
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, dir=_WORKSPACE) as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, dir=_WORKSPACE
+    ) as f:
         f.write(code)
         tmp_path = f.name
 

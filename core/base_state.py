@@ -12,4 +12,5 @@ class BaseGraphState(TypedDict):
     messages 필드는 add_messages reducer를 사용하여
     메시지를 누적 관리한다.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]

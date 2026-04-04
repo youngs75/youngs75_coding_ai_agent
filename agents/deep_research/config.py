@@ -15,7 +15,9 @@ class ResearchConfig(BaseAgentConfig):
 
     # --- 실행 제어 ---
     allow_clarification: bool = Field(
-        default_factory=lambda: os.getenv("ALLOW_CLARIFICATION", "true").lower() == "true",
+        default_factory=lambda: (
+            os.getenv("ALLOW_CLARIFICATION", "true").lower() == "true"
+        ),
     )
     max_concurrent_research_units: int = Field(
         default_factory=lambda: int(os.getenv("MAX_CONCURRENT_RESEARCH", "3")),
@@ -28,13 +30,20 @@ class ResearchConfig(BaseAgentConfig):
     )
     max_react_tool_calls: int = Field(default=5)
     researcher_min_iterations_before_compress: int = Field(
-        default_factory=lambda: int(os.getenv("RESEARCHER_MIN_ITERATIONS_BEFORE_COMPRESS", "1")),
+        default_factory=lambda: int(
+            os.getenv("RESEARCHER_MIN_ITERATIONS_BEFORE_COMPRESS", "1")
+        ),
     )
     supervisor_force_conduct_research_enabled: bool = Field(
-        default_factory=lambda: os.getenv("SUPERVISOR_FORCE_CONDUCT_RESEARCH_ENABLED", "true").lower() == "true",
+        default_factory=lambda: (
+            os.getenv("SUPERVISOR_FORCE_CONDUCT_RESEARCH_ENABLED", "true").lower()
+            == "true"
+        ),
     )
     supervisor_force_conduct_research_until_iteration: int = Field(
-        default_factory=lambda: int(os.getenv("SUPERVISOR_FORCE_CONDUCT_RESEARCH_UNTIL", "1")),
+        default_factory=lambda: int(
+            os.getenv("SUPERVISOR_FORCE_CONDUCT_RESEARCH_UNTIL", "1")
+        ),
     )
     supervisor_research_grace_seconds: float = Field(default=0.0)
 

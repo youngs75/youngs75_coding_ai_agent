@@ -12,7 +12,9 @@ import asyncio
 import json
 
 
-from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import run_remediation
+from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+    run_remediation,
+)
 
 
 async def _main():
@@ -42,7 +44,9 @@ async def _main():
         print(f"\nRecommendations ({len(report.recommendations)}):")
         for rec in report.recommendations:
             print(f"  - [{rec.priority.upper()}] {rec.title}")
-            print(f"    Category: {rec.category}, Complexity: {rec.implementation_complexity}")
+            print(
+                f"    Category: {rec.category}, Complexity: {rec.implementation_complexity}"
+            )
             print(f"    Impact: {rec.expected_impact}")
 
     if report.next_steps:

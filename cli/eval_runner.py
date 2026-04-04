@@ -287,6 +287,7 @@ def load_last_remediation_report() -> RemediationResult:
         from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
             RecommendationReport,
         )
+
         report = RecommendationReport(**data)
         return RemediationResult(
             success=True,

@@ -45,9 +45,13 @@ class SubAgentRegistry:
 
     def list_available(self) -> list[SubAgentSpec]:
         """사용 가능한 에이전트 목록."""
-        return [a for a in self._agents.values() if a.status == SubAgentStatus.AVAILABLE]
+        return [
+            a for a in self._agents.values() if a.status == SubAgentStatus.AVAILABLE
+        ]
 
-    def select(self, task_type: str, required_capabilities: list[str] | None = None) -> SelectionResult | None:
+    def select(
+        self, task_type: str, required_capabilities: list[str] | None = None
+    ) -> SelectionResult | None:
         """태스크에 최적인 에이전트를 동적 선택한다.
 
         R = r(quality) - λ·C(cost)
@@ -79,7 +83,8 @@ class SubAgentRegistry:
     def get_success_rate(self, agent_name: str, task_type: str | None = None) -> float:
         """에이전트의 성공률 계산."""
         relevant = [
-            u for u in self._usage
+            u
+            for u in self._usage
             if u.agent_name == agent_name
             and (task_type is None or u.task_type == task_type)
         ]
@@ -90,7 +95,9 @@ class SubAgentRegistry:
     @property
     def usage_stats(self) -> dict[str, dict[str, int]]:
         """에이전트별 사용 통계."""
-        stats: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "success": 0, "fail": 0})
+        stats: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"total": 0, "success": 0, "fail": 0}
+        )
         for u in self._usage:
             stats[u.agent_name]["total"] += 1
             if u.success:
@@ -99,7 +106,9 @@ class SubAgentRegistry:
                 stats[u.agent_name]["fail"] += 1
         return dict(stats)
 
-    def _filter_candidates(self, required_capabilities: list[str] | None) -> list[SubAgentSpec]:
+    def _filter_candidates(
+        self, required_capabilities: list[str] | None
+    ) -> list[SubAgentSpec]:
         """필수 능력을 만족하는 사용 가능 에이전트 필터링."""
         available = self.list_available()
         if not required_capabilities:

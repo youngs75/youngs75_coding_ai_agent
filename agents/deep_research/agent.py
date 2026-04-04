@@ -24,7 +24,9 @@ from youngs75_a2a.agents.deep_research.schemas import AgentState
 from youngs75_a2a.agents.deep_research.nodes.clarify import clarify_with_user
 from youngs75_a2a.agents.deep_research.nodes.brief import write_research_brief
 from youngs75_a2a.agents.deep_research.nodes.report import final_report_generation
-from youngs75_a2a.agents.deep_research.subgraphs.supervisor import build_supervisor_subgraph
+from youngs75_a2a.agents.deep_research.subgraphs.supervisor import (
+    build_supervisor_subgraph,
+)
 
 
 class DeepResearchAgent(BaseGraphAgent):

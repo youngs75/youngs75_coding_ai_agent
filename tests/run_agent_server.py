@@ -22,6 +22,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     # 로컬 실행 시 .env 로드 (Docker에서는 env_file로 주입)
     load_dotenv(".env")
 except ImportError:
@@ -90,16 +91,18 @@ def main():
 
     # 헬스 체크
     async def health(request):
-        return JSONResponse({
-            "status": "healthy",
-            "agent": "youngs75-research-agent",
-            "model": model,
-            "mcp": tavily_url,
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "agent": "youngs75-research-agent",
+                "model": model,
+                "mcp": tavily_url,
+            }
+        )
 
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
-    print(f"🚀 youngs75 A2A Agent 서버 시작")
+    print("🚀 youngs75 A2A Agent 서버 시작")
     print(f"   포트: {port}")
     print(f"   모델: {model}")
     print(f"   MCP:  {tavily_url}")

@@ -16,6 +16,7 @@ from typing import Any
 
 class ValidationStatus(Enum):
     """검증 결과 상태."""
+
     PASS = "pass"
     WARN = "warn"
     BLOCK = "block"
@@ -24,6 +25,7 @@ class ValidationStatus(Enum):
 @dataclass
 class ValidationResult:
     """개별 규칙 검증 결과."""
+
     rule_name: str
     status: ValidationStatus
     message: str
@@ -32,6 +34,7 @@ class ValidationResult:
 @dataclass
 class ValidationReport:
     """전체 검증 리포트."""
+
     results: list[ValidationResult] = field(default_factory=list)
 
     @property
@@ -60,7 +63,9 @@ class ValidationReport:
 
 # 시크릿 패턴
 _SECRET_PATTERNS = [
-    re.compile(r"""(?i)(api[_-]?key|secret|password|token|credential)\s*[=:]\s*['"][^'"]{8,}['"]"""),
+    re.compile(
+        r"""(?i)(api[_-]?key|secret|password|token|credential)\s*[=:]\s*['"][^'"]{8,}['"]"""
+    ),
     re.compile(r"""(?i)sk-[a-zA-Z0-9]{20,}"""),
 ]
 
@@ -85,7 +90,14 @@ class ActionValidator:
         allowed_directories: list[str] | None = None,
     ) -> None:
         self.allowed_extensions = allowed_extensions or [
-            ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".md", ".toml",
+            ".py",
+            ".js",
+            ".ts",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".md",
+            ".toml",
         ]
         self.max_delete_lines = max_delete_lines
         self.allowed_directories = allowed_directories
@@ -136,7 +148,9 @@ class ActionValidator:
 
     def _check_delete_volume(self, code: str) -> ValidationResult:
         """대량 삭제 감지."""
-        delete_indicators = code.count("- ") + code.count("deleted") + code.count("remove")
+        delete_indicators = (
+            code.count("- ") + code.count("deleted") + code.count("remove")
+        )
         if delete_indicators > self.max_delete_lines:
             return ValidationResult(
                 rule_name="delete_volume",

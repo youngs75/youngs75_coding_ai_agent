@@ -90,7 +90,8 @@ class SkillRegistry:
             return self.list_skills()
         query_set = set(tags)
         return [
-            skill for skill in self._skills.values()
+            skill
+            for skill in self._skills.values()
             if skill.metadata.enabled and set(skill.metadata.tags) & query_set
         ]
 

@@ -47,7 +47,9 @@ def test_generate_synthetic_dataset_uses_contexts_api(tmp_path, monkeypatch):
         lambda model: fake_synth,
     )
 
-    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import generate_synthetic_dataset
+    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+        generate_synthetic_dataset,
+    )
 
     items = generate_synthetic_dataset(
         corpus_dir=corpus_dir,

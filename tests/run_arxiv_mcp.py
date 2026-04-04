@@ -6,7 +6,6 @@ arXiv API를 사용하여 학술 논문을 검색한다. API 키 불필요.
 포트: 3000
 """
 
-import os
 import sys
 
 sys.path.insert(0, ".")

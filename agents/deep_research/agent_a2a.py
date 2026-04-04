@@ -17,10 +17,10 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-from langchain_core.messages import HumanMessage, get_buffer_string
+from langchain_core.messages import get_buffer_string
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.graph import START, END, StateGraph
+from langgraph.graph import START, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.agents.deep_research.config import ResearchConfig
@@ -28,8 +28,13 @@ from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
 from youngs75_a2a.agents.deep_research.nodes.clarify import clarify_with_user
 from youngs75_a2a.agents.deep_research.nodes.brief import write_research_brief
 from youngs75_a2a.agents.deep_research.nodes.report import final_report_generation
-from youngs75_a2a.agents.deep_research.nodes.hitl import hitl_final_approval, revise_final_report
-from youngs75_a2a.agents.deep_research.subgraphs.supervisor import build_supervisor_subgraph
+from youngs75_a2a.agents.deep_research.nodes.hitl import (
+    hitl_final_approval,
+    revise_final_report,
+)
+from youngs75_a2a.agents.deep_research.subgraphs.supervisor import (
+    build_supervisor_subgraph,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +54,12 @@ async def call_supervisor_a2a(state: HITLAgentState, config: RunnableConfig) -> 
         payload = {
             "research_brief": state.get("research_brief", ""),
             "supervisor_messages": [
-                {"role": "human", "content": get_buffer_string(state.get("supervisor_messages") or [])}
+                {
+                    "role": "human",
+                    "content": get_buffer_string(
+                        state.get("supervisor_messages") or []
+                    ),
+                }
             ],
         }
 
@@ -133,7 +143,9 @@ class DeepResearchA2AAgent(BaseGraphAgent):
         if self._use_a2a_supervisor:
             graph.add_node(self.get_node_name("SUPERVISOR"), call_supervisor_a2a)
         else:
-            graph.add_node(self.get_node_name("SUPERVISOR"), build_supervisor_subgraph())
+            graph.add_node(
+                self.get_node_name("SUPERVISOR"), build_supervisor_subgraph()
+            )
 
         graph.add_node(self.get_node_name("REPORT"), final_report_generation)
         graph.add_node(self.get_node_name("HITL_APPROVAL"), hitl_final_approval)

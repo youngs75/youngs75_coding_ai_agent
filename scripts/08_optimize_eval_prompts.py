@@ -51,7 +51,9 @@ def main():
     args = parser.parse_args()
 
     settings = get_settings()
-    default_hints_path = settings.data_dir / "eval_results" / "langfuse_failed_samples.json"
+    default_hints_path = (
+        settings.data_dir / "eval_results" / "langfuse_failed_samples.json"
+    )
     hints_path = Path(args.lf_failures) if args.lf_failures else default_hints_path
     failure_hints = None
     if hints_path.exists():
@@ -85,7 +87,10 @@ def main():
 
     if args.apply:
         prompts_path = (
-            Path(__file__).resolve().parent.parent / "src" / "loop2_evaluation" / "prompts.py"
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "loop2_evaluation"
+            / "prompts.py"
         )
         apply_best_prompts_to_file(
             artifacts["best_prompts"],

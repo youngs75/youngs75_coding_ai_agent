@@ -51,7 +51,9 @@ def read_eval_results(results_dir: str | None = None) -> list[dict[str, Any]]:
         디렉토리가 없거나 파일 읽기 실패 시 error 딕셔너리 포함
     """
     settings = get_settings()
-    eval_dir = Path(results_dir) if results_dir else (settings.data_dir / "eval_results")
+    eval_dir = (
+        Path(results_dir) if results_dir else (settings.data_dir / "eval_results")
+    )
 
     results = []
     if not eval_dir.exists():

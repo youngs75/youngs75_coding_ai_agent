@@ -88,7 +88,9 @@ def augment_with_feedback(items: list[dict]) -> list[dict]:
             augmented.append(improved)
         except Exception as exc:
             # API 오류 시 원본 유지, 실패 표시
-            print(f"[WARN] Feedback augmentation failed for '{item.get('id', 'unknown')}': {exc}")
+            print(
+                f"[WARN] Feedback augmentation failed for '{item.get('id', 'unknown')}': {exc}"
+            )
             item_copy = {
                 **item,
                 "augmented": False,

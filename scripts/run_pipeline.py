@@ -44,7 +44,6 @@ import time
 from pathlib import Path
 
 
-
 # ── Step 함수 정의 ────────────────────────────────────────────
 
 
@@ -52,7 +51,9 @@ def _parse_metric_threshold_pairs(items: list[str] | None) -> dict[str, float]:
     parsed: dict[str, float] = {}
     for raw in items or []:
         if "=" not in raw:
-            raise ValueError(f"Invalid metric threshold format: {raw} (expected key=value)")
+            raise ValueError(
+                f"Invalid metric threshold format: {raw} (expected key=value)"
+            )
         key, value = raw.split("=", 1)
         metric_key = key.strip()
         if not metric_key:
@@ -78,7 +79,9 @@ def step1_generate_synthetic(
     Returns:
         생성된 합성 데이터 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import generate_synthetic_dataset
+    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+        generate_synthetic_dataset,
+    )
 
     items = generate_synthetic_dataset(
         num_goldens=num_goldens,
@@ -97,7 +100,9 @@ def step2_export_csv() -> Path:
     Returns:
         생성된 CSV 파일 경로
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
+    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import (
+        export_to_review_csv,
+    )
     from youngs75_a2a.eval_pipeline.settings import get_settings
 
     settings = get_settings()
@@ -105,7 +110,9 @@ def step2_export_csv() -> Path:
     json_files = sorted(synthetic_dir.glob("*.json"))
 
     if not json_files:
-        print("  경고: data/synthetic/ 에 JSON 파일이 없습니다. Step 1을 먼저 실행하세요.")
+        print(
+            "  경고: data/synthetic/ 에 JSON 파일이 없습니다. Step 1을 먼저 실행하세요."
+        )
         return Path()
 
     synthetic_path = json_files[-1]
@@ -132,8 +139,12 @@ def step3_import_reviewed(
     Returns:
         가져온 (+ 보강된) 데이터 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
-    from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import augment_with_feedback
+    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import (
+        import_reviewed_csv,
+    )
+    from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import (
+        augment_with_feedback,
+    )
     from youngs75_a2a.eval_pipeline.settings import get_settings
 
     if csv_path:
@@ -143,7 +154,9 @@ def step3_import_reviewed(
         review_dir = settings.data_dir / "review"
         csv_files = sorted(review_dir.glob("*.csv"))
         if not csv_files:
-            print("  경고: data/review/ 에 CSV 파일이 없습니다. Step 2를 먼저 실행하세요.")
+            print(
+                "  경고: data/review/ 에 CSV 파일이 없습니다. Step 2를 먼저 실행하세요."
+            )
             return []
         review_path = csv_files[-1]
 
@@ -185,7 +198,9 @@ def step4_build_golden(
     Returns:
         확정된 Golden Dataset 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
+    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import (
+        build_golden_dataset,
+    )
 
     golden_items = build_golden_dataset(
         num_goldens=num_goldens,
@@ -218,7 +233,9 @@ def step5_run_evaluation(
     Returns:
         평가 결과 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import evaluate_golden_dataset
+    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+        evaluate_golden_dataset,
+    )
 
     cats = categories or ["rag", "custom"]
     results = evaluate_golden_dataset(
@@ -273,7 +290,9 @@ def step6_batch_langfuse(
     Returns:
         모니터링 스냅샷 딕셔너리
     """
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import monitor_langfuse_scores
+    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+        monitor_langfuse_scores,
+    )
 
     snapshot = monitor_langfuse_scores(
         tags=tags,
@@ -306,7 +325,9 @@ async def step7_run_remediation() -> object:
     Returns:
         RecommendationReport Pydantic 모델 인스턴스
     """
-    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import run_remediation
+    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+        run_remediation,
+    )
 
     report = await run_remediation()
     print(f"  요약: {report.summary[:200]}")
@@ -341,8 +362,12 @@ def step8_optimize_prompts(
     from youngs75_a2a.eval_pipeline.settings import get_settings
 
     settings = get_settings()
-    default_hints_path = settings.data_dir / "eval_results" / "langfuse_failed_samples.json"
-    resolved_hints_path = Path(failure_hints_path) if failure_hints_path else default_hints_path
+    default_hints_path = (
+        settings.data_dir / "eval_results" / "langfuse_failed_samples.json"
+    )
+    resolved_hints_path = (
+        Path(failure_hints_path) if failure_hints_path else default_hints_path
+    )
     failure_hints = None
     if resolved_hints_path.exists():
         failure_hints = load_langfuse_failure_hints(
@@ -374,7 +399,10 @@ def step8_optimize_prompts(
 
     if apply:
         prompts_path = (
-            Path(__file__).resolve().parent.parent / "src" / "loop2_evaluation" / "prompts.py"
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "loop2_evaluation"
+            / "prompts.py"
         )
         apply_best_prompts_to_file(
             artifacts["best_prompts"],
@@ -614,7 +642,9 @@ async def run_pipeline(
             print(f"\n  ✗ Step {step_num} 실패 ({elapsed:.1f}s): {e}")
 
             if not continue_on_error:
-                print("\n  파이프라인 중단. --continue-on-error 옵션으로 계속 진행할 수 있습니다.")
+                print(
+                    "\n  파이프라인 중단. --continue-on-error 옵션으로 계속 진행할 수 있습니다."
+                )
                 break
 
     # ── 최종 요약 ──────────────────────────────────────────

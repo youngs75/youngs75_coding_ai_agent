@@ -44,12 +44,16 @@ class Settings(BaseSettings):
     langfuse_host: str = Field(default="", alias="LANGFUSE_HOST")
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
-    langfuse_tracing_enabled: bool = Field(default=True, alias="LANGFUSE_TRACING_ENABLED")
+    langfuse_tracing_enabled: bool = Field(
+        default=True, alias="LANGFUSE_TRACING_ENABLED"
+    )
     langfuse_sample_rate: float = Field(default=1.0, alias="LANGFUSE_SAMPLE_RATE")
 
     # ── 데이터 경로 ──
     data_dir: Path = Field(default=_PACKAGE_ROOT / "data", alias="DATA_DIR")
-    local_corpus_dir: Path = Field(default=_PACKAGE_ROOT / "data" / "corpus", alias="LOCAL_CORPUS_DIR")
+    local_corpus_dir: Path = Field(
+        default=_PACKAGE_ROOT / "data" / "corpus", alias="LOCAL_CORPUS_DIR"
+    )
 
 
 _settings: Settings | None = None

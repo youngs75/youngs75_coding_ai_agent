@@ -29,7 +29,7 @@ import functools
 import logging
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Generator
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,9 @@ class NodeProfile:
             "call_count": self.call_count,
             "total_duration_s": round(self.total_duration_s, 4),
             "avg_duration_s": round(self.avg_duration_s, 4),
-            "min_duration_s": round(self.min_duration_s, 4) if self.call_count > 0 else 0,
+            "min_duration_s": round(self.min_duration_s, 4)
+            if self.call_count > 0
+            else 0,
             "max_duration_s": round(self.max_duration_s, 4),
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -205,10 +207,7 @@ class Profiler:
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "total_tokens": self.total_tokens,
-            "nodes": {
-                name: node.to_dict()
-                for name, node in self._nodes.items()
-            },
+            "nodes": {name: node.to_dict() for name, node in self._nodes.items()},
         }
 
     def report_text(self) -> str:
@@ -259,7 +258,9 @@ class Profiler:
                     "call_count": n.call_count,
                     "avg_duration_ms": round(n.avg_duration_s * 1000, 2),
                     "error_count": n.errors,
-                    "error_rate": round(n.errors / n.call_count, 4) if n.call_count > 0 else 0.0,
+                    "error_rate": round(n.errors / n.call_count, 4)
+                    if n.call_count > 0
+                    else 0.0,
                 }
                 for name, n in self._nodes.items()
             },
@@ -282,6 +283,7 @@ def profile_sync(
         name: 프로파일 이름 (None이면 함수 이름 사용)
         profiler: Profiler 인스턴스
     """
+
     def decorator(func: Any) -> Any:
         node_name = name or func.__name__
 
@@ -299,6 +301,7 @@ def profile_sync(
                     logger.debug("[profile] %s: %.4fs", node_name, duration)
 
         return wrapper
+
     return decorator
 
 
@@ -313,6 +316,7 @@ def profile_async(
         name: 프로파일 이름 (None이면 함수 이름 사용)
         profiler: Profiler 인스턴스
     """
+
     def decorator(func: Any) -> Any:
         node_name = name or func.__name__
 
@@ -344,4 +348,5 @@ def profile_async(
                     logger.debug("[profile] %s: %.4fs", node_name, duration)
 
         return wrapper
+
     return decorator

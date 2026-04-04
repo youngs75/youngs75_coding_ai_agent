@@ -13,6 +13,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass
@@ -76,16 +77,18 @@ def main():
     app = server_app.build()
 
     async def health(request):
-        return JSONResponse({
-            "status": "healthy",
-            "agent": "deep-research-a2a",
-            "model": model,
-            "hitl": rc.enable_hitl,
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "agent": "deep-research-a2a",
+                "model": model,
+                "hitl": rc.enable_hitl,
+            }
+        )
 
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
-    print(f"🚀 DeepResearchA2A Agent 서버 시작")
+    print("🚀 DeepResearchA2A Agent 서버 시작")
     print(f"   포트: {port}, 모델: {model}, HITL: {rc.enable_hitl}")
 
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")

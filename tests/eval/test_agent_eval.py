@@ -4,17 +4,19 @@ Coding Agent의 출력을 Golden Dataset 기대값과 비교 평가합니다.
 - 실제 에이전트를 호출하여 actual_output 생성
 - RAG 메트릭 + Response Completeness로 품질 게이트
 """
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from deepeval import assert_test
 from deepeval.test_case import LLMTestCase
 
 from youngs75_a2a.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
-from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import create_response_completeness_metric
+from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+    create_response_completeness_metric,
+)
 from youngs75_a2a.eval_pipeline.settings import get_settings
 
 
@@ -35,6 +37,7 @@ def _make_test_cases() -> list[LLMTestCase]:
     환경변수 RUN_AGENT=1이면 실제 호출, 아니면 expected_output을 대리 사용.
     """
     import os
+
     golden_data = _load_golden_dataset()
     run_agent = os.getenv("RUN_AGENT", "0") == "1"
 
@@ -65,7 +68,9 @@ def _make_test_cases() -> list[LLMTestCase]:
 
 @pytest.mark.parametrize(
     "test_case",
-    _make_test_cases() if (get_settings().data_dir / "golden" / "golden_dataset.json").exists() else [],
+    _make_test_cases()
+    if (get_settings().data_dir / "golden" / "golden_dataset.json").exists()
+    else [],
     ids=lambda tc: tc.input[:50],
 )
 def test_rag_quality(test_case: LLMTestCase):
@@ -82,7 +87,9 @@ def test_rag_quality(test_case: LLMTestCase):
 
 @pytest.mark.parametrize(
     "test_case",
-    _make_test_cases() if (get_settings().data_dir / "golden" / "golden_dataset.json").exists() else [],
+    _make_test_cases()
+    if (get_settings().data_dir / "golden" / "golden_dataset.json").exists()
+    else [],
     ids=lambda tc: tc.input[:50],
 )
 def test_response_completeness(test_case: LLMTestCase):

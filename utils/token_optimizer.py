@@ -173,7 +173,7 @@ def compress_prompt(
         tokens = enc.encode(result)
         if len(tokens) > max_tokens:
             # 뒤에서부터 잘라내고 말줄임 표시 추가
-            truncated_tokens = tokens[:max_tokens - 5]  # "...(truncated)" 여유
+            truncated_tokens = tokens[: max_tokens - 5]  # "...(truncated)" 여유
             result = enc.decode(truncated_tokens) + "\n...(truncated)"
             logger.warning(
                 "프롬프트가 %d 토큰으로 잘렸습니다 (원본: %d 토큰)",
@@ -302,7 +302,9 @@ def report_prompt_tokens_text(*, model: str = "gpt-5.4") -> str:
     for name, info in report.items():
         if name == "_total":
             continue
-        lines.append(f"  {name:10s}: {info['tokens']:>6,} 토큰  | {info['prompt_preview']}")
+        lines.append(
+            f"  {name:10s}: {info['tokens']:>6,} 토큰  | {info['prompt_preview']}"
+        )
 
     total_info = report.get("_total", {})
     lines.append("")

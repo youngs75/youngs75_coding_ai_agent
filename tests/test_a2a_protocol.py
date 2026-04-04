@@ -147,11 +147,13 @@ class TestAgentCardRegistry:
 
     def test_list_healthy(self):
         """건강한 에이전트만 반환."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry, AgentCardRegistry
+        from youngs75_a2a.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
-        e1 = registry.register(make_agent_card(name="healthy", url="http://localhost:8081"))
-        e2 = registry.register(make_agent_card(name="sick", url="http://localhost:8082"))
+        registry.register(make_agent_card(name="healthy", url="http://localhost:8081"))
+        e2 = registry.register(
+            make_agent_card(name="sick", url="http://localhost:8082")
+        )
         e2.last_healthy = time.time() - 120  # 2분 전 → 불건강
 
         healthy = registry.list_healthy()
@@ -226,10 +228,12 @@ class TestAgentCardRegistry:
         from youngs75_a2a.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
-        registry.register(make_agent_card(
-            url="http://localhost:8081",
-            skills=[make_skill(tags=["python"])],
-        ))
+        registry.register(
+            make_agent_card(
+                url="http://localhost:8081",
+                skills=[make_skill(tags=["python"])],
+            )
+        )
         results = registry.find_by_tags(["rust"])
         assert len(results) == 0
 
@@ -239,17 +243,21 @@ class TestAgentCardRegistry:
 
         registry = AgentCardRegistry()
         # 정확 매칭 에이전트 (점수 1.0)
-        registry.register(make_agent_card(
-            name="exact",
-            url="http://localhost:8081",
-            skills=[make_skill(name="search")],
-        ))
+        registry.register(
+            make_agent_card(
+                name="exact",
+                url="http://localhost:8081",
+                skills=[make_skill(name="search")],
+            )
+        )
         # 부분 매칭 에이전트 (점수 0.8)
-        registry.register(make_agent_card(
-            name="partial",
-            url="http://localhost:8082",
-            skills=[make_skill(name="web_search")],
-        ))
+        registry.register(
+            make_agent_card(
+                name="partial",
+                url="http://localhost:8082",
+                skills=[make_skill(name="web_search")],
+            )
+        )
 
         results = registry.find_by_skill("search")
         assert len(results) == 2
@@ -311,7 +319,6 @@ class TestRetryPolicy:
 
     def test_is_retryable(self):
         """재시도 가능한 예외 판별."""
-        import httpx
         from youngs75_a2a.a2a.resilience import RetryPolicy
 
         policy = RetryPolicy()
@@ -654,16 +661,20 @@ class TestAgentRouter:
     def test_alternatives_in_decision(self):
         """라우팅 결정에 대안 에이전트 포함."""
         router = self._make_router()
-        router.register_agent(make_agent_card(
-            name="best",
-            url="http://best:8080",
-            skills=[make_skill(name="search")],
-        ))
-        router.register_agent(make_agent_card(
-            name="alt",
-            url="http://alt:8080",
-            skills=[make_skill(name="web_search")],
-        ))
+        router.register_agent(
+            make_agent_card(
+                name="best",
+                url="http://best:8080",
+                skills=[make_skill(name="search")],
+            )
+        )
+        router.register_agent(
+            make_agent_card(
+                name="alt",
+                url="http://alt:8080",
+                skills=[make_skill(name="web_search")],
+            )
+        )
 
         decision = router.route("search")
         assert decision is not None
@@ -673,11 +684,13 @@ class TestAgentRouter:
     async def test_route_and_delegate(self):
         """통합: 라우팅 + 위임."""
         router = self._make_router()
-        router.register_agent(make_agent_card(
-            name="coder",
-            url="http://coder:8080",
-            skills=[make_skill(name="code")],
-        ))
+        router.register_agent(
+            make_agent_card(
+                name="coder",
+                url="http://coder:8080",
+                skills=[make_skill(name="code")],
+            )
+        )
 
         mock_response = MagicMock()
         with patch(
@@ -698,16 +711,20 @@ class TestAgentRouter:
     async def test_broadcast(self):
         """브로드캐스트 병렬 위임."""
         router = self._make_router()
-        router.register_agent(make_agent_card(
-            name="a1",
-            url="http://a1:8080",
-            skills=[make_skill(name="search")],
-        ))
-        router.register_agent(make_agent_card(
-            name="a2",
-            url="http://a2:8080",
-            skills=[make_skill(name="deep_search")],
-        ))
+        router.register_agent(
+            make_agent_card(
+                name="a1",
+                url="http://a1:8080",
+                skills=[make_skill(name="search")],
+            )
+        )
+        router.register_agent(
+            make_agent_card(
+                name="a2",
+                url="http://a2:8080",
+                skills=[make_skill(name="deep_search")],
+            )
+        )
 
         mock_response = MagicMock()
         with patch(
@@ -888,11 +905,6 @@ class TestA2AImports:
         from youngs75_a2a.a2a import (
             RetryPolicy,
             CircuitBreaker,
-            CircuitState,
-            CircuitOpenError,
-            AgentMonitor,
-            ResilientA2AClient,
-            AsyncStreamingResponse,
         )
 
         assert RetryPolicy is not None
@@ -903,9 +915,6 @@ class TestA2AImports:
         from youngs75_a2a.a2a import (
             AgentRouter,
             RoutingMode,
-            RoutingDecision,
-            TaskDelegator,
-            DelegationResult,
         )
 
         assert AgentRouter is not None
@@ -925,7 +934,7 @@ class TestA2AImports:
 
     def test_server_functions(self):
         """서버 조립 함수 import 및 호출 가능."""
-        from youngs75_a2a.a2a import create_agent_card, build_app
+        from youngs75_a2a.a2a import create_agent_card
 
         card = create_agent_card(name="test", url="http://localhost:9999")
         assert card.name == "test"
@@ -949,8 +958,12 @@ class TestMergeResults:
         entry = AgentCardEntry(card=card, url="http://a:8080")
         entry.mark_healthy()
 
-        skill_results = [DiscoveryResult(entry=entry, match_score=0.8, matched_skills=["code"])]
-        tag_results = [DiscoveryResult(entry=entry, match_score=0.6, matched_tags=["python"])]
+        skill_results = [
+            DiscoveryResult(entry=entry, match_score=0.8, matched_skills=["code"])
+        ]
+        tag_results = [
+            DiscoveryResult(entry=entry, match_score=0.6, matched_tags=["python"])
+        ]
 
         merged = AgentRouter._merge_results(skill_results, tag_results)
         assert len(merged) == 1
@@ -970,7 +983,9 @@ class TestMergeResults:
         entry_b.mark_healthy()
 
         skill_results = [DiscoveryResult(entry=entry_a, match_score=0.8)]
-        tag_results = [DiscoveryResult(entry=entry_b, match_score=0.6, matched_tags=["py"])]
+        tag_results = [
+            DiscoveryResult(entry=entry_b, match_score=0.6, matched_tags=["py"])
+        ]
 
         merged = AgentRouter._merge_results(skill_results, tag_results)
         assert len(merged) == 2

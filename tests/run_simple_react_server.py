@@ -13,6 +13,7 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env")
 except ImportError:
     pass
@@ -54,16 +55,18 @@ async def main():
     app = server_app.build()
 
     async def health(request):
-        return JSONResponse({
-            "status": "healthy",
-            "agent": "simple-react",
-            "model": model,
-            "tools_loaded": tool_count,
-        })
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "agent": "simple-react",
+                "model": model,
+                "tools_loaded": tool_count,
+            }
+        )
 
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
-    print(f"🚀 SimpleMCPReAct A2A 서버 시작")
+    print("🚀 SimpleMCPReAct A2A 서버 시작")
     print(f"   포트: {port}, 모델: {model}, 도구: {tool_count}개")
 
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")

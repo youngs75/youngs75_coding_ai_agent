@@ -15,11 +15,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 import httpx
@@ -30,7 +29,6 @@ from a2a.types import (
     MessageSendParams,
     SendStreamingMessageRequest,
     SendStreamingMessageResponse,
-    TaskState,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,9 +115,7 @@ class StreamingResponseCollector:
 
         chunk_index = 0
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(self._timeout)
-        ) as hc:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self._timeout)) as hc:
             client = A2AClient(httpx_client=hc, url=url)
 
             async for event in client.send_message_streaming(request):
@@ -187,7 +183,11 @@ class StreamingResponseCollector:
                 if hasattr(result, "status"):
                     status = result.status
                     if hasattr(status, "state"):
-                        return str(status.state.value) if hasattr(status.state, "value") else str(status.state)
+                        return (
+                            str(status.state.value)
+                            if hasattr(status.state, "value")
+                            else str(status.state)
+                        )
         except Exception:
             pass
         return "working"

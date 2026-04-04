@@ -180,7 +180,9 @@ def check_health(
 
     url = f"{host.rstrip('/')}{_HEALTH_PATH}"
     print(f"  대상: {url}")
-    print(f"  최대 대기: {max_retries * retry_interval}초 ({max_retries}회 x {retry_interval}초)")
+    print(
+        f"  최대 대기: {max_retries * retry_interval}초 ({max_retries}회 x {retry_interval}초)"
+    )
     print()
 
     for attempt in range(1, max_retries + 1):
@@ -212,7 +214,9 @@ def check_health(
     print("    1. Docker Compose가 실행 중인지 확인하세요:")
     print("       docker compose -f docker/docker-compose.langfuse.yaml ps")
     print("    2. 서버 로그를 확인하세요:")
-    print("       docker compose -f docker/docker-compose.langfuse.yaml logs langfuse-web")
+    print(
+        "       docker compose -f docker/docker-compose.langfuse.yaml logs langfuse-web"
+    )
     print("    3. 포트가 올바른지 확인하세요 (기본: 3100)")
     return False
 
@@ -272,7 +276,9 @@ def verify_api_connection(host: str, *, verbose: bool = False) -> bool:
         print("  해결 방법:")
         print("    1. Langfuse 웹 대시보드에 로그인하여 프로젝트 API 키를 확인하세요")
         print(f"       {host}")
-        print("    2. .env 파일의 LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY를 업데이트하세요")
+        print(
+            "    2. .env 파일의 LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY를 업데이트하세요"
+        )
         return False
 
 
@@ -315,7 +321,11 @@ def check_docker_compose(*, verbose: bool = False) -> bool:
 
     _print_header("Docker Compose 서비스 상태")
 
-    compose_file = Path(__file__).resolve().parent.parent / "docker" / "docker-compose.langfuse.yaml"
+    compose_file = (
+        Path(__file__).resolve().parent.parent
+        / "docker"
+        / "docker-compose.langfuse.yaml"
+    )
 
     if not compose_file.exists():
         _print_status("Compose 파일", False, f"{compose_file} 을 찾을 수 없습니다")
@@ -405,7 +415,8 @@ def main() -> int:
         help=f"Langfuse 서버 URL (기본: LANGFUSE_HOST 환경변수 또는 {_DEFAULT_HOST})",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="상세 정보 출력",
     )

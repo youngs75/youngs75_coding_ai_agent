@@ -10,11 +10,13 @@ Step 2: LLM 연동 테스트 (MCP 서버 불필요)
 import asyncio
 import os
 import sys
+
 sys.path.insert(0, ".")
 
 # Day-03/.env 에서 키 로드 시도
 try:
     from dotenv import load_dotenv
+
     load_dotenv("../Day-03/.env")
 except ImportError:
     pass
@@ -69,7 +71,9 @@ async def test_deep_research_clarify_only():
         )
         # brief까지 진행되었으면 성공
         if result.get("research_brief"):
-            print(f"✓ clarify → brief 성공 (brief 길이: {len(result['research_brief'])}자)")
+            print(
+                f"✓ clarify → brief 성공 (brief 길이: {len(result['research_brief'])}자)"
+            )
         else:
             print("✓ clarify 노드 실행 완료 (brief 미생성)")
     except asyncio.TimeoutError:
@@ -77,7 +81,9 @@ async def test_deep_research_clarify_only():
     except Exception as e:
         # supervisor 단계에서 MCP 없어서 실패하는 것은 예상됨
         if "research_brief" in str(e) or "supervisor" in str(e).lower():
-            print(f"✓ clarify → brief 통과 후 supervisor에서 예상된 중단: {type(e).__name__}")
+            print(
+                f"✓ clarify → brief 통과 후 supervisor에서 예상된 중단: {type(e).__name__}"
+            )
         else:
             raise
 
@@ -104,6 +110,7 @@ async def test_a2a_server_lifecycle():
     app.router.routes.append(Route("/health", health, methods=["GET"]))
 
     import uvicorn
+
     config = uvicorn.Config(app, host="127.0.0.1", port=19876, log_level="error")
     server = uvicorn.Server(config)
 
@@ -115,7 +122,9 @@ async def test_a2a_server_lifecycle():
         async with httpx.AsyncClient() as client:
             for _ in range(20):
                 try:
-                    resp = await client.get("http://127.0.0.1:19876/health", timeout=1.0)
+                    resp = await client.get(
+                        "http://127.0.0.1:19876/health", timeout=1.0
+                    )
                     if resp.status_code == 200:
                         print("✓ A2A 서버 기동 + 헬스체크 성공")
                         break

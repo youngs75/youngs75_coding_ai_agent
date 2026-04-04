@@ -29,13 +29,10 @@ import httpx
 from a2a.client import A2AClient
 from a2a.client.helpers import create_text_message_object
 from a2a.types import (
-    AgentCard,
     MessageSendParams,
     SendMessageRequest,
     SendMessageResponse,
     SendStreamingMessageRequest,
-    SendStreamingMessageResponse,
-    TaskState,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +72,7 @@ class RetryPolicy:
 
     def compute_delay(self, attempt: int) -> float:
         """현재 시도에 대한 대기 시간 계산 (지수 백오프)."""
-        delay = self.base_delay * (self.exponential_base ** attempt)
+        delay = self.base_delay * (self.exponential_base**attempt)
         return min(delay, self.max_delay)
 
     def is_retryable(self, error: Exception) -> bool:
@@ -89,8 +86,8 @@ class RetryPolicy:
 class CircuitState(str, Enum):
     """서킷 브레이커 상태."""
 
-    CLOSED = "closed"      # 정상 — 요청 허용
-    OPEN = "open"          # 차단 — 요청 거부
+    CLOSED = "closed"  # 정상 — 요청 허용
+    OPEN = "open"  # 차단 — 요청 거부
     HALF_OPEN = "half_open"  # 반개방 — 제한적 요청 허용 (테스트)
 
 
@@ -158,8 +155,7 @@ class CircuitBreaker:
         elif self._failure_count >= self.failure_threshold:
             self._state = CircuitState.OPEN
             logger.warning(
-                f"서킷 브레이커: CLOSED → OPEN 전이 "
-                f"(연속 실패 {self._failure_count}회)"
+                f"서킷 브레이커: CLOSED → OPEN 전이 (연속 실패 {self._failure_count}회)"
             )
 
     def reset(self) -> None:
@@ -249,7 +245,8 @@ class AgentMonitor:
     def get_healthy_urls(self, min_success_rate: float = 0.5) -> list[str]:
         """건강한 에이전트 URL 목록."""
         return [
-            url for url, stats in self._stats.items()
+            url
+            for url, stats in self._stats.items()
             if stats.success_rate >= min_success_rate
             and stats.circuit_state != CircuitState.OPEN
         ]
@@ -330,8 +327,7 @@ class ResilientA2AClient:
                 logger.warning(f"폴백 에이전트 실패: {fallback_url} - {e}")
 
         raise ConnectionError(
-            f"모든 에이전트 요청 실패: 메인={self.url}, "
-            f"폴백={self.fallback_urls}"
+            f"모든 에이전트 요청 실패: 메인={self.url}, 폴백={self.fallback_urls}"
         )
 
     async def send_message_streaming(
@@ -361,9 +357,7 @@ class ResilientA2AClient:
 
         start_time = time.time()
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self.timeout)
-            ) as hc:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout)) as hc:
                 client = A2AClient(httpx_client=hc, url=self.url)
                 stream = client.send_message_streaming(request)
                 return AsyncStreamingResponse(
@@ -374,7 +368,7 @@ class ResilientA2AClient:
                     start_time=start_time,
                 )
         except Exception as e:
-            latency = (time.time() - start_time) * 1000
+            _latency = (time.time() - start_time) * 1000  # noqa: F841
             self.circuit_breaker.record_failure()
             self.monitor.record_failure(self.url, str(e))
             self.monitor.update_circuit_state(self.url, self.circuit_breaker.state)
@@ -410,9 +404,7 @@ class ResilientA2AClient:
                     params=MessageSendParams(message=msg),
                 )
 
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(self.timeout)
-                ) as hc:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout)) as hc:
                     client = A2AClient(httpx_client=hc, url=url)
                     response = await client.send_message(request)
 

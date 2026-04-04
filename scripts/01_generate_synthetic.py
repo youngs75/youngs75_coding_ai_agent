@@ -11,17 +11,28 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import generate_synthetic_dataset
+from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+    generate_synthetic_dataset,
+)
 from youngs75_a2a.eval_pipeline.settings import get_settings
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate synthetic dataset from corpus")
-    parser.add_argument(
-        "--num-goldens", type=int, default=10, help="Number of golden samples to generate"
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic dataset from corpus"
     )
-    parser.add_argument("--corpus-dir", type=str, default=None, help="Corpus directory path")
-    parser.add_argument("--dry-run", action="store_true", help="Verify API connection only")
+    parser.add_argument(
+        "--num-goldens",
+        type=int,
+        default=10,
+        help="Number of golden samples to generate",
+    )
+    parser.add_argument(
+        "--corpus-dir", type=str, default=None, help="Corpus directory path"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Verify API connection only"
+    )
     args = parser.parse_args()
 
     settings = get_settings()

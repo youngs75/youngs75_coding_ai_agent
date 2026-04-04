@@ -16,7 +16,9 @@ from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.memory.search import TwoStageSearch, _tokenize
 
 
-def _namespace(memory_type: MemoryType, session_id: str | None = None) -> tuple[str, ...]:
+def _namespace(
+    memory_type: MemoryType, session_id: str | None = None
+) -> tuple[str, ...]:
     base = ("memory", memory_type.value)
     if session_id:
         return (*base, session_id)
@@ -43,7 +45,9 @@ class MemoryStore:
             self._index[ns] = {}
         self._index[ns][item.id] = item
 
-    def get(self, item_id: str, memory_type: MemoryType, session_id: str | None = None) -> MemoryItem | None:
+    def get(
+        self, item_id: str, memory_type: MemoryType, session_id: str | None = None
+    ) -> MemoryItem | None:
         """ID로 메모리 항목 조회."""
         ns = _namespace(memory_type, session_id)
         bucket = self._index.get(ns, {})
@@ -89,7 +93,9 @@ class MemoryStore:
         bucket = self._index.get(ns, {})
         return sorted(bucket.values(), key=lambda x: x.created_at, reverse=True)
 
-    def delete(self, item_id: str, memory_type: MemoryType, session_id: str | None = None) -> bool:
+    def delete(
+        self, item_id: str, memory_type: MemoryType, session_id: str | None = None
+    ) -> bool:
         """메모리 항목 삭제. 성공 시 True."""
         ns = _namespace(memory_type, session_id)
         bucket = self._index.get(ns, {})

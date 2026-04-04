@@ -22,14 +22,17 @@ import json
 
 from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
 from youngs75_a2a.eval_pipeline.llm.json_utils import extract_json_object
-from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import read_eval_results
+from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+    read_eval_results,
+)
 from youngs75_a2a.eval_pipeline.loop3_remediation.prompts import (
     ANALYZER_PROMPT,
     OPTIMIZER_PROMPT,
     RECOMMENDER_PROMPT,
-    SUPERVISOR_PROMPT,
 )
-from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import RecommendationReport
+from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+    RecommendationReport,
+)
 
 
 async def run_remediation(

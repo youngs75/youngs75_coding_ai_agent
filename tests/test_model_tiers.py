@@ -44,7 +44,11 @@ class TestTierConfig:
 class TestBuildDefaultTiers:
     def test_returns_three_tiers(self):
         tiers = build_default_tiers()
-        assert set(tiers.keys()) == {ModelTier.STRONG, ModelTier.DEFAULT, ModelTier.FAST}
+        assert set(tiers.keys()) == {
+            ModelTier.STRONG,
+            ModelTier.DEFAULT,
+            ModelTier.FAST,
+        }
 
     def test_default_models(self):
         tiers = build_default_tiers()
