@@ -269,8 +269,7 @@ def _show_permissions(session: CLISession, renderer: CLIRenderer) -> None:
         lines.append(f"거부 기록 ({len(denials)}건):")
         for entry in denials[-5:]:
             lines.append(
-                f"  [{entry['timestamp'][:19]}] {entry['tool_name']}: "
-                f"{entry['reason']}"
+                f"  [{entry['timestamp'][:19]}] {entry['tool_name']}: {entry['reason']}"
             )
 
     renderer.system_message("\n".join(lines))

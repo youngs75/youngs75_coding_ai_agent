@@ -143,9 +143,7 @@ class TaskGraph:
         while remaining:
             # 현재 진입 차수가 0인 노드가 이번 웨이브
             wave_ids = [
-                task_id
-                for task_id in remaining
-                if in_degree.get(task_id, 0) == 0
+                task_id for task_id in remaining if in_degree.get(task_id, 0) == 0
             ]
             if not wave_ids:
                 # 남은 노드가 있지만 진입 차수 0인 노드가 없다면 순환

@@ -122,7 +122,10 @@ class TestMaxToolCallsEnforcement:
     """max_tool_calls 한도 체크 테스트."""
 
     def _make_agent(self, max_tool_calls: int = 3):
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         config = CodingConfig(max_tool_calls=max_tool_calls)
         agent = CodingAssistantAgent(config=config)
@@ -131,7 +134,10 @@ class TestMaxToolCallsEnforcement:
 
     def test_tool_call_count_initialized_in_parse(self):
         """_parse_request 반환에 tool_call_count=0이 포함된다."""
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         config = CodingConfig()
         CodingAssistantAgent(config=config)
@@ -224,7 +230,10 @@ class TestProjectContextDeduplication:
 
         from langchain_core.messages import AIMessage
 
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         config = CodingConfig(max_tool_calls=20)
         agent = CodingAssistantAgent(config=config)
@@ -262,7 +271,10 @@ class TestProjectContextDeduplication:
 
         from langchain_core.messages import AIMessage
 
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         config = CodingConfig(max_tool_calls=20)
         agent = CodingAssistantAgent(config=config)
@@ -299,7 +311,10 @@ class TestMemoryRetrieval:
     """_retrieve_memory 노드 — Procedural/Episodic Memory 자동 검색."""
 
     def _make_agent_with_memory(self):
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
         from youngs75_a2a.core.memory.store import MemoryStore
 
         store = MemoryStore()
@@ -311,7 +326,10 @@ class TestMemoryRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_memory_returns_empty_without_store(self):
         """memory_store가 없으면 빈 딕셔너리를 반환한다."""
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         agent = CodingAssistantAgent(config=CodingConfig())
         agent.build_graph()
@@ -361,11 +379,13 @@ class TestMemoryRetrieval:
         agent, store = self._make_agent_with_memory()
 
         # 에피소딕 이력 사전 저장
-        store.put(MemoryItem(
-            type=MemoryType.EPISODIC,
-            content="[성공] generate/python: 피보나치 함수 작성",
-            tags=["generate", "python", "성공"],
-        ))
+        store.put(
+            MemoryItem(
+                type=MemoryType.EPISODIC,
+                content="[성공] generate/python: 피보나치 함수 작성",
+                tags=["generate", "python", "성공"],
+            )
+        )
 
         state = {
             "messages": [],
@@ -412,7 +432,10 @@ class TestEpisodicMemoryAccumulation:
     """_record_episodic_memory — 실행 결과를 Episodic Memory에 기록."""
 
     def _make_agent_with_memory(self):
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
         from youngs75_a2a.core.memory.store import MemoryStore
 
         store = MemoryStore()
@@ -478,14 +501,21 @@ class TestEpisodicMemoryAccumulation:
 
     def test_no_record_without_memory_store(self):
         """memory_store가 없으면 에러 없이 무시된다."""
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
 
         agent = CodingAssistantAgent(config=CodingConfig())
         agent.build_graph()
 
         state = {
             "messages": [],
-            "parse_result": {"task_type": "generate", "language": "python", "description": "test"},
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "test",
+            },
         }
         verify_result = {"passed": True, "issues": []}
 

@@ -126,9 +126,7 @@ class BaseGraphAgent:
             (필요시 컴팩션된) 메시지 리스트
         """
         if self.context_manager and self.context_manager.should_compact(messages):
-            logger.info(
-                "[%s] 컨텍스트 컴팩션 수행 중...", self.agent_name
-            )
+            logger.info("[%s] 컨텍스트 컴팩션 수행 중...", self.agent_name)
             return await self.context_manager.compact(messages, llm)
         return messages
 

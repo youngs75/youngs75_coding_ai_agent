@@ -203,9 +203,7 @@ async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:
         return {"agent_response": result["synthesized_response"]}
     except Exception as e:
         logger.error(f"코디네이터 실행 실패: {e}")
-        return {
-            "agent_response": f"복합 작업 처리 중 오류가 발생했습니다: {e}"
-        }
+        return {"agent_response": f"복합 작업 처리 중 오류가 발생했습니다: {e}"}
 
 
 async def respond(state: OrchestratorState, config: RunnableConfig) -> dict:
@@ -277,7 +275,5 @@ class OrchestratorAgent(BaseGraphAgent):
             },
         )
         graph.add_edge(self.get_node_name("DELEGATE"), self.get_node_name("RESPOND"))
-        graph.add_edge(
-            self.get_node_name("COORDINATE"), self.get_node_name("RESPOND")
-        )
+        graph.add_edge(self.get_node_name("COORDINATE"), self.get_node_name("RESPOND"))
         graph.add_edge(self.get_node_name("RESPOND"), END)

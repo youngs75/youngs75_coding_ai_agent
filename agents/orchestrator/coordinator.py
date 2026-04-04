@@ -170,7 +170,9 @@ class CoordinatorMode:
             return [
                 SubTask(
                     id="task_fallback",
-                    description=llm_output[:500] if isinstance(llm_output, str) else "작업 실행",
+                    description=llm_output[:500]
+                    if isinstance(llm_output, str)
+                    else "작업 실행",
                     agent_type="default",
                     dependencies=[],
                     priority=1,
@@ -190,16 +192,20 @@ class CoordinatorMode:
             )
             subtasks.append(subtask)
 
-        return subtasks if subtasks else [
-            SubTask(
-                id="task_fallback",
-                description="작업 실행",
-                agent_type="default",
-                dependencies=[],
-                priority=1,
-                timeout_s=60.0,
-            )
-        ]
+        return (
+            subtasks
+            if subtasks
+            else [
+                SubTask(
+                    id="task_fallback",
+                    description="작업 실행",
+                    agent_type="default",
+                    dependencies=[],
+                    priority=1,
+                    timeout_s=60.0,
+                )
+            ]
+        )
 
     # ── 2단계: 병렬 실행 ───────────────────────────────────
 
@@ -225,7 +231,9 @@ class CoordinatorMode:
         # DAG 구성 및 검증
         task_graph = TaskGraph(subtasks)
         if not task_graph.validate():
-            logger.error("[CoordinatorMode] 순환 의존성 감지 — 의존성 무시하고 모두 병렬 실행")
+            logger.error(
+                "[CoordinatorMode] 순환 의존성 감지 — 의존성 무시하고 모두 병렬 실행"
+            )
             # 순환 의존성 시 모든 의존성 제거 후 단일 웨이브로 실행
             for st in subtasks:
                 st["dependencies"] = []
@@ -262,9 +270,7 @@ class CoordinatorMode:
         # 순차 실행 소요 시간 추정 (각 워커의 실행 시간 합)
         sequential_duration = sum(wr["duration_s"] for wr in all_results)
         parallel_efficiency = (
-            total_duration / sequential_duration
-            if sequential_duration > 0
-            else 1.0
+            total_duration / sequential_duration if sequential_duration > 0 else 1.0
         )
 
         return CoordinatorResult(
@@ -284,10 +290,7 @@ class CoordinatorMode:
             return []
 
         # 각 태스크를 비동기 callable로 변환
-        tasks = [
-            self._make_worker_task(subtask, context)
-            for subtask in wave
-        ]
+        tasks = [self._make_worker_task(subtask, context) for subtask in wave]
 
         batch_result = await self._executor.execute(tasks)
 
@@ -306,11 +309,16 @@ class CoordinatorMode:
                     )
                 )
             else:
-                error_msg = str(task_result.error) if task_result.error else "알 수 없는 오류"
+                error_msg = (
+                    str(task_result.error) if task_result.error else "알 수 없는 오류"
+                )
                 # 타임아웃 구분
-                status = "timeout" if "timeout" in error_msg.lower() or isinstance(
-                    task_result.error, asyncio.TimeoutError
-                ) else "failed"
+                status = (
+                    "timeout"
+                    if "timeout" in error_msg.lower()
+                    or isinstance(task_result.error, asyncio.TimeoutError)
+                    else "failed"
+                )
                 results.append(
                     WorkerResult(
                         subtask_id=subtask["id"],
@@ -330,6 +338,7 @@ class CoordinatorMode:
         context: list[BaseMessage],
     ) -> Any:
         """서브태스크를 위한 비동기 callable을 생성한다."""
+
         async def _execute() -> str:
             if self._worker_fn is not None:
                 # 테스트용 커스텀 워커 함수
@@ -375,9 +384,7 @@ class CoordinatorMode:
         from a2a.client.helpers import create_text_message_object
         from a2a.types import MessageSendParams, SendMessageRequest
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(self._timeout_s)
-        ) as hc:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self._timeout_s)) as hc:
             client = A2AClient(httpx_client=hc, url=agent.endpoint)
             msg = create_text_message_object(content=task_description)
             request = SendMessageRequest(
@@ -417,9 +424,7 @@ class CoordinatorMode:
         Returns:
             통합된 최종 응답 문자열
         """
-        system_prompt = _SYNTHESIZE_SYSTEM_PROMPT.format(
-            original_task=original_task
-        )
+        system_prompt = _SYNTHESIZE_SYSTEM_PROMPT.format(original_task=original_task)
 
         # 워커 결과를 텍스트로 포맷팅
         results_text_parts: list[str] = []

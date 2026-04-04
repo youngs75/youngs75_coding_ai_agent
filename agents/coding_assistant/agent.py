@@ -202,9 +202,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 limit=3,
             )
             if episodes:
-                result["episodic_log"] = [
-                    e.content for e in episodes
-                ]
+                result["episodic_log"] = [e.content for e in episodes]
         except Exception:
             pass  # 검색 실패 시 무시
 

@@ -402,6 +402,7 @@ class TestCoordinatorExecuteParallel:
 
     async def test_parallel_execution_basic(self):
         """독립 태스크가 병렬로 실행된다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             await asyncio.sleep(0.05)
             return f"결과: {subtask['id']}"
@@ -422,6 +423,7 @@ class TestCoordinatorExecuteParallel:
 
     async def test_parallel_faster_than_sequential(self):
         """병렬 실행이 순차 실행보다 빠르다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             await asyncio.sleep(0.1)
             return "done"
@@ -473,6 +475,7 @@ class TestCoordinatorExecuteParallel:
 
     async def test_partial_failure_handling(self):
         """일부 워커 실패 시에도 나머지 결과가 반환된다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             if subtask["id"] == "t2":
                 raise RuntimeError("t2 실행 실패")
@@ -495,12 +498,15 @@ class TestCoordinatorExecuteParallel:
         assert statuses["t3"] == "success"
 
         # 실패한 워커의 에러 메시지 확인
-        t2_result = next(wr for wr in result["worker_results"] if wr["subtask_id"] == "t2")
+        t2_result = next(
+            wr for wr in result["worker_results"] if wr["subtask_id"] == "t2"
+        )
         assert t2_result["error"] is not None
         assert "t2 실행 실패" in t2_result["error"]
 
     async def test_timeout_handling(self):
         """타임아웃 초과 시 적절한 상태가 반환된다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             if subtask["id"] == "t_slow":
                 await asyncio.sleep(10)
@@ -523,6 +529,7 @@ class TestCoordinatorExecuteParallel:
 
     async def test_cyclic_dependency_fallback(self):
         """순환 의존성이 있으면 의존성 무시 후 병렬 실행한다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             return f"결과: {subtask['id']}"
 
@@ -630,6 +637,7 @@ class TestCoordinatorEfficiency:
 
     async def test_efficiency_ratio_calculation(self):
         """병렬 효율성 비율이 올바르게 계산된다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             await asyncio.sleep(0.05)
             return "done"
@@ -650,6 +658,7 @@ class TestCoordinatorEfficiency:
 
     async def test_sequential_dep_efficiency(self):
         """순차 의존성이 있으면 효율성이 1.0에 가깝다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             await asyncio.sleep(0.05)
             return "done"
@@ -683,7 +692,9 @@ class TestCoordinatorFullPipeline:
   {"id": "t3", "description": "코드 리뷰", "agent_type": "reviewer", "dependencies": ["t1"], "priority": 1, "timeout_s": 60.0}
 ]
 ```"""
-        synthesize_response = "코드를 작성하고, 관련 연구를 조사하고, 리뷰를 완료했습니다."
+        synthesize_response = (
+            "코드를 작성하고, 관련 연구를 조사하고, 리뷰를 완료했습니다."
+        )
 
         # LLM이 decompose와 synthesize에서 각각 다른 응답을 반환하도록 설정
         call_count = 0
@@ -763,9 +774,7 @@ class TestCoordinatorFullPipeline:
         )
 
         assert result["synthesized_response"] == synthesize_response
-        assert all(
-            wr["status"] == "failed" for wr in result["worker_results"]
-        )
+        assert all(wr["status"] == "failed" for wr in result["worker_results"])
 
     async def test_pipeline_empty_agents(self):
         """에이전트가 없어도 파이프라인이 정상 동작한다."""
@@ -838,6 +847,7 @@ class TestCoordinatorMiscellaneous:
 
     async def test_worker_result_duration_tracked(self):
         """워커 결과에 실행 시간이 기록된다."""
+
         async def worker_fn(subtask: SubTask, context: Any) -> str:
             await asyncio.sleep(0.05)
             return "done"

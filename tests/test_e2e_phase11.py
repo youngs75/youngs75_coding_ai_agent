@@ -28,12 +28,14 @@ sys.path.insert(0, ".")
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
 
 # ── 스킵 조건 ────────────────────────────────────────────────
+
 
 def _has_openrouter_key() -> bool:
     return bool(os.getenv("OPENROUTER_API_KEY"))
@@ -42,6 +44,7 @@ def _has_openrouter_key() -> bool:
 def _has_mcp_server(port: int = 3003) -> bool:
     """MCP 서버가 실행 중인지 확인."""
     import socket
+
     try:
         with socket.create_connection(("localhost", port), timeout=2):
             return True
@@ -60,6 +63,7 @@ _skip_no_mcp = pytest.mark.skipif(
 
 
 # ── 1. MCP + 훅 시스템 통합 테스트 ──────────────────────────
+
 
 class TestHookSystemE2E:
     """실제 MCP 도구 실행에서 훅이 동작하는지 검증."""
@@ -136,7 +140,11 @@ class TestHookSystemE2E:
             executed.append(name)
             return "should not reach here"
 
-        mock_call = {"name": "list_directory", "id": "call_cancel", "args": {"path": "."}}
+        mock_call = {
+            "name": "list_directory",
+            "id": "call_cancel",
+            "args": {"path": "."},
+        }
         batch_result = await executor.execute_batch_detailed([mock_call], tool_fn)
 
         assert len(executed) == 0, "취소된 도구가 실행되었습니다"
@@ -145,7 +153,11 @@ class TestHookSystemE2E:
     @_skip_no_mcp
     async def test_builtin_hooks_with_real_tools(self):
         """내장 훅(logging, timing, audit)이 실제 도구와 동작한다."""
-        from youngs75_a2a.core.builtin_hooks import audit_hook, logging_hook, timing_hook
+        from youngs75_a2a.core.builtin_hooks import (
+            audit_hook,
+            logging_hook,
+            timing_hook,
+        )
         from youngs75_a2a.core.hooks import HookEvent, HookManager
         from youngs75_a2a.core.mcp_loader import MCPToolLoader
         from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
@@ -171,7 +183,11 @@ class TestHookSystemE2E:
                 return str(await tools_by_name[name].ainvoke(args))
             return f"unknown: {name}"
 
-        mock_call = {"name": "read_file", "id": "call_bf", "args": {"path": "pyproject.toml"}}
+        mock_call = {
+            "name": "read_file",
+            "id": "call_bf",
+            "args": {"path": "pyproject.toml"},
+        }
         batch_result = await executor.execute_batch_detailed([mock_call], tool_fn)
 
         assert batch_result.results[0].success
@@ -180,13 +196,17 @@ class TestHookSystemE2E:
 
 # ── 2. ToolPermissionManager E2E ─────────────────────────────
 
+
 class TestPermissionManagerE2E:
     """실제 도구 호출에서 권한 검사가 동작하는지 검증."""
 
     @_skip_no_mcp
     async def test_deny_sensitive_file_access(self):
         """민감 파일(.env) 접근 시 ASK 이상 권한이 필요하다."""
-        from youngs75_a2a.core.tool_permissions import PermissionDecision, ToolPermissionManager
+        from youngs75_a2a.core.tool_permissions import (
+            PermissionDecision,
+            ToolPermissionManager,
+        )
 
         mgr = ToolPermissionManager(workspace=".")
 
@@ -198,7 +218,10 @@ class TestPermissionManagerE2E:
     @_skip_no_mcp
     async def test_allow_safe_tool(self):
         """안전한 도구(list_directory)는 허용된다."""
-        from youngs75_a2a.core.tool_permissions import PermissionDecision, ToolPermissionManager
+        from youngs75_a2a.core.tool_permissions import (
+            PermissionDecision,
+            ToolPermissionManager,
+        )
 
         mgr = ToolPermissionManager(workspace=".")
         decision = mgr.check("list_directory", {"path": "."})
@@ -210,7 +233,10 @@ class TestPermissionManagerE2E:
         from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
         from youngs75_a2a.core.mcp_loader import MCPToolLoader
         from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-        from youngs75_a2a.core.tool_permissions import PermissionDecision, ToolPermissionManager
+        from youngs75_a2a.core.tool_permissions import (
+            PermissionDecision,
+            ToolPermissionManager,
+        )
 
         perm_mgr = ToolPermissionManager(workspace=".")
         hook_mgr = HookManager()
@@ -255,6 +281,7 @@ class TestPermissionManagerE2E:
 
 
 # ── 3. ParallelToolExecutor E2E ──────────────────────────────
+
 
 class TestParallelToolExecutorE2E:
     """실제 MCP 도구에서 병렬 실행이 동작하는지 검증."""
@@ -330,6 +357,7 @@ class TestParallelToolExecutorE2E:
 
 # ── 4. Coordinator Mode E2E ──────────────────────────────────
 
+
 class TestCoordinatorModeE2E:
     """Coordinator Mode가 실제 LLM으로 작업을 분해하고 실행하는지 검증."""
 
@@ -393,19 +421,39 @@ class TestCoordinatorModeE2E:
         assert len(subtasks) >= 1, "서브태스크가 생성되지 않았습니다"
         print(f"  분해된 서브태스크: {len(subtasks)}개")
         for st in subtasks:
-            print(f"    - [{st.get('agent_type', '?')}] {st.get('description', '?')[:60]}")
+            print(
+                f"    - [{st.get('agent_type', '?')}] {st.get('description', '?')[:60]}"
+            )
 
     async def test_task_graph_with_decomposed_tasks(self):
         """분해된 서브태스크로 TaskGraph를 구성하고 실행 웨이브를 계산한다."""
         from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
 
         subtasks = [
-            {"id": "t1", "description": "코드 분석", "agent_type": "coding_assistant",
-             "dependencies": [], "priority": 1, "timeout_s": 30.0},
-            {"id": "t2", "description": "테스트 현황 분석", "agent_type": "coding_assistant",
-             "dependencies": [], "priority": 1, "timeout_s": 30.0},
-            {"id": "t3", "description": "결과 종합", "agent_type": "deep_research",
-             "dependencies": ["t1", "t2"], "priority": 2, "timeout_s": 30.0},
+            {
+                "id": "t1",
+                "description": "코드 분석",
+                "agent_type": "coding_assistant",
+                "dependencies": [],
+                "priority": 1,
+                "timeout_s": 30.0,
+            },
+            {
+                "id": "t2",
+                "description": "테스트 현황 분석",
+                "agent_type": "coding_assistant",
+                "dependencies": [],
+                "priority": 1,
+                "timeout_s": 30.0,
+            },
+            {
+                "id": "t3",
+                "description": "결과 종합",
+                "agent_type": "deep_research",
+                "dependencies": ["t1", "t2"],
+                "priority": 2,
+                "timeout_s": 30.0,
+            },
         ]
 
         graph = TaskGraph(subtasks)
@@ -425,7 +473,7 @@ class TestCoordinatorModeE2E:
         print(f"  실행 웨이브: {len(waves)}개")
         for i, wave in enumerate(waves):
             ids = [st["id"] for st in wave]
-            print(f"    Wave {i+1}: {ids}")
+            print(f"    Wave {i + 1}: {ids}")
 
     @_skip_no_api
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
@@ -499,6 +547,7 @@ class TestCoordinatorModeE2E:
 
 # ── 5. CodingAssistant 전체 파이프라인 E2E ───────────────────
 
+
 class TestCodingAssistantE2E:
     """CodingAssistantAgent가 Phase 11 기능과 함께 전체 동작하는지 검증."""
 
@@ -509,7 +558,10 @@ class TestCodingAssistantE2E:
         """CodingAssistant가 훅+권한+MCP로 코드를 생성한다."""
         from langchain_core.messages import HumanMessage
 
-        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.agents.coding_assistant import (
+            CodingAssistantAgent,
+            CodingConfig,
+        )
         from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
         from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
         from youngs75_a2a.core.tool_permissions import ToolPermissionManager
@@ -518,7 +570,9 @@ class TestCodingAssistantE2E:
         hook_events: list[str] = []
 
         async def trace_hook(ctx: HookContext) -> HookContext:
-            hook_events.append(f"{ctx.event.value}:{ctx.tool_name or ctx.node_name or '?'}")
+            hook_events.append(
+                f"{ctx.event.value}:{ctx.tool_name or ctx.node_name or '?'}"
+            )
             return ctx
 
         hook_mgr = HookManager()
@@ -536,14 +590,20 @@ class TestCodingAssistantE2E:
         # Phase 10 기능 주입
         agent.permission_manager = perm_mgr
         agent.tool_executor = tool_exec
-        agent.project_context = "이 프로젝트는 Python 기반 AI 에이전트 프레임워크입니다."
+        agent.project_context = (
+            "이 프로젝트는 Python 기반 AI 에이전트 프레임워크입니다."
+        )
 
         result = await asyncio.wait_for(
-            agent.graph.ainvoke({
-                "messages": [HumanMessage(content="파이썬으로 피보나치 수열 함수를 작성해줘")],
-                "iteration": 0,
-                "max_iterations": 2,
-            }),
+            agent.graph.ainvoke(
+                {
+                    "messages": [
+                        HumanMessage(content="파이썬으로 피보나치 수열 함수를 작성해줘")
+                    ],
+                    "iteration": 0,
+                    "max_iterations": 2,
+                }
+            ),
             timeout=300.0,
         )
 
@@ -574,6 +634,7 @@ class TestCodingAssistantE2E:
 
 
 # ── 6. Context Manager E2E ───────────────────────────────────
+
 
 class TestContextManagerE2E:
     """ContextManager가 실제 메시지 시퀀스에서 동작하는지 검증."""
@@ -608,7 +669,9 @@ class TestContextManagerE2E:
             HumanMessage(content="첫 질문"),
             AIMessage(content="첫 답변"),
             HumanMessage(content="두번째 질문"),
-            AIMessage(content="도구 호출", additional_kwargs={"tool_calls": [{"id": "1"}]}),
+            AIMessage(
+                content="도구 호출", additional_kwargs={"tool_calls": [{"id": "1"}]}
+            ),
             ToolMessage(content="도구 결과", tool_call_id="1"),
             AIMessage(content="두번째 답변"),
             HumanMessage(content="세번째 질문"),
@@ -623,6 +686,7 @@ class TestContextManagerE2E:
 
 # ── 7. 전체 시스템 통합 ──────────────────────────────────────
 
+
 class TestFullSystemIntegration:
     """전체 시스템이 함께 동작하는지 검증하는 스모크 테스트."""
 
@@ -633,7 +697,13 @@ class TestFullSystemIntegration:
 
         servers = {}
         import socket
-        for name, port in [("code_tools", 3003), ("arxiv", 3000), ("tavily", 3001), ("serper", 3002)]:
+
+        for name, port in [
+            ("code_tools", 3003),
+            ("arxiv", 3000),
+            ("tavily", 3001),
+            ("serper", 3002),
+        ]:
             try:
                 with socket.create_connection(("localhost", port), timeout=1):
                     servers[name] = f"http://localhost:{port}/mcp/"
@@ -655,7 +725,11 @@ class TestFullSystemIntegration:
         """Phase 11 모든 모듈이 정상 임포트된다."""
         # Hook system
         from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager  # noqa: F401
-        from youngs75_a2a.core.builtin_hooks import logging_hook, timing_hook, audit_hook  # noqa: F401
+        from youngs75_a2a.core.builtin_hooks import (
+            logging_hook,
+            timing_hook,
+            audit_hook,
+        )  # noqa: F401
 
         # Coordinator
         from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode  # noqa: F401
@@ -679,7 +753,10 @@ class TestFullSystemIntegration:
     async def test_smoke_simple_react_with_phase11(self):
         """SimpleReActAgent가 Phase 11 기능과 함께 동작한다."""
         from langchain_core.messages import HumanMessage
-        from youngs75_a2a.agents.simple_react import SimpleMCPReActAgent, SimpleReActConfig
+        from youngs75_a2a.agents.simple_react import (
+            SimpleMCPReActAgent,
+            SimpleReActConfig,
+        )
         from youngs75_a2a.core.context_manager import ContextManager
 
         config = SimpleReActConfig(default_model="deepseek/deepseek-v3.2")
@@ -693,9 +770,13 @@ class TestFullSystemIntegration:
             pytest.skip("MCP 도구 로드 실패")
 
         result = await asyncio.wait_for(
-            agent.graph.ainvoke({
-                "messages": [HumanMessage(content="현재 디렉토리의 파일 목록을 보여줘")]
-            }),
+            agent.graph.ainvoke(
+                {
+                    "messages": [
+                        HumanMessage(content="현재 디렉토리의 파일 목록을 보여줘")
+                    ]
+                }
+            ),
             timeout=60.0,
         )
 
