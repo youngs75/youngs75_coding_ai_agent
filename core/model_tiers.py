@@ -61,33 +61,40 @@ class ModelCostInfo(BaseModel):
 
 # 알려진 모델의 비용/성능 데이터 (참고용, 환경변수로 오버라이드 가능)
 _MODEL_COST_DB: dict[str, ModelCostInfo] = {
-    "gpt-5.4": ModelCostInfo(
-        model="gpt-5.4",
-        input_cost_per_1m=2.50,
-        output_cost_per_1m=10.00,
+    "qwen/qwen3-coder": ModelCostInfo(
+        model="qwen/qwen3-coder",
+        input_cost_per_1m=0.22,
+        output_cost_per_1m=1.00,
         latency_category="medium",
-        capability_scores={"code": 0.95, "reasoning": 0.95, "speed": 0.7},
+        capability_scores={"code": 0.95, "reasoning": 0.90, "speed": 0.75},
     ),
-    "gpt-5.4-mini": ModelCostInfo(
-        model="gpt-5.4-mini",
-        input_cost_per_1m=0.40,
-        output_cost_per_1m=1.60,
+    "deepseek/deepseek-v3.2": ModelCostInfo(
+        model="deepseek/deepseek-v3.2",
+        input_cost_per_1m=0.26,
+        output_cost_per_1m=0.38,
         latency_category="low",
-        capability_scores={"code": 0.80, "reasoning": 0.80, "speed": 0.95},
+        capability_scores={"code": 0.90, "reasoning": 0.92, "speed": 0.85},
     ),
-    "gpt-4.1-mini": ModelCostInfo(
-        model="gpt-4.1-mini",
-        input_cost_per_1m=0.40,
-        output_cost_per_1m=1.60,
+    "qwen/qwen3.5-9b": ModelCostInfo(
+        model="qwen/qwen3.5-9b",
+        input_cost_per_1m=0.05,
+        output_cost_per_1m=0.15,
         latency_category="low",
-        capability_scores={"code": 0.75, "reasoning": 0.75, "speed": 0.95},
+        capability_scores={"code": 0.70, "reasoning": 0.70, "speed": 0.95},
     ),
-    "gpt-4.1": ModelCostInfo(
-        model="gpt-4.1",
-        input_cost_per_1m=2.00,
-        output_cost_per_1m=8.00,
+    "deepseek/deepseek-r1": ModelCostInfo(
+        model="deepseek/deepseek-r1",
+        input_cost_per_1m=0.70,
+        output_cost_per_1m=2.50,
+        latency_category="high",
+        capability_scores={"code": 0.92, "reasoning": 0.98, "speed": 0.50},
+    ),
+    "z-ai/glm-5": ModelCostInfo(
+        model="z-ai/glm-5",
+        input_cost_per_1m=0.72,
+        output_cost_per_1m=2.30,
         latency_category="medium",
-        capability_scores={"code": 0.90, "reasoning": 0.90, "speed": 0.75},
+        capability_scores={"code": 0.88, "reasoning": 0.90, "speed": 0.70},
     ),
 }
 
@@ -128,18 +135,18 @@ def build_default_tiers() -> dict[str, TierConfig]:
     """환경변수에서 티어별 설정을 로드하여 기본 티어 구성을 반환한다."""
     return {
         ModelTier.STRONG: TierConfig(
-            model=os.getenv("STRONG_MODEL", "gpt-5.4"),
-            provider=os.getenv("STRONG_PROVIDER", "openai"),
-            context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "128000")),
+            model=os.getenv("STRONG_MODEL", "qwen/qwen3-coder"),
+            provider=os.getenv("STRONG_PROVIDER", "openrouter"),
+            context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "262144")),
         ),
         ModelTier.DEFAULT: TierConfig(
-            model=os.getenv("DEFAULT_MODEL", "gpt-5.4"),
-            provider=os.getenv("DEFAULT_PROVIDER", "openai"),
+            model=os.getenv("DEFAULT_MODEL", "deepseek/deepseek-v3.2"),
+            provider=os.getenv("DEFAULT_PROVIDER", "openrouter"),
             context_window=int(os.getenv("DEFAULT_CONTEXT_WINDOW", "128000")),
         ),
         ModelTier.FAST: TierConfig(
-            model=os.getenv("FAST_MODEL", "gpt-4.1-mini"),
-            provider=os.getenv("FAST_PROVIDER", "openai"),
+            model=os.getenv("FAST_MODEL", "qwen/qwen3.5-9b"),
+            provider=os.getenv("FAST_PROVIDER", "openrouter"),
             context_window=int(os.getenv("FAST_CONTEXT_WINDOW", "128000")),
         ),
     }
@@ -178,7 +185,7 @@ def resolve_tier_config(
     if config is None:
         config = tiers.get(ModelTier.DEFAULT)
     if config is None:
-        return TierConfig(model="gpt-5.4", provider="openai")
+        return TierConfig(model="deepseek/deepseek-v3.2", provider="openrouter")
     return config
 
 
@@ -283,7 +290,10 @@ def recommend_tier_for_purpose(
 
     # 폴백
     if best_config is None:
-        default_config = tiers.get(ModelTier.DEFAULT, TierConfig(model="gpt-5.4"))
+        default_config = tiers.get(
+            ModelTier.DEFAULT,
+            TierConfig(model="deepseek/deepseek-v3.2", provider="openrouter"),
+        )
         return ModelTier.DEFAULT, default_config, analysis
 
     return best_tier_name, best_config, analysis

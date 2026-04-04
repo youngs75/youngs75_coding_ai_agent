@@ -44,9 +44,13 @@ def check_api_key():
 @_skip_no_api_key
 async def test_base_agent_executor():
     """BaseAgentExecutor로 간단한 에이전트 테스트."""
-    from langchain.chat_models import init_chat_model
+    from langchain_openai import ChatOpenAI
 
-    llm = init_chat_model(model="gpt-5.4-mini", model_provider="openai")
+    llm = ChatOpenAI(
+        model="deepseek/deepseek-v3.2",
+        openai_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        openai_api_base="https://openrouter.ai/api/v1",
+    )
     response = await llm.ainvoke("1+1=? 숫자만 답해줘")
     assert "2" in response.content
     print(f"✓ LLM 직접 호출 성공: '{response.content.strip()}'")
@@ -64,8 +68,8 @@ async def test_deep_research_clarify_only():
 
     rc = ResearchConfig(
         allow_clarification=True,
-        default_model="gpt-5.4-mini",
-        research_model="gpt-5.4-mini",
+        default_model="deepseek/deepseek-v3.2",
+        research_model="deepseek/deepseek-v3.2",
     )
     agent = DeepResearchAgent(config=rc)
 
@@ -103,7 +107,9 @@ async def test_a2a_server_lifecycle():
     from youngs75_a2a.a2a import LGAgentExecutor, build_app, create_agent_card
     from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
 
-    agent = DeepResearchAgent(config=ResearchConfig(default_model="gpt-5.4-mini"))
+    agent = DeepResearchAgent(
+        config=ResearchConfig(default_model="deepseek/deepseek-v3.2")
+    )
     executor = LGAgentExecutor(graph=agent.graph)
     card = create_agent_card(name="test-agent", url="http://localhost:19876")
     server_app = build_app(executor, card)

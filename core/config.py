@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
@@ -25,6 +24,7 @@ from youngs75_a2a.core.model_tiers import (
     TierConfig,
     build_default_purpose_tiers,
     build_default_tiers,
+    create_chat_model,
     resolve_tier_config,
 )
 
@@ -34,10 +34,10 @@ class BaseAgentConfig(BaseModel):
 
     # 레거시 필드 (하위 호환 — ResearchConfig 등에서 사용)
     model_provider: str = Field(
-        default_factory=lambda: os.getenv("MODEL_PROVIDER", "openai"),
+        default_factory=lambda: os.getenv("MODEL_PROVIDER", "openrouter"),
     )
     default_model: str = Field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "gpt-5.4"),
+        default_factory=lambda: os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2"),
     )
     temperature: float = Field(
         default_factory=lambda: float(os.getenv("TEMPERATURE", "0.1")),
@@ -65,18 +65,19 @@ class BaseAgentConfig(BaseModel):
     ) -> BaseChatModel:
         """목적별 LLM 모델을 반환한다.
 
-        기본 구현은 _resolve_model_name + model_provider 레거시 경로를 사용한다.
-        티어 시스템을 사용하려면 서브클래스에서 get_model()을 오버라이드하라.
+        기본 구현은 _resolve_model_name + model_provider로 모델을 생성한다.
+        OpenRouter 프로바이더는 create_chat_model()을 통해 처리한다.
         """
         model_name = self._resolve_model_name(purpose)
-        llm = init_chat_model(
+        tier_config = TierConfig(
             model=model_name,
-            model_provider=self.model_provider,
-            temperature=self.temperature,
+            provider=self.model_provider,
         )
-        if structured:
-            llm = llm.with_structured_output(structured, include_raw=True)
-        return llm
+        return create_chat_model(
+            tier_config,
+            temperature=self.temperature,
+            structured=structured,
+        )
 
     def _resolve_model_name(self, purpose: str) -> str:
         """목적별 모델명 결정. 서브클래스에서 오버라이드."""

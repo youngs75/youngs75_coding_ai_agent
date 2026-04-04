@@ -32,7 +32,7 @@ from youngs75_a2a.agents.orchestrator.config import AgentEndpoint
 
 async def main():
     port = int(os.getenv("ORCH_PORT", "18080"))
-    model = os.getenv("AGENT_MODEL", "gpt-5.4-mini")
+    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
 
     if not os.getenv("OPENAI_API_KEY"):
         print("❌ OPENAI_API_KEY가 설정되지 않았습니다.")

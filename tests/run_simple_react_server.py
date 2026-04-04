@@ -29,7 +29,7 @@ from youngs75_a2a.agents.simple_react import SimpleMCPReActAgent, SimpleReActCon
 
 async def main():
     port = int(os.getenv("AGENT_PORT", "18081"))
-    model = os.getenv("AGENT_MODEL", "gpt-5.4-mini")
+    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
     tavily_url = os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/")
 
     if not os.getenv("OPENAI_API_KEY"):

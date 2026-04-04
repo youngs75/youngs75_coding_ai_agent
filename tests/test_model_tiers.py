@@ -24,7 +24,7 @@ from youngs75_a2a.core.model_tiers import (
 
 class TestTierConfig:
     def test_defaults(self):
-        tc = TierConfig(model="gpt-5.4")
+        tc = TierConfig(model="deepseek/deepseek-v3.2")
         assert tc.provider == "openai"
         assert tc.context_window == 128_000
         assert tc.temperature is None
@@ -52,8 +52,8 @@ class TestBuildDefaultTiers:
 
     def test_default_models(self):
         tiers = build_default_tiers()
-        assert tiers[ModelTier.STRONG].model == "gpt-5.4"
-        assert tiers[ModelTier.FAST].model == "gpt-4.1-mini"
+        assert tiers[ModelTier.STRONG].model == "qwen/qwen3-coder"
+        assert tiers[ModelTier.FAST].model == "qwen/qwen3.5-9b"
 
     def test_env_override(self):
         env = {
@@ -125,8 +125,8 @@ class TestResolveTierConfig:
 
     def test_all_missing_returns_hardcoded_fallback(self):
         cfg = resolve_tier_config("x", {}, {})
-        assert cfg.model == "gpt-5.4"
-        assert cfg.provider == "openai"
+        assert cfg.model == "deepseek/deepseek-v3.2"
+        assert cfg.provider == "openrouter"
 
 
 # ── BaseAgentConfig 티어 연동 ──
@@ -151,13 +151,13 @@ class TestBaseAgentConfigTiers:
         from youngs75_a2a.core.config import BaseAgentConfig
 
         config = BaseAgentConfig(
-            model_provider="openai",
-            default_model="gpt-5.4",
+            model_provider="openrouter",
+            default_model="deepseek/deepseek-v3.2",
             temperature=0.1,
             mcp_servers={"tavily": "http://localhost:3001/mcp/"},
         )
-        assert config.model_provider == "openai"
-        assert config.default_model == "gpt-5.4"
+        assert config.model_provider == "openrouter"
+        assert config.default_model == "deepseek/deepseek-v3.2"
         assert config.get_mcp_endpoint("tavily") == "http://localhost:3001/mcp/"
 
     def test_to_langgraph_configurable_includes_tiers(self):

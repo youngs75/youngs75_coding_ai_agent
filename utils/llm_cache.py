@@ -12,13 +12,13 @@ TTL 기반 자동 만료, 캐시 히트율 메트릭 제공.
     cache = LLMCache(max_size=256, ttl_seconds=600)
 
     # 캐시 확인
-    hit = cache.get("gpt-5.4", prompt_text, temperature=0.0)
+    hit = cache.get("deepseek/deepseek-v3.2", prompt_text, temperature=0.0)
     if hit is not None:
         return hit
 
     # LLM 호출 후 캐시 저장
     response = await llm.ainvoke(messages)
-    cache.put("gpt-5.4", prompt_text, temperature=0.0, response=response_text)
+    cache.put("deepseek/deepseek-v3.2", prompt_text, temperature=0.0, response=response_text)
 
     # 메트릭 확인
     print(cache.metrics)

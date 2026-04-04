@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
 
     # ── LLM 모델 설정 ──
-    openai_model_name: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL_NAME")
-    openrouter_model_name: str = Field(default="gpt-4o-mini", alias="DEFAULT_MODEL")
+    openai_model_name: str = Field(default="qwen/qwen3.5-9b", alias="OPENAI_MODEL_NAME")
+    openrouter_model_name: str = Field(default="qwen/qwen3.5-9b", alias="DEFAULT_MODEL")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
 
     # ── Langfuse (관측성) ──

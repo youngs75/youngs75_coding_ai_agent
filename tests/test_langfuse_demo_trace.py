@@ -603,11 +603,11 @@ class TestDataClasses:
             duration_ms=100.0,
             input_text="input",
             output_text="output",
-            model="gpt-4o",
+            model="deepseek/deepseek-v3.2",
             prompt_tokens=100,
             completion_tokens=50,
         )
-        assert span.model == "gpt-4o"
+        assert span.model == "deepseek/deepseek-v3.2"
         assert span.prompt_tokens == 100
 
     def test_simulated_scenario_fields(self):

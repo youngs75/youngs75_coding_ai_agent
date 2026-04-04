@@ -12,7 +12,7 @@ tiktoken 기반 토큰 수 측정, 프롬프트 압축, 토큰 예산 관리를 
     )
 
     # 토큰 수 측정
-    n = count_tokens("프롬프트 텍스트", model="gpt-5.4")
+    n = count_tokens("프롬프트 텍스트", model="deepseek/deepseek-v3.2")
 
     # 프롬프트 압축
     compressed = compress_prompt(long_prompt, max_tokens=2000)
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 _encoding_cache: dict[str, tiktoken.Encoding] = {}
 
 
-def _get_encoding(model: str = "gpt-5.4") -> tiktoken.Encoding:
+def _get_encoding(model: str = "deepseek/deepseek-v3.2") -> tiktoken.Encoding:
     """모델에 맞는 tiktoken 인코딩을 반환한다 (캐시 적용).
 
     알 수 없는 모델은 cl100k_base로 폴백한다.
@@ -62,7 +62,7 @@ def _get_encoding(model: str = "gpt-5.4") -> tiktoken.Encoding:
 # ── 토큰 수 측정 ──
 
 
-def count_tokens(text: str, *, model: str = "gpt-5.4") -> int:
+def count_tokens(text: str, *, model: str = "deepseek/deepseek-v3.2") -> int:
     """텍스트의 토큰 수를 반환한다.
 
     Args:
@@ -79,7 +79,7 @@ def count_tokens(text: str, *, model: str = "gpt-5.4") -> int:
 def count_messages_tokens(
     messages: list[dict[str, str]],
     *,
-    model: str = "gpt-5.4",
+    model: str = "deepseek/deepseek-v3.2",
 ) -> int:
     """ChatML 메시지 리스트의 토큰 수를 추정한다.
 
@@ -117,7 +117,7 @@ def compress_prompt(
     text: str,
     *,
     max_tokens: int | None = None,
-    model: str = "gpt-5.4",
+    model: str = "deepseek/deepseek-v3.2",
     strip_comments: bool = False,
 ) -> str:
     """프롬프트를 압축한다.
@@ -202,7 +202,7 @@ class TokenBudget:
     execute: int = 4000
     verify: int = 1500
     default: int = 2000
-    model: str = "gpt-5.4"
+    model: str = "deepseek/deepseek-v3.2"
 
     # 누적 사용량 추적
     _usage: dict[str, int] = field(default_factory=dict, repr=False)
@@ -257,7 +257,7 @@ class TokenBudget:
 
 def report_prompt_tokens(
     *,
-    model: str = "gpt-5.4",
+    model: str = "deepseek/deepseek-v3.2",
 ) -> dict[str, dict[str, int | str]]:
     """현재 등록된 시스템 프롬프트들의 토큰 수를 측정하여 리포트한다.
 
@@ -294,7 +294,7 @@ def report_prompt_tokens(
     return report
 
 
-def report_prompt_tokens_text(*, model: str = "gpt-5.4") -> str:
+def report_prompt_tokens_text(*, model: str = "deepseek/deepseek-v3.2") -> str:
     """프롬프트 토큰 리포트를 사람이 읽기 쉬운 텍스트로 반환한다."""
     report = report_prompt_tokens(model=model)
     lines = ["=== 프롬프트 토큰 리포트 ===", f"모델: {model}", ""]

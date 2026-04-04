@@ -55,13 +55,17 @@ class ResearchConfig(BaseAgentConfig):
 
     # --- LLM 모델 (용도별) ---
     research_model: str = Field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "gpt-5.4"),
+        default_factory=lambda: os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2"),
     )
     compression_model: str = Field(
-        default_factory=lambda: os.getenv("COMPRESSION_MODEL", "gpt-4o-2024-11-20"),
+        default_factory=lambda: os.getenv(
+            "COMPRESSION_MODEL", "deepseek/deepseek-v3.2"
+        ),
     )
     final_report_model: str = Field(
-        default_factory=lambda: os.getenv("FINAL_REPORT_MODEL", "gpt-5.4"),
+        default_factory=lambda: os.getenv(
+            "FINAL_REPORT_MODEL", "deepseek/deepseek-v3.2"
+        ),
     )
 
     # --- MCP 서버 ---

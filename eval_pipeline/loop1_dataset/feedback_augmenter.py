@@ -69,7 +69,7 @@ def augment_with_feedback(items: list[dict]) -> list[dict]:
         try:
             # LLM 호출: 피드백을 반영한 개선 답변 생성
             # Settings의 openrouter_model_name은 DEFAULT_MODEL 환경변수에서 로드
-            model_name = settings.openrouter_model_name or "gpt-4o-mini"
+            model_name = settings.openrouter_model_name or "qwen/qwen3.5-9b"
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],

@@ -91,7 +91,7 @@ services:
       - ../.env
     environment:
       - AGENT_PORT=18084
-      - AGENT_MODEL=gpt-5.4-mini
+      - AGENT_MODEL=deepseek/deepseek-v3.2
     command: ["python", "-m", "youngs75_a2a.tests.run_coding_assistant_server"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:18084/health"]
@@ -118,7 +118,7 @@ services:
       - ../.env
     environment:
       - ORCH_PORT=18080
-      - AGENT_MODEL=gpt-5.4-mini
+      - AGENT_MODEL=deepseek/deepseek-v3.2
       - SIMPLE_REACT_URL=http://agent-simple-react:18081
       - DEEP_RESEARCH_URL=http://agent-deep-research:18082
       - DEEP_RESEARCH_A2A_URL=http://agent-deep-research-a2a:18083

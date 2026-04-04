@@ -8,8 +8,8 @@ from youngs75_a2a.eval_pipeline.llm.deepeval_model import OpenRouterModel
 class TestOpenRouterModel:
     def test_model_name(self):
         """모델명이 올바르게 설정되는지 테스트합니다."""
-        model = OpenRouterModel(model_name="openai/gpt-5.4", api_key="test-key")
-        assert model.get_model_name() == "openai/gpt-5.4"
+        model = OpenRouterModel(model_name="deepseek/deepseek-v3.2", api_key="test-key")
+        assert model.get_model_name() == "deepseek/deepseek-v3.2"
 
     def test_generate(self):
         """generate 메서드가 올바른 텍스트를 반환하는지 테스트합니다."""

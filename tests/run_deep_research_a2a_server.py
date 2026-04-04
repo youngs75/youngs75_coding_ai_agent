@@ -28,7 +28,7 @@ from youngs75_a2a.agents.deep_research import DeepResearchA2AAgent, ResearchConf
 
 def main():
     port = int(os.getenv("AGENT_PORT", "18083"))
-    model = os.getenv("AGENT_MODEL", "gpt-5.4-mini")
+    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
     tavily_url = os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/")
     arxiv_url = os.getenv("ARXIV_MCP_URL", "http://localhost:3000/mcp/")
     serper_url = os.getenv("SERPER_MCP_URL", "http://localhost:3002/mcp/")

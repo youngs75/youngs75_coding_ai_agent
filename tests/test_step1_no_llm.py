@@ -63,8 +63,8 @@ def test_config():
     from youngs75_a2a.core.config import BaseAgentConfig
 
     config = BaseAgentConfig(
-        model_provider="openai",
-        default_model="gpt-5.4",
+        model_provider="openrouter",
+        default_model="deepseek/deepseek-v3.2",
         temperature=0.1,
         mcp_servers={"tavily": "http://localhost:3001/mcp/"},
     )
@@ -73,7 +73,7 @@ def test_config():
 
     # to_langgraph_configurable 변환
     configurable = config.to_langgraph_configurable()
-    assert configurable["default_model"] == "gpt-5.4"
+    assert configurable["default_model"] == "deepseek/deepseek-v3.2"
 
     print("✓ BaseAgentConfig 정상 동작")
 
@@ -83,13 +83,13 @@ def test_research_config():
     from youngs75_a2a.agents.deep_research.config import ResearchConfig
 
     rc = ResearchConfig(
-        research_model="gpt-5.4",
-        compression_model="gpt-4o",
-        final_report_model="gpt-5.4",
+        research_model="deepseek/deepseek-v3.2",
+        compression_model="qwen/qwen3.5-9b",
+        final_report_model="deepseek/deepseek-v3.2",
     )
-    assert rc._resolve_model_name("research") == "gpt-5.4"
-    assert rc._resolve_model_name("compression") == "gpt-4o"
-    assert rc._resolve_model_name("final_report") == "gpt-5.4"
+    assert rc._resolve_model_name("research") == "deepseek/deepseek-v3.2"
+    assert rc._resolve_model_name("compression") == "qwen/qwen3.5-9b"
+    assert rc._resolve_model_name("final_report") == "deepseek/deepseek-v3.2"
     assert rc._resolve_model_name("unknown") == rc.default_model
 
     print("✓ ResearchConfig 모델 분리 정상")

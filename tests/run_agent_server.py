@@ -11,7 +11,7 @@ Docker 컨테이너 또는 로컬에서 실행 가능.
 환경변수:
   OPENAI_API_KEY   — 필수
   AGENT_PORT       — 서버 포트 (기본: 18080)
-  AGENT_MODEL      — LLM 모델 (기본: gpt-5.4-mini)
+  AGENT_MODEL      — LLM 모델 (기본: deepseek/deepseek-v3.2)
   TAVILY_MCP_URL   — Tavily MCP 서버 URL (기본: http://localhost:3001/mcp/)
 """
 
@@ -38,7 +38,7 @@ from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
 
 def main():
     port = int(os.getenv("AGENT_PORT", "18082"))
-    model = os.getenv("AGENT_MODEL", "gpt-5.4-mini")
+    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
     tavily_url = os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/")
     arxiv_url = os.getenv("ARXIV_MCP_URL", "http://localhost:3000/mcp/")
     serper_url = os.getenv("SERPER_MCP_URL", "http://localhost:3002/mcp/")

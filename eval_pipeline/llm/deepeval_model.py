@@ -28,7 +28,7 @@ class OpenAIModel(DeepEvalBaseLLM):
     generate(), a_generate(), get_model_name() 인터페이스를 구현합니다.
 
     Args:
-        model_name: 사용할 모델명 (예: "gpt-5.4"). None이면 환경변수/기본값 사용
+        model_name: 사용할 모델명 (예: "deepseek/deepseek-v3.2"). None이면 환경변수/기본값 사용
         api_key: OpenAI API 키. None이면 OPENAI_API_KEY 환경변수 사용
     """
 
@@ -37,7 +37,7 @@ class OpenAIModel(DeepEvalBaseLLM):
         if model_name is None:
             model_name = os.getenv("OPENAI_MODEL_NAME")
         if model_name is None:
-            model_name = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
+            model_name = os.getenv("DEFAULT_MODEL", "qwen/qwen3.5-9b")
         self._model_name = model_name
         self._client = OpenAI(
             api_key=api_key or os.getenv("OPENAI_API_KEY"),

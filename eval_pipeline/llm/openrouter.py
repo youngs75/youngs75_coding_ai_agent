@@ -4,7 +4,7 @@
     from youngs75_a2a.eval_pipeline.llm.openrouter import get_openrouter_client
     client = get_openrouter_client()
     response = client.chat.completions.create(
-        model="gpt-5.4",
+        model="deepseek/deepseek-v3.2",
         messages=[{"role": "user", "content": "Hello!"}],
     )
 """

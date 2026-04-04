@@ -465,5 +465,8 @@ async def _main_loop(config: CLIConfig) -> None:
 
 def run_cli(config: CLIConfig | None = None) -> None:
     """CLI 진입점."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
     config = config or CLIConfig()
     asyncio.run(_main_loop(config))

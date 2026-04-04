@@ -97,7 +97,7 @@ services:
       - ../.env
     environment:
       - AGENT_PORT=18081
-      - AGENT_MODEL=gpt-5.4-mini
+      - AGENT_MODEL=deepseek/deepseek-v3.2
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       # LangSmith 원격 트레이싱 비활성화 (불필요한 401 오류 방지)
       - LANGCHAIN_TRACING_V2=false
@@ -126,7 +126,7 @@ services:
       - ../.env
     environment:
       - AGENT_PORT=18082
-      - AGENT_MODEL=gpt-5.4-mini
+      - AGENT_MODEL=deepseek/deepseek-v3.2
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
       - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
@@ -160,7 +160,7 @@ services:
       - ../.env
     environment:
       - AGENT_PORT=18083
-      - AGENT_MODEL=gpt-5.4-mini
+      - AGENT_MODEL=deepseek/deepseek-v3.2
       - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
       - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
       - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
@@ -195,8 +195,8 @@ services:
       - ../.env
     environment:
       # 모델 설정
-      - MODEL_PROVIDER=${MODEL_PROVIDER:-openai}
-      - MODEL_NAME=${MODEL_NAME:-gpt-5.4-mini}
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-openrouter}
+      - MODEL_NAME=${MODEL_NAME:-deepseek/deepseek-v3.2}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       # MCP 서버 엔드포인트 (컨테이너 네트워크 내부 주소)

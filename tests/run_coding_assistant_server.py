@@ -58,7 +58,7 @@ class LangfuseLGAgentExecutor(LGAgentExecutor):
 
 async def main():
     port = int(os.getenv("AGENT_PORT", "18084"))
-    model = os.getenv("AGENT_MODEL", "gpt-5.4-mini")
+    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
 
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
     if not api_key:

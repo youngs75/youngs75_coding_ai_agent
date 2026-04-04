@@ -99,7 +99,7 @@ def run_experiment(dataset_name: str, run_name: str | None) -> None:
 
     print(f"📂 데이터셋: {dataset_name} ({len(dataset.items)}개 항목)")
     print(f"🚀 실험: {run_name or '(자동 생성)'}")
-    print(f"   모델: {os.getenv('MODEL_NAME', 'gpt-5.4')}")
+    print(f"   모델: {os.getenv('MODEL_NAME', 'deepseek/deepseek-v3.2')}")
     print()
 
     result = lf.run_experiment(

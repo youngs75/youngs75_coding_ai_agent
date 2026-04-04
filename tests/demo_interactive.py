@@ -204,7 +204,7 @@ async def main():
     parser = argparse.ArgumentParser(description="youngs75_a2a 대화형 데모")
     parser.add_argument("--port", type=int, default=18080, help="A2A 서버 포트")
     parser.add_argument("--no-mcp", action="store_true", help="MCP 서버 없이 실행")
-    parser.add_argument("--model", default="gpt-5.4-mini", help="LLM 모델")
+    parser.add_argument("--model", default="deepseek/deepseek-v3.2", help="LLM 모델")
     args = parser.parse_args()
 
     # 1. 에이전트 생성

@@ -15,7 +15,7 @@ def settings():
 
     return Settings(
         openrouter_api_key="test-key",
-        openrouter_model_name="openai/gpt-5.4",
+        openrouter_model_name="deepseek/deepseek-v3.2",
         langfuse_host="",
         langfuse_public_key="",
         langfuse_secret_key="",
