@@ -724,24 +724,32 @@ class TestFullSystemIntegration:
     async def test_all_phase11_modules_importable(self):
         """Phase 11 모든 모듈이 정상 임포트된다."""
         # Hook system
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager  # noqa: F401
+        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
         from youngs75_a2a.core.builtin_hooks import (
+            audit_hook,
             logging_hook,
             timing_hook,
-            audit_hook,
-        )  # noqa: F401
+        )
 
         # Coordinator
-        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode  # noqa: F401
-        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph  # noqa: F401
+        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
+        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
 
         # Phase 10 integration
         from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
         from youngs75_a2a.core.tool_permissions import ToolPermissionManager
         from youngs75_a2a.core.context_manager import ContextManager
-        from youngs75_a2a.core.project_context import ProjectContextLoader  # noqa: F401
+        from youngs75_a2a.core.project_context import ProjectContextLoader
 
-        # 인스턴스 생성 확인
+        # 임포트 검증 — 모듈이 callable이거나 인스턴스화 가능한지 확인
+        assert callable(logging_hook)
+        assert callable(timing_hook)
+        assert callable(audit_hook)
+        assert callable(HookContext)
+        assert callable(HookEvent)
+        assert CoordinatorMode is not None
+        assert TaskGraph is not None
+        assert ProjectContextLoader is not None
         assert HookManager() is not None
         assert ParallelToolExecutor() is not None
         assert ToolPermissionManager(workspace=".") is not None
