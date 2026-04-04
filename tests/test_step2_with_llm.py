@@ -11,7 +11,14 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, ".")
+
+_skip_no_api_key = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY가 설정되지 않았습니다",
+)
 
 # Day-03/.env 에서 키 로드 시도
 try:
@@ -34,6 +41,7 @@ def check_api_key():
     print(f"✓ OPENAI_API_KEY 확인 (끝 4자리: ...{key[-4:]})")
 
 
+@_skip_no_api_key
 async def test_base_agent_executor():
     """BaseAgentExecutor로 간단한 에이전트 테스트."""
     from langchain.chat_models import init_chat_model
@@ -44,6 +52,7 @@ async def test_base_agent_executor():
     print(f"✓ LLM 직접 호출 성공: '{response.content.strip()}'")
 
 
+@_skip_no_api_key
 async def test_deep_research_clarify_only():
     """DeepResearchAgent의 clarify 노드만 테스트.
 

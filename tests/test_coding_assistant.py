@@ -6,9 +6,16 @@ Step 2: LLM 연동 테스트 (API 키 필요)
 
 import asyncio
 import json
+import os
 import sys
 
+import pytest
 from langchain_core.messages import HumanMessage
+
+_skip_no_api_key = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY가 설정되지 않았습니다",
+)
 
 
 def test_step1_graph_structure():
@@ -72,6 +79,7 @@ def test_step1_safety_envelope():
     print("[PASS] Safety Envelope 검증 통과")
 
 
+@_skip_no_api_key
 async def test_step2_llm_integration():
     """LLM 연동 전체 파이프라인 테스트."""
     from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig

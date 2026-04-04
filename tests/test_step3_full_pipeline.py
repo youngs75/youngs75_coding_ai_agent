@@ -16,7 +16,14 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, ".")
+
+_skip_no_api_key = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY가 설정되지 않았습니다",
+)
 
 try:
     from dotenv import load_dotenv
@@ -73,6 +80,7 @@ async def test_simple_react_agent():
     print(f"  응답 미리보기: {last_msg.content[:150]}...")
 
 
+@_skip_no_api_key
 async def test_deep_research_full():
     """DeepResearchAgent 전체 파이프라인 테스트.
 
