@@ -11,7 +11,7 @@ class CLIConfig(BaseModel):
     """대화형 CLI 설정."""
 
     default_agent: str = Field(
-        default_factory=lambda: os.getenv("CLI_DEFAULT_AGENT", "coding_assistant"),
+        default_factory=lambda: os.getenv("CLI_DEFAULT_AGENT", "orchestrator"),
     )
     stream_output: bool = True
     history_file: str = Field(

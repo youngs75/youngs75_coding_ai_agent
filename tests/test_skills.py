@@ -224,3 +224,89 @@ class TestSkillRegistry:
         )
         reg.register(skill)
         assert reg.get("manual") is not None
+
+    # ── 자동 활성화 ──
+
+    def test_auto_activate_for_task_fix(self, tmp_path):
+        """fix task_type → debug 스킬 자동 활성화."""
+        (tmp_path / "debug.json").write_text(
+            json.dumps({
+                "name": "debug",
+                "description": "디버깅",
+                "tags": ["debug", "fix", "error"],
+                "body": "디버깅 프롬프트",
+            }),
+            encoding="utf-8",
+        )
+        (tmp_path / "explain.json").write_text(
+            json.dumps({
+                "name": "explain",
+                "description": "설명",
+                "tags": ["explain", "documentation"],
+                "body": "설명 프롬프트",
+            }),
+            encoding="utf-8",
+        )
+        loader = SkillLoader(tmp_path)
+        reg = SkillRegistry(loader=loader)
+        reg.discover()
+
+        activated = reg.auto_activate_for_task("fix")
+        assert "debug" in activated
+        assert "explain" not in activated
+
+    def test_auto_activate_for_task_explain(self, tmp_path):
+        """explain task_type → explain 스킬 자동 활성화."""
+        (tmp_path / "explain.json").write_text(
+            json.dumps({
+                "name": "explain",
+                "description": "설명",
+                "tags": ["explain", "documentation"],
+                "body": "설명 프롬프트",
+            }),
+            encoding="utf-8",
+        )
+        loader = SkillLoader(tmp_path)
+        reg = SkillRegistry(loader=loader)
+        reg.discover()
+
+        activated = reg.auto_activate_for_task("explain")
+        assert "explain" in activated
+
+    def test_auto_activate_unknown_task_returns_empty(self, tmp_path):
+        """알 수 없는 task_type → 빈 목록."""
+        loader = SkillLoader(tmp_path)
+        reg = SkillRegistry(loader=loader)
+        reg.discover()
+
+        assert reg.auto_activate_for_task("unknown") == []
+
+    def test_get_active_skill_bodies(self, registry):
+        """L2 활성화된 스킬의 본문만 반환."""
+        # 활성화 전: L1이므로 빈 목록
+        bodies = registry.get_active_skill_bodies()
+        assert bodies == []
+
+        # alpha만 L2 활성화
+        registry.activate("alpha")
+        bodies = registry.get_active_skill_bodies()
+        assert len(bodies) == 1
+        assert "Alpha body" in bodies[0]
+
+    def test_auto_activate_updates_stats(self, tmp_path):
+        """자동 활성화도 activation_stats에 반영."""
+        (tmp_path / "refactor.json").write_text(
+            json.dumps({
+                "name": "refactor",
+                "description": "리팩토링",
+                "tags": ["refactor", "quality"],
+                "body": "리팩토링 프롬프트",
+            }),
+            encoding="utf-8",
+        )
+        loader = SkillLoader(tmp_path)
+        reg = SkillRegistry(loader=loader)
+        reg.discover()
+
+        reg.auto_activate_for_task("refactor")
+        assert reg.activation_stats.get("refactor", 0) >= 1

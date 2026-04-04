@@ -31,6 +31,7 @@ from youngs75_a2a.core.context_manager import (
 from youngs75_a2a.core.mcp_loader import MCPToolLoader
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.memory.store import MemoryStore
+from youngs75_a2a.core.skills.registry import SkillRegistry
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
 from youngs75_a2a.core.tool_permissions import PermissionDecision
 
@@ -64,6 +65,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         "RETRIEVE_MEMORY": "retrieve_memory",
         "EXECUTE": "execute_code",
         "EXECUTE_TOOLS": "execute_tools",
+        "GENERATE_FINAL": "generate_final",
         "VERIFY": "verify_result",
     }
 
@@ -73,15 +75,18 @@ class CodingAssistantAgent(BaseGraphAgent):
         config: CodingConfig | None = None,
         model: BaseChatModel | None = None,
         memory_store: MemoryStore | None = None,
+        skill_registry: SkillRegistry | None = None,
         **kwargs: Any,
     ) -> None:
         self._coding_config = config or CodingConfig()
         self._mcp_loader = MCPToolLoader(self._coding_config.mcp_servers)
         self._tools: list[Any] = []
         self._memory_store = memory_store
+        self._skill_registry = skill_registry
 
         self._explicit_model = model
         self._gen_model: BaseChatModel | None = None
+        self._tool_planning_model: BaseChatModel | None = None
         self._verify_model: BaseChatModel | None = None
         self._parse_model: BaseChatModel | None = None
         self._context_manager = ContextManager(
@@ -111,6 +116,11 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "default"
             )
         return self._parse_model
+
+    def _get_tool_planning_model(self) -> BaseChatModel:
+        if self._tool_planning_model is None:
+            self._tool_planning_model = self._coding_config.get_model("tool_planning")
+        return self._tool_planning_model
 
     def _get_gen_model(self) -> BaseChatModel:
         if self._gen_model is None:
@@ -152,13 +162,28 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "requirements": [],
             }
 
-        return {
+        result: dict[str, Any] = {
             "parse_result": parse_result,
             "execution_log": [f"[parse] task_type={parse_result.get('task_type')}"],
             "iteration": state.get("iteration", 0),
             "max_iterations": state.get("max_iterations", 3),
             "tool_call_count": 0,
         }
+
+        # task_type 기반 스킬 자동 활성화
+        if self._skill_registry:
+            task_type = parse_result.get("task_type", "generate")
+            activated = self._skill_registry.auto_activate_for_task(task_type)
+            if activated:
+                # L2 본문이 로드된 스킬의 컨텍스트 주입
+                skill_bodies = self._skill_registry.get_active_skill_bodies()
+                if skill_bodies:
+                    result["skill_context"] = skill_bodies
+                result["execution_log"].append(
+                    f"[skills] 자동 활성화: {', '.join(activated)}"
+                )
+
+        return result
 
     async def _retrieve_memory(self, state: CodingState) -> dict[str, Any]:
         """Episodic/Procedural Memory를 검색하여 상태에 주입한다.
@@ -208,20 +233,17 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return result
 
-    async def _execute_code(self, state: CodingState) -> dict[str, Any]:
-        """ReAct 루프: LLM이 MCP 도구로 컨텍스트를 수집하고 코드를 생성한다."""
+    def _build_execute_system_prompt(self, state: CodingState) -> str:
+        """execute/generate 노드 공통 시스템 프롬프트를 구성한다."""
         parse_result = state.get("parse_result", {})
-        verify_result = state.get("verify_result")
         language = parse_result.get("language", "python")
 
-        # 도구 설명 생성
         tool_descriptions = (
             self._mcp_loader.get_tool_descriptions()
             if self._tools
             else "사용 가능한 도구 없음"
         )
 
-        # 시스템 프롬프트 구성 (프로젝트 컨텍스트 포함)
         system_prompt = self._build_system_prompt(
             EXECUTE_SYSTEM_PROMPT.format(
                 language=language,
@@ -229,31 +251,37 @@ class CodingAssistantAgent(BaseGraphAgent):
             )
         )
 
-        # Semantic Memory 주입 — 프로젝트 규칙/컨벤션
+        # Semantic Memory 주입
         semantic_context = state.get("semantic_context", [])
         if semantic_context:
             system_prompt += "\n\n## 프로젝트 컨텍스트 (Semantic Memory)\n"
             system_prompt += "\n".join(f"- {ctx}" for ctx in semantic_context)
 
-        # Skills 컨텍스트 주입 — 활성 스킬 정보
+        # Skills 컨텍스트 주입 — 활성 스킬 L2 본문 포함
         skill_context = state.get("skill_context", [])
         if skill_context:
-            system_prompt += "\n\n## 사용 가능한 스킬\n"
+            system_prompt += "\n\n## 활성 스킬\n"
             system_prompt += "\n".join(f"- {ctx}" for ctx in skill_context)
 
-        # Episodic Memory 주입 — 이전 실행 이력 참조
+        # Episodic Memory 주입
         episodic_log = state.get("episodic_log", [])
         if episodic_log:
             system_prompt += "\n\n## 이전 실행 이력 (Episodic Memory)\n"
             system_prompt += "\n".join(f"- {entry}" for entry in episodic_log)
 
-        # Procedural Memory 주입 — 학습된 스킬 패턴 참조
+        # Procedural Memory 주입
         procedural_skills = state.get("procedural_skills", [])
         if procedural_skills:
             system_prompt += "\n\n## 학습된 코드 패턴 (Procedural Memory)\n"
             system_prompt += "\n".join(f"- {skill}" for skill in procedural_skills)
 
-        # 컨텍스트 메시지 구성
+        return system_prompt
+
+    def _build_context_message(self, state: CodingState) -> HumanMessage:
+        """execute/generate 노드 공통 컨텍스트 메시지를 구성한다."""
+        parse_result = state.get("parse_result", {})
+        verify_result = state.get("verify_result")
+
         context_parts = [
             f"작업 유형: {parse_result.get('task_type', 'generate')}",
             f"설명: {parse_result.get('description', '')}",
@@ -265,7 +293,6 @@ class CodingAssistantAgent(BaseGraphAgent):
                 f"대상 파일: {', '.join(parse_result['target_files'])}"
             )
 
-        # 검증 실패 재시도 시 피드백 반영
         if verify_result and not verify_result.get("passed"):
             issues = verify_result.get("issues", [])
             issue_strs = [
@@ -277,13 +304,21 @@ class CodingAssistantAgent(BaseGraphAgent):
             )
             context_parts.append("위 문제를 수정하여 다시 코드를 작성하세요.")
 
-        context_msg = HumanMessage(content="\n".join(context_parts))
+        return HumanMessage(content="\n".join(context_parts))
 
-        # LLM에 도구 바인딩
+    async def _execute_code(self, state: CodingState) -> dict[str, Any]:
+        """ReAct 루프 1단계: FAST 모델이 도구 호출을 판단하고 컨텍스트를 수집한다.
+
+        도구 호출이 필요 없으면 generate_final로 라우팅되어 STRONG 모델이 최종 생성한다.
+        """
+        system_prompt = self._build_execute_system_prompt(state)
+        context_msg = self._build_context_message(state)
+
+        # FAST 모델에 도구 바인딩 (도구 호출 판단용)
         llm_with_tools = (
-            self._get_gen_model().bind_tools(self._tools)
+            self._get_tool_planning_model().bind_tools(self._tools)
             if self._tools
-            else self._get_gen_model()
+            else self._get_tool_planning_model()
         )
 
         messages = [
@@ -292,10 +327,9 @@ class CodingAssistantAgent(BaseGraphAgent):
             context_msg,
         ]
 
-        # 컨텍스트 컴팩션 + max_tokens 복구 적용
         if self._context_manager.should_compact(messages):
             messages = await self._context_manager.compact(
-                messages, self._get_gen_model()
+                messages, self._get_tool_planning_model()
             )
         response = await invoke_with_max_tokens_recovery(
             llm_with_tools,
@@ -305,7 +339,49 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
-        log.append(f"[execute] iteration={iteration}, tools_bound={len(self._tools)}")
+        log.append(f"[execute] iteration={iteration}, tools_bound={len(self._tools)}, model=FAST")
+
+        return {
+            "generated_code": response.content or "",
+            "execution_log": log,
+            "messages": [response],
+        }
+
+    async def _generate_final(self, state: CodingState) -> dict[str, Any]:
+        """2단계: STRONG 모델이 수집된 컨텍스트를 바탕으로 최종 코드를 생성한다.
+
+        도구 호출 없이 코드 생성에만 집중한다. ReAct 루프에서 수집된
+        project_context와 도구 결과가 메시지에 포함된 상태에서 호출된다.
+        """
+        system_prompt = self._build_execute_system_prompt(state)
+
+        # 프로젝트 컨텍스트 축적분 주입
+        project_context = state.get("project_context", [])
+        if project_context:
+            system_prompt += "\n\n## 수집된 프로젝트 파일 컨텍스트\n"
+            system_prompt += "\n".join(project_context[:10])  # 최대 10개 파일
+
+        context_msg = self._build_context_message(state)
+
+        # STRONG 모델 — 도구 없이 최종 코드 생성
+        gen_model = self._get_gen_model()
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            *state["messages"],
+            context_msg,
+        ]
+
+        if self._context_manager.should_compact(messages):
+            messages = await self._context_manager.compact(messages, gen_model)
+        response = await invoke_with_max_tokens_recovery(
+            gen_model,
+            messages,
+            self._context_manager,
+        )
+
+        log = state.get("execution_log", [])
+        log.append("[generate_final] model=STRONG, 최종 코드 생성 완료")
 
         return {
             "generated_code": response.content or "",
@@ -576,13 +652,25 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 라우팅 ──────────────────────────────────────────────
 
     def _should_use_tools(self, state: CodingState) -> str:
-        """execute 후 도구 호출이 있으면 tools 노드로, 없으면 verify로."""
+        """execute 후 라우팅 판단.
+
+        - 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
+        - 도구를 한 번이라도 사용했으면 → GENERATE_FINAL (STRONG으로 최종 생성)
+        - 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
+        """
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
         tool_calls = getattr(last_msg, "tool_calls", None) or []
 
         if tool_calls:
             return self.get_node_name("EXECUTE_TOOLS")
+
+        # 도구를 한 번이라도 사용했으면 STRONG 모델로 최종 생성
+        tool_call_count = state.get("tool_call_count", 0)
+        if tool_call_count > 0:
+            return self.get_node_name("GENERATE_FINAL")
+
+        # 도구 미사용 → FAST 출력 그대로 검증 (불필요한 STRONG 호출 생략)
         return self.get_node_name("VERIFY")
 
     def _should_retry(self, state: CodingState) -> str:
@@ -604,6 +692,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("RETRIEVE_MEMORY"), self._retrieve_memory)
         graph.add_node(self.get_node_name("EXECUTE"), self._execute_code)
         graph.add_node(self.get_node_name("EXECUTE_TOOLS"), self._execute_tools)
+        graph.add_node(self.get_node_name("GENERATE_FINAL"), self._generate_final)
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
 
     def init_edges(self, graph: StateGraph) -> None:
@@ -617,15 +706,20 @@ class CodingAssistantAgent(BaseGraphAgent):
             self.get_node_name("RETRIEVE_MEMORY"),
             self.get_node_name("EXECUTE"),
         )
-        # execute → (tools or verify)
+        # execute(FAST) → (tools or generate_final)
         graph.add_conditional_edges(
             self.get_node_name("EXECUTE"),
             self._should_use_tools,
         )
-        # tools → execute (ReAct 루프)
+        # tools → execute (ReAct 루프 — FAST 모델)
         graph.add_edge(
             self.get_node_name("EXECUTE_TOOLS"),
             self.get_node_name("EXECUTE"),
+        )
+        # generate_final(STRONG) → verify
+        graph.add_edge(
+            self.get_node_name("GENERATE_FINAL"),
+            self.get_node_name("VERIFY"),
         )
         # verify → (retry or END)
         graph.add_conditional_edges(

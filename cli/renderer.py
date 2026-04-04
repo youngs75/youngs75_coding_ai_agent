@@ -155,6 +155,27 @@ class CLIRenderer:
         icon = f"[{_CLR_SUCCESS}]✓[/]" if success else f"[{_CLR_ERROR}]✗[/]"
         self.console.print(f"  {icon} [{_CLR_DIM}]{tool_name} 완료[/]")
 
+    # ── 스킬/에이전트 표시 ──
+
+    def skill_activated(self, skill_names: list[str]) -> None:
+        """자동 활성화된 스킬을 표시한다."""
+        names = ", ".join(skill_names)
+        self.console.print(
+            f"  [{_CLR_TOOL}]⚙[/] [{_CLR_DIM}]스킬 활성화:[/] {names}"
+        )
+
+    def model_label(self, stage: str, model: str) -> None:
+        """사용 중인 모델/단계를 표시한다."""
+        self.console.print(
+            f"  [{_CLR_DIM}]▸ {stage}:[/] {model}"
+        )
+
+    def subagent_delegate(self, agent_name: str) -> None:
+        """서브에이전트 위임을 표시한다."""
+        self.console.print(
+            f"  [{_CLR_TOOL}]⇢[/] [{_CLR_DIM}]위임:[/] [{_CLR_AGENT}]{agent_name}[/]"
+        )
+
     # ── 토큰 스트리밍 ──
 
     def start_token_stream(self) -> None:

@@ -139,6 +139,7 @@ class TierConfig(BaseModel):
     provider: str = "openai"
     context_window: int = 128_000
     temperature: float | None = None  # None → 글로벌 기본값 사용
+    request_timeout: float = 120.0  # LLM 요청 타임아웃 (초)
 
     @property
     def summarization_threshold(self) -> int:
@@ -161,16 +162,19 @@ def build_default_tiers() -> dict[str, TierConfig]:
             model=os.getenv("STRONG_MODEL", "qwen/qwen3-coder-plus"),
             provider=os.getenv("STRONG_PROVIDER", "openrouter"),
             context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "1000000")),
+            request_timeout=float(os.getenv("STRONG_TIMEOUT", "180")),
         ),
         ModelTier.DEFAULT: TierConfig(
             model=os.getenv("DEFAULT_MODEL", "qwen/qwen3-coder-next"),
             provider=os.getenv("DEFAULT_PROVIDER", "openrouter"),
             context_window=int(os.getenv("DEFAULT_CONTEXT_WINDOW", "262144")),
+            request_timeout=float(os.getenv("DEFAULT_TIMEOUT", "120")),
         ),
         ModelTier.FAST: TierConfig(
             model=os.getenv("FAST_MODEL", "qwen/qwen3.5-flash-02-23"),
             provider=os.getenv("FAST_PROVIDER", "openrouter"),
             context_window=int(os.getenv("FAST_CONTEXT_WINDOW", "1000000")),
+            request_timeout=float(os.getenv("FAST_TIMEOUT", "60")),
         ),
     }
 
@@ -186,6 +190,7 @@ def build_default_purpose_tiers() -> dict[str, str]:
         return json.loads(env_val)
     return {
         "generation": ModelTier.STRONG,
+        "tool_planning": ModelTier.FAST,
         "verification": ModelTier.DEFAULT,
         "parsing": ModelTier.FAST,
         "default": ModelTier.DEFAULT,
@@ -229,6 +234,8 @@ def create_chat_model(
     provider = tier_config.provider
     model = tier_config.model
 
+    timeout = tier_config.request_timeout
+
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 
@@ -237,6 +244,7 @@ def create_chat_model(
             temperature=effective_temp,
             openai_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
             openai_api_base=OPENROUTER_BASE_URL,
+            request_timeout=timeout,
             **kwargs,
         )
     else:
@@ -244,6 +252,7 @@ def create_chat_model(
             model=model,
             model_provider=provider,
             temperature=effective_temp,
+            request_timeout=timeout,
             **kwargs,
         )
 
@@ -259,6 +268,7 @@ def create_chat_model(
 PURPOSE_CAPABILITY_WEIGHTS: dict[str, dict[str, float]] = {
     "parsing": {"speed": 0.6, "reasoning": 0.3, "code": 0.1},
     "generation": {"code": 0.6, "reasoning": 0.3, "speed": 0.1},
+    "tool_planning": {"speed": 0.5, "reasoning": 0.3, "code": 0.2},
     "verification": {"reasoning": 0.6, "code": 0.3, "speed": 0.1},
     "default": {"code": 0.4, "reasoning": 0.4, "speed": 0.2},
 }

@@ -61,6 +61,7 @@ class CodingConfig(BaseAgentConfig):
     purpose_tiers: dict[str, str] = Field(
         default_factory=lambda: {
             "generation": ModelTier.STRONG,
+            "tool_planning": ModelTier.FAST,
             "verification": ModelTier.DEFAULT,
             "parsing": ModelTier.FAST,
             "default": ModelTier.DEFAULT,

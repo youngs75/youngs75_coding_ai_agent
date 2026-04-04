@@ -77,6 +77,7 @@ class TestBuildDefaultPurposeTiers:
     def test_default_mapping(self):
         pt = build_default_purpose_tiers()
         assert pt["generation"] == ModelTier.STRONG
+        assert pt["tool_planning"] == ModelTier.FAST
         assert pt["verification"] == ModelTier.DEFAULT
         assert pt["parsing"] == ModelTier.FAST
         assert pt["default"] == ModelTier.DEFAULT
@@ -180,6 +181,7 @@ class TestCodingConfigTiers:
 
         config = CodingConfig()
         assert config.purpose_tiers["generation"] == ModelTier.STRONG
+        assert config.purpose_tiers["tool_planning"] == ModelTier.FAST
         assert config.purpose_tiers["verification"] == ModelTier.DEFAULT
 
     def test_tier_config_for_generation(self):

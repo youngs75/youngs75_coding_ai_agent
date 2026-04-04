@@ -1,7 +1,7 @@
 # 아키텍처 문서
 
-**프로젝트**: youngs75-coding-ai-agent  
-**패키지**: youngs75_a2a  
+**프로젝트**: youngs75-coding-ai-agent
+**패키지**: youngs75_a2a
 **버전**: 0.1.0
 
 ---
@@ -15,8 +15,8 @@ graph TB
     end
 
     subgraph Agents["에이전트 계층"]
-        ORC["Orchestrator<br/>요청 분류 + 위임"]
-        CA["CodingAssistant<br/>코드 생성/검증"]
+        ORC["Orchestrator<br/>(기본 에이전트)<br/>요청 분류 + 위임"]
+        CA["CodingAssistant<br/>2단계 파이프라인<br/>(FAST→STRONG)"]
         DR["DeepResearch<br/>심층 연구"]
         SR["SimpleReAct<br/>MCP 도구 기반"]
     end
@@ -27,9 +27,9 @@ graph TB
         MCL["MCPToolLoader<br/>MCP 도구 로딩/캐싱"]
         AV["ActionValidator<br/>Safety Envelope"]
         MEM["Memory<br/>CoALA 4종 메모리"]
-        SKL["Skills<br/>3-Level Progressive"]
+        SKL["Skills<br/>3-Level Progressive<br/>+ 자동 활성화"]
         SUB["SubAgents<br/>동적 선택 레지스트리"]
-        MT["ModelTiers<br/>멀티티어 모델 해석"]
+        MT["ModelTiers<br/>멀티티어 모델 해석<br/>(5 purpose)"]
     end
 
     subgraph A2A["A2A 프로토콜 계층"]
@@ -61,11 +61,10 @@ graph TB
     end
 
     CLI --> ORC
-    CLI --> CA
-    CLI --> DR
-    CLI --> SR
+    ORC -->|"⇢ 위임"| CA
+    ORC -->|"⇢ 위임"| DR
+    ORC -->|"⇢ 위임"| SR
 
-    ORC -->|A2A 프로토콜| EXE
     CA --> BGA
     DR --> BGA
     SR --> BGA
@@ -103,7 +102,42 @@ graph TB
 
 ---
 
-## 2. 3계층 분리 아키텍처
+## 2. 요청 흐름 (Orchestrator-First 아키텍처)
+
+모든 사용자 요청은 Orchestrator를 거쳐 적합한 Subagent로 라우팅됩니다.
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant CLI as CLI
+    participant ORC as Orchestrator
+    participant CA as CodingAssistant
+    participant DR as DeepResearch
+    participant SR as SimpleReAct
+
+    U->>CLI: 요청 입력
+    CLI->>ORC: classify (LLM)
+    
+    alt 코드 생성/수정/리뷰
+        ORC->>CA: ⇢ 위임: coding_assistant
+        CA-->>CLI: 코드 + 검증 결과
+    else 심층 조사/기술 분석
+        ORC->>DR: ⇢ 위임: deep_research
+        DR-->>CLI: 연구 보고서
+    else 파일 조회/간단한 질의
+        ORC->>SR: ⇢ 위임: simple_react
+        SR-->>CLI: 도구 실행 결과
+    else 복합 작업
+        ORC->>ORC: coordinate (병렬 오케스트레이션)
+        ORC-->>CLI: 통합 응답
+    end
+    
+    CLI-->>U: 실시간 스트리밍 출력
+```
+
+---
+
+## 3. 3계층 분리 아키텍처
 
 본 프레임워크는 **관심사 분리** 원칙에 따라 3개 계층으로 구성된다.
 
@@ -128,48 +162,94 @@ graph LR
 
 ---
 
-## 3. 에이전트별 그래프 흐름도
+## 4. 에이전트별 그래프 흐름도
 
-### 3.1 CodingAssistantAgent
+### 4.1 CodingAssistantAgent (2단계 파이프라인)
 
 논문 인사이트 기반 설계:
-- **P1** (Agent-as-a-Judge): parse -> execute -> verify 최소 3단계
-- **P2** (RubricRewards): Generator/Verifier 모델 분리
+- **P1** (Agent-as-a-Judge): parse → execute → verify 최소 3단계
+- **P2** (RubricRewards): Generator/Verifier 모델 분리 + 도구 호출/코드 생성 모델 분리
 - **P5** (GAM): MCP 도구를 통한 JIT 원본 참조
 
 ```mermaid
 graph TD
-    START((START)) --> PARSE["parse_request<br/>요청 분석<br/>(FAST 티어)"]
-    PARSE --> EXEC["execute_code<br/>코드 생성<br/>(STRONG 티어)"]
+    START((START)) --> PARSE["parse_request<br/>요청 분석 + 스킬 자동 활성화<br/>(DEFAULT 티어)"]
+    PARSE --> MEM["retrieve_memory<br/>Episodic/Procedural 검색"]
+    MEM --> EXEC["execute_code<br/>도구 호출 판단<br/>(FAST 티어)"]
     EXEC --> ROUTE{도구 호출?}
-    ROUTE -->|Yes| TOOLS["execute_tools<br/>MCP 도구 실행"]
-    ROUTE -->|No| VERIFY["verify_result<br/>코드 검증<br/>(DEFAULT 티어)"]
+    ROUTE -->|Yes| TOOLS["execute_tools<br/>MCP 도구 실행<br/>(병렬/순차)"]
     TOOLS --> EXEC
+    ROUTE -->|"No + 도구 사용 이력 있음"| GEN["generate_final<br/>최종 코드 생성<br/>(STRONG 티어)"]
+    ROUTE -->|"No + 도구 미사용"| VERIFY
+    GEN --> VERIFY["verify_result<br/>코드 검증<br/>(DEFAULT 티어)"]
     VERIFY --> RETRY{검증 통과?}
     RETRY -->|passed=true| END_OK((END))
-    RETRY -->|passed=false<br/>iteration < max| EXEC
-    RETRY -->|passed=false<br/>iteration >= max| END_FAIL((END))
+    RETRY -->|"passed=false<br/>iteration < max"| EXEC
+    RETRY -->|"passed=false<br/>iteration >= max"| END_FAIL((END))
 ```
+
+**2단계 파이프라인 라우팅 로직:**
+- 도구 호출 있음 → `EXECUTE_TOOLS` → `EXECUTE` (ReAct 루프, FAST 모델)
+- 도구 호출 없음 + 이전에 도구 사용함 → `GENERATE_FINAL` (STRONG 모델로 최종 생성)
+- 도구 호출 없음 + 도구 미사용 → `VERIFY` (FAST 출력 그대로 검증, STRONG 생략)
+
+**비용 최적화**: 단순 코드 생성(도구 불필요)은 FAST 모델만 사용하여 비용 90% 절감.
+
+**목적별 모델 매핑:**
+| purpose | tier | 노드 |
+|---------|------|------|
+| `parsing` | FAST | parse_request |
+| `tool_planning` | FAST | execute_code (ReAct 루프) |
+| `generation` | STRONG | generate_final |
+| `verification` | DEFAULT | verify_result |
 
 **상태 스키마**: `CodingState`
 - `messages`: 대화 이력 (add_messages 누적)
 - `semantic_context`: Semantic Memory (프로젝트 규칙/컨벤션)
-- `skill_context`: Skills 메타데이터 (L1)
+- `skill_context`: Skills 본문 (L2, 자동 활성화된 스킬)
 - `episodic_log`: Episodic Memory (이전 실행 이력)
 - `procedural_skills`: Procedural Memory (학습된 코드 패턴)
-- `parse_result`: 요청 분석 결과
+- `parse_result`: 요청 분석 결과 (task_type, language, description 등)
 - `generated_code`: 생성된 코드
 - `verify_result`: 검증 결과 (`passed`, `issues`, `suggestions`)
 - `project_context`: JIT 원본 참조 결과
 - `iteration` / `max_iterations`: 반복 제어
+- `tool_call_count`: ReAct 루프 내 도구 호출 누적 횟수
 
-### 3.2 DeepResearchAgent
+### 4.2 OrchestratorAgent (기본 에이전트)
+
+모든 사용자 요청의 진입점. 요청을 분류하여 적합한 Subagent에 위임.
+
+```mermaid
+graph TD
+    START((START)) --> CLS["classify<br/>요청 분류<br/>(LLM 기반)"]
+    CLS --> ROUTE{분류 결과}
+    ROUTE -->|"coding_assistant<br/>deep_research<br/>simple_react"| DEL["delegate<br/>Subagent 위임<br/>(A2A 또는 로컬)"]
+    ROUTE -->|"coordinate<br/>(복합 작업)"| COORD["coordinate<br/>병렬 워커 오케스트레이션"]
+    DEL --> RSP["respond<br/>응답 포맷팅"]
+    COORD --> RSP
+    RSP --> END((END))
+```
+
+**위임 전략 (우선순위):**
+1. A2A 프로토콜 (HTTP 엔드포인트가 설정된 경우)
+2. 로컬 에이전트 직접 호출 (폴백)
+
+**등록된 Subagent:**
+| 에이전트 | 설명 |
+|----------|------|
+| `coding_assistant` | 코드 생성, 수정, 리팩토링, 버그 수정, 코드 리뷰 |
+| `deep_research` | 심층 조사, 리서치, 기술 분석, 보고서 작성 |
+| `simple_react` | MCP 도구를 사용한 간단한 질의응답, 파일 조회 |
+
+### 4.3 DeepResearchAgent
 
 다단계 심층 연구 워크플로우.
 
 ```mermaid
 graph TD
-    START((START)) --> CLARIFY["clarify_with_user<br/>질문 명확화"]
+    START((START)) --> MEM_R["retrieve_memory<br/>Semantic/Episodic 검색"]
+    MEM_R --> CLARIFY["clarify_with_user<br/>질문 명확화"]
     CLARIFY --> BRIEF["write_research_brief<br/>연구 브리프 작성"]
     BRIEF --> SUPER["research_supervisor<br/>(서브그래프)"]
 
@@ -182,24 +262,12 @@ graph TD
         S_DECIDE -->|No| S_END((종료))
     end
 
-    subgraph Researcher["Researcher 서브그래프"]
-        direction TB
-        R_START((시작)) --> R_REACT["ReAct Agent<br/>(MCP 도구 사용)"]
-        R_REACT --> R_END((종료))
-    end
-
     SUPER --> REPORT["final_report_generation<br/>최종 보고서"]
-    REPORT --> END((END))
-
-    S_RESEARCH -.->|"병렬 x N"| Researcher
+    REPORT --> MEM_W["record_episodic<br/>연구 이력 기록"]
+    MEM_W --> END((END))
 ```
 
-**모델 분리** (ResearchConfig):
-- `research_model`: 연구 수행 (기본: gpt-5.4)
-- `compression_model`: 연구 결과 압축 (기본: gpt-4o-2024-11-20)
-- `final_report_model`: 최종 보고서 (기본: gpt-5.4)
-
-### 3.3 SimpleMCPReActAgent
+### 4.4 SimpleMCPReActAgent
 
 LangGraph `create_react_agent` 기반 단일 노드 에이전트.
 
@@ -209,23 +277,11 @@ graph LR
     REACT --> END((END))
 ```
 
-### 3.4 OrchestratorAgent
-
-요청을 분류하여 적합한 하위 에이전트에 A2A 프로토콜로 위임.
-
-```mermaid
-graph LR
-    START((START)) --> CLS["classify<br/>요청 분류<br/>(LLM 기반)"]
-    CLS --> DEL["delegate<br/>A2A 프로토콜 위임"]
-    DEL --> RSP["respond<br/>응답 포맷팅"]
-    RSP --> END((END))
-```
-
 ---
 
-## 4. 코어 프레임워크 구조
+## 5. 코어 프레임워크 구조
 
-### 4.1 BaseGraphAgent (Template Method 패턴)
+### 5.1 BaseGraphAgent (Template Method 패턴)
 
 모든 에이전트의 기반 클래스. 서브클래스는 `init_nodes()`와 `init_edges()`만 구현하면 된다.
 
@@ -235,8 +291,9 @@ classDiagram
         +graph: CompiledStateGraph
         +agent_config: BaseAgentConfig
         +model: BaseChatModel
-        +checkpointer: BaseCheckpointSaver
-        +store: BaseStore
+        +permission_manager: ToolPermissionManager
+        +tool_executor: ParallelToolExecutor
+        +context_manager: ContextManager
         +build_graph()
         +init_nodes(graph)*
         +init_edges(graph)*
@@ -248,6 +305,9 @@ classDiagram
         +_coding_config: CodingConfig
         +_mcp_loader: MCPToolLoader
         +_memory_store: MemoryStore
+        +_skill_registry: SkillRegistry
+        +_tool_planning_model: BaseChatModel
+        +_gen_model: BaseChatModel
         +init_nodes(graph)
         +init_edges(graph)
     }
@@ -277,34 +337,32 @@ classDiagram
     BaseGraphAgent <|-- OrchestratorAgent
 ```
 
-### 4.2 BaseAgentConfig (모델 해석 체계)
-
-두 가지 모델 해석 경로를 제공한다:
+### 5.2 BaseAgentConfig (모델 해석 체계)
 
 ```mermaid
 graph TD
-    PURPOSE["get_model(purpose)"] --> LEGACY{레거시 경로?}
-    LEGACY -->|Yes| RESOLVE["_resolve_model_name(purpose)"]
-    RESOLVE --> INIT["init_chat_model()"]
-    LEGACY -->|No, 서브클래스 오버라이드| TIER["get_tier_config(purpose)"]
-    TIER --> PT["purpose_tiers[purpose]<br/>→ 'strong'/'default'/'fast'"]
-    PT --> TC["model_tiers[tier]<br/>→ TierConfig"]
-    TC --> CREATE["create_chat_model(tier_config)"]
+    PURPOSE["get_model(purpose)"] --> TIER["get_tier_config(purpose)"]
+    TIER --> PT["purpose_tiers 매핑"]
+    PT -->|generation| STRONG["STRONG<br/>qwen/qwen3-coder-plus"]
+    PT -->|tool_planning| FAST_TP["FAST<br/>qwen/qwen3.5-flash-02-23"]
+    PT -->|verification| DEFAULT["DEFAULT<br/>qwen/qwen3-coder-next"]
+    PT -->|parsing| FAST_P["FAST<br/>qwen/qwen3.5-flash-02-23"]
+    STRONG --> CREATE["create_chat_model()"]
+    FAST_TP --> CREATE
+    DEFAULT --> CREATE
+    FAST_P --> CREATE
 ```
 
-- **레거시 경로**: `_resolve_model_name(purpose)` + `model_provider` -> `init_chat_model()`
-- **티어 경로**: `purpose_tiers[purpose]` -> `model_tiers[tier]` -> `create_chat_model()`
+CodingConfig는 환경변수(`CODING_GEN_MODEL` 등)가 있으면 티어보다 우선 적용한다.
 
-CodingConfig는 티어 경로를 사용하되, 환경변수(`CODING_GEN_MODEL` 등)가 있으면 우선 적용한다.
-
-### 4.3 메모리 시스템 (CoALA 논문 기반)
+### 5.3 메모리 시스템 (CoALA 논문 기반)
 
 ```mermaid
 graph TD
     subgraph Memory["CoALA 4종 메모리"]
         W["Working Memory<br/>(= messages)"]
-        S["Semantic Memory<br/>프로젝트 규칙/컨벤션"]
-        E["Episodic Memory<br/>실행 결과 이력"]
+        S["Semantic Memory<br/>프로젝트 규칙/컨벤션<br/>(AGENTS.md 자동 로딩)"]
+        E["Episodic Memory<br/>실행 결과 이력<br/>(세션 스코프, 최대 5개)"]
         P["Procedural Memory<br/>학습된 코드 패턴<br/>(Voyager식 누적)"]
     end
 
@@ -325,27 +383,36 @@ graph TD
     P --> NF
 ```
 
-| 메모리 타입 | 저장 내용 | 활성 상태 |
-|-------------|-----------|-----------|
-| Working | 현재 대화 (`messages`) | 항상 활성 |
-| Semantic | 프로젝트 규칙/컨벤션 | 항상 활성 |
-| Episodic | 실행 결과 이력 (세션 스코프) | 활성 (최대 5개, 200자 제한) |
-| Procedural | 학습된 코드 패턴 | 활성 (검증 통과 시 자동 누적) |
-
-### 4.4 Skills 시스템 (3-Level Progressive Loading)
+### 5.4 Skills 시스템 (3-Level Progressive Loading + 자동 활성화)
 
 ```mermaid
-graph LR
-    L1["L1: 메타데이터<br/>(name, description, tags)<br/>항상 컨텍스트 주입"]
-    L2["L2: 본문<br/>(prompt body)<br/>활성화 시 로드"]
-    L3["L3: 참조 파일<br/>(references)<br/>실행 시 로드"]
-    L1 --> L2 --> L3
+graph TD
+    subgraph Loading["3-Level Progressive Loading"]
+        L1["L1: 메타데이터<br/>(name, description, tags)<br/>항상 컨텍스트 주입"]
+        L2["L2: 본문<br/>(prompt body)<br/>활성화 시 로드"]
+        L3["L3: 참조 파일<br/>(references)<br/>실행 시 로드"]
+        L1 --> L2 --> L3
+    end
+
+    subgraph AutoActivation["task_type 기반 자동 활성화"]
+        PARSE["parse_request<br/>task_type 추출"] --> MAP["TASK_TYPE_TAGS 매핑"]
+        MAP -->|generate| GEN["quality → code_review,<br/>refactor, test_generation"]
+        MAP -->|fix| FIX["fix, debug → debug"]
+        MAP -->|refactor| REF["refactor → refactor"]
+        MAP -->|explain| EXP["explain → explain"]
+        MAP -->|analyze| ANA["review, security →<br/>code_review, security_review"]
+    end
+
+    GEN & FIX & REF & EXP & ANA --> ACTIVATE["registry.auto_activate_for_task()"]
+    ACTIVATE --> L2
+    L2 --> INJECT["시스템 프롬프트에 L2 본문 주입"]
 ```
 
 - `SkillLoader`: YAML/JSON 파일에서 스킬 로드
-- `SkillRegistry`: 스킬 등록, 검색, 활성화 관리
+- `SkillRegistry`: 스킬 등록, 검색, 활성화 관리 + `auto_activate_for_task()`
+- 수동 활성화: `/skill activate <name>`
 
-### 4.5 SubAgent 동적 선택 (Puppeteer 논문 기반)
+### 5.5 SubAgent 동적 선택 (Puppeteer 논문 기반)
 
 ```
 R = r(quality) - lambda * C(cost)
@@ -357,7 +424,7 @@ lambda:  비용 민감도 (환경변수로 조정)
 
 `SubAgentRegistry`가 사용 통계를 추적하여 선택 품질을 지속적으로 개선한다.
 
-### 4.6 ActionValidator (Safety Envelope)
+### 5.6 ActionValidator (Safety Envelope)
 
 ```mermaid
 graph LR
@@ -367,7 +434,8 @@ graph LR
     AV --> R3["대량 삭제 감지"]
     AV --> R4["파일 확장자 검사"]
     AV --> R5["디렉토리 범위 검사"]
-    R1 & R2 & R3 & R4 & R5 --> REPORT["ValidationReport"]
+    AV --> R6["금지 경로 차단<br/>(.claude/, .git/,<br/>__pycache__/, node_modules/)"]
+    R1 & R2 & R3 & R4 & R5 & R6 --> REPORT["ValidationReport"]
     REPORT --> SAFE{is_safe?}
     SAFE -->|Yes| EXECUTE["실행"]
     SAFE -->|No| BLOCK["차단"]
@@ -375,9 +443,9 @@ graph LR
 
 ---
 
-## 5. A2A 프로토콜 통합
+## 6. A2A 프로토콜 통합
 
-### 5.1 서버 조립 흐름
+### 6.1 서버 조립 흐름
 
 ```mermaid
 graph LR
@@ -397,28 +465,14 @@ run_server(
 )
 ```
 
-### 5.2 복원력 패턴
-
-```mermaid
-graph TD
-    REQ["요청"] --> CB{서킷 브레이커<br/>can_execute?}
-    CB -->|CLOSED| RETRY["재시도 루프<br/>(지수 백오프)"]
-    CB -->|OPEN| BLOCK["CircuitOpenError"]
-    CB -->|HALF_OPEN| TEST["제한적 시도"]
-    RETRY -->|성공| SUCCESS["record_success()"]
-    RETRY -->|실패| FAIL["record_failure()"]
-    FAIL -->|threshold 초과| OPEN["서킷 OPEN"]
-    BLOCK --> FALLBACK["폴백 에이전트 시도"]
-    SUCCESS --> RESPONSE["응답 반환"]
-    FALLBACK --> RESPONSE
-```
+### 6.2 복원력 패턴
 
 - **RetryPolicy**: 지수 백오프 (base_delay * 2^attempt, max_delay=30s)
 - **CircuitBreaker**: 연속 5회 실패 시 OPEN, 30초 후 HALF_OPEN
 - **AgentMonitor**: 에이전트별 성공률, 응답 시간, 서킷 상태 추적
 - **ResilientA2AClient**: 위 패턴을 통합한 복원력 내장 클라이언트
 
-### 5.3 라우팅 전략
+### 6.3 라우팅 전략
 
 `AgentRouter`는 4가지 라우팅 모드를 지원한다:
 
@@ -431,7 +485,7 @@ graph TD
 
 ---
 
-## 6. CLI 실행 흐름
+## 7. CLI 실행 흐름
 
 ```mermaid
 sequenceDiagram
@@ -439,32 +493,57 @@ sequenceDiagram
     participant CLI as CLIApp
     participant CMD as Commands
     participant S as CLISession
-    participant A as Agent
+    participant ORC as Orchestrator
+    participant A as Subagent
     participant MCP as MCP 서버
+
+    Note over CLI: 시작 시 표시:<br/>✓ 스킬 7개 로드<br/>✓ 프로젝트 컨텍스트 로드
 
     U->>CLI: 입력
     CLI->>CMD: 슬래시 커맨드?
-    alt /agent, /help 등
+    alt /agent, /skill, /help 등
         CMD->>S: 세션 조작
         CMD-->>U: 결과 출력
     else 일반 메시지
         CLI->>S: 에이전트 조회/생성
-        S->>A: _create_agent()
-        CLI->>A: astream_events(v2)
-        loop 토큰 스트리밍
-            A->>MCP: 도구 호출
+        S->>ORC: classify (요청 분류)
+        ORC-->>CLI: ⇢ 위임: coding_assistant
+        ORC->>A: delegate (Subagent 호출)
+        
+        Note over A: ⚙ 스킬 자동 활성화
+        
+        loop ReAct 루프 (FAST 모델)
+            A->>MCP: ⚡ 도구 호출
             MCP-->>A: 도구 결과
-            A-->>CLI: on_chat_model_stream (토큰)
-            CLI-->>U: 실시간 출력
         end
-        A-->>CLI: on_chain_end (최종 결과)
+        
+        Note over A: 도구 사용 시 → STRONG 최종 생성<br/>도구 미사용 시 → FAST 출력 그대로
+
+        A-->>CLI: on_chat_model_stream (토큰)
+        CLI-->>U: 실시간 스트리밍 출력
+        
+        Note over CLI: ✓ 검증 통과<br/>⏱ 12.3s
+        
         CLI->>S: Episodic Memory 저장
     end
 ```
 
+### CLI UX 피드백
+
+| 시점 | 표시 | 의미 |
+|------|------|------|
+| 시작 | `✓ 스킬 7개 로드: ...` | 사용 가능한 스킬 목록 |
+| parse 후 | `⚙ 스킬 활성화: debug` | task_type 기반 자동 스킬 선택 |
+| 도구 호출 | `⚡ read_file pyproject.toml` | MCP 도구 실행 |
+| 스피너 | `⠋ 도구 호출 판단 (FAST)` | FAST 모델 ReAct 루프 |
+| 스피너 | `⠋ 코드 생성 (STRONG)` | STRONG 모델 최종 생성 |
+| Orchestrator | `⇢ 위임: coding_assistant` | Subagent 위임 |
+| 검증 | `✓ 검증 통과` / `✗ 검증 실패` | 코드 품질 검증 |
+| 종료 | `⏱ 12.3s` | 턴 소요시간 |
+
 ---
 
-## 7. 평가 파이프라인 (Closed-Loop)
+## 8. 평가 파이프라인 (Closed-Loop)
 
 ```mermaid
 graph LR
@@ -489,42 +568,19 @@ graph LR
         REP["RecommendationReport"]
     end
 
-    subgraph Observability["관측성"]
-        CB["CallbackHandler<br/>Langfuse 트레이싱"]
-        LF["Langfuse Dashboard"]
-    end
-
     Loop1 -->|Golden Dataset| Loop2
     Loop2 -->|평가 결과| Loop3
     Loop3 -->|프롬프트 개선| Loop1
 
     BAT --> LFB
-    LFB --> LF
-    CB --> LF
-
+    LFB --> LF["Langfuse Dashboard"]
     ANA --> OPT --> REC --> REP
     REP -->|get_prompt_changes()| PROMPT["PromptRegistry<br/>프롬프트 버전 관리"]
 ```
 
-### 평가 흐름 상세
-
-| 단계 | 모듈 | 입력 | 출력 |
-|------|------|------|------|
-| **Loop 1** | `loop1_dataset/` | 프롬프트 템플릿 | Golden Dataset (JSON/CSV) |
-| **Loop 2** | `loop2_evaluation/` | Golden Dataset + Langfuse 트레이스 | 메트릭 점수 + Langfuse Scores |
-| **Loop 3** | `loop3_remediation/` | 평가 결과 | RecommendationReport + 프롬프트 개선 |
-
-Loop 2의 **External Evaluation Pipeline** (온라인 평가):
-
-```
-1. Fetch: Langfuse SDK로 프로덕션 트레이스 조회
-2. Evaluate: DeepEval 메트릭으로 각 트레이스 평가
-3. Push: "deepeval.*" 접두사 스코어로 Langfuse에 기록
-```
-
 ---
 
-## 8. Docker 배포 구성
+## 9. Docker 배포 구성
 
 ```mermaid
 graph TB
@@ -550,38 +606,33 @@ graph TB
     CLI_C --> SR & DR & DRA & T & A & S
 ```
 
-- 모든 서비스는 `youngs75_net` 브리지 네트워크로 연결
-- MCP 서버는 헬스체크 후 Agent가 시작
-- Agent 서버는 헬스체크 후 CLI가 시작
-- Langfuse 인프라는 `docker-compose.langfuse.yaml`로 별도 관리
-
 ---
 
-## 9. 설계 원칙 (논문 7편 기반)
+## 10. 설계 원칙 (논문 7편 기반)
 
 | 원칙 | 근거 논문 | 적용 |
 |------|-----------|------|
-| **최소 구조** | Agent-as-a-Judge | parse -> execute -> verify 3단계 |
-| **Generator-Verifier 분리** | RubricRewards | 생성/검증 모델 및 프롬프트 분리 |
-| **Safety Envelope** | AutoHarness | ActionValidator (프레임워크 차원 강제) |
-| **CoALA 메모리** | CoALA + Voyager | 4종 메모리 (Working/Episodic/Semantic/Procedural) |
+| **최소 구조** | Agent-as-a-Judge | parse → execute → verify 3단계 |
+| **Generator-Verifier 분리** | RubricRewards | 생성(STRONG)/검증(DEFAULT) 모델 분리 |
+| **2단계 파이프라인** | 비용 최적화 | 도구 호출(FAST)/최종 생성(STRONG) 분리 |
+| **Safety Envelope** | AutoHarness | ActionValidator + 금지 경로 차단 |
+| **CoALA 메모리** | CoALA + Voyager | 4종 메모리 + Semantic 자동 로딩 |
 | **JIT 원본 참조** | GAM | MCP 도구로 프로젝트 컨텍스트 직접 읽기 |
-| **동적 오케스트레이션** | Puppeteer | SubAgentRegistry (R = quality - lambda*cost) |
-| **졸업 Lifecycle** | Adaptation | 검증된 에이전트를 A2A 서버로 배포 |
+| **동적 오케스트레이션** | Puppeteer | Orchestrator-First + SubAgent 위임 |
+| **스킬 자동 활성화** | Claude Code 패턴 | task_type → 스킬 태그 매핑 |
 
 ---
 
-## 10. 핵심 설계 패턴
+## 11. 핵심 설계 패턴
 
 | 패턴 | 적용 위치 |
 |------|-----------|
 | **Template Method** | `BaseGraphAgent.init_nodes()` / `init_edges()` |
 | **Factory Method** | `BaseGraphAgent.create()`, `BaseAgentConfig.get_model()` |
-| **Adapter** | `LGAgentExecutor` (LangGraph <-> A2A 프로토콜 브릿지) |
-| **Cooperative Cancellation** | 스트림 폴링 + `asyncio.Task.cancel()` 하이브리드 |
-| **Graceful Degradation** | MCP 로딩 실패 -> 도구 없이 진행 |
-| **Circuit Breaker** | `CircuitBreaker` (CLOSED -> OPEN -> HALF_OPEN 상태 전이) |
-| **Subgraph Composition** | Supervisor -> Researcher 서브그래프 중첩 |
+| **Adapter** | `LGAgentExecutor` (LangGraph ↔ A2A 프로토콜 브릿지) |
+| **Orchestrator-First** | 모든 요청이 Orchestrator → Subagent 라우팅 |
+| **2-Stage Pipeline** | FAST(도구 판단) → STRONG(최종 생성) 모델 분리 |
+| **Progressive Loading** | Skills 3-Level (L1 메타데이터 → L2 본문 → L3 참조) |
+| **Circuit Breaker** | `CircuitBreaker` (CLOSED → OPEN → HALF_OPEN 상태 전이) |
+| **Subgraph Composition** | Supervisor → Researcher 서브그래프 중첩 |
 | **Override Reducer** | 상태 누적/덮어쓰기 양립 |
-| **Singleton** | `PromptRegistry`, `Settings` |
-| **Progressive Loading** | Skills 3-Level (L1 메타데이터 -> L2 본문 -> L3 참조) |

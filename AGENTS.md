@@ -9,11 +9,14 @@ AI Assistant Coding Agent Harness — MCP 도구 기반 코드 생성/검증/실
 ```
 youngs75_coding_ai_agent/
 ├── core/                      # 공통 프레임워크 (BaseGraphAgent, MCP Loader)
+│   ├── memory/                # CoALA 4종 메모리 시스템
+│   ├── skills/                # 3-Level 스킬 시스템 (자동 활성화)
+│   └── subagents/             # SubAgent 동적 선택 레지스트리
 ├── agents/                    # 에이전트 구현체
-│   ├── coding_assistant/      # CodingAssistant 에이전트
-│   ├── deep_research/         # DeepResearch 에이전트
-│   ├── orchestrator/          # 오케스트레이터
-│   └── simple_react/          # SimpleReAct 에이전트
+│   ├── coding_assistant/      # CodingAssistant (2단계 파이프라인: FAST→STRONG)
+│   ├── deep_research/         # DeepResearch (심층 연구 워크플로우)
+│   ├── orchestrator/          # Orchestrator (기본 에이전트, 자동 라우팅)
+│   └── simple_react/          # SimpleReAct (MCP 도구 루프)
 ├── a2a_local/                 # A2A 프로토콜 통합 (a2a-sdk 네이밍 충돌 방지)
 ├── mcp_servers/               # MCP 서버
 │   └── code_tools/            # 파일 I/O, 코드 검색, 코드 실행 MCP 서버
@@ -25,15 +28,17 @@ youngs75_coding_ai_agent/
 │   └── observability/         # Langfuse 관측성
 ├── data/                      # 입력 소스 및 루프 실행 결과물
 │   ├── corpus/                # 소스 문서
+│   ├── skills/                # 스킬 YAML 정의 (7개)
 │   ├── synthetic/             # 합성 데이터셋
 │   ├── review/                # 리뷰 CSV
 │   ├── golden/                # Golden 데이터셋
 │   ├── eval_results/          # 평가 결과
 │   └── prompt_optimization/   # 프롬프트 최적화 리포트
+├── cli/                       # 대화형 CLI (prompt-toolkit + rich)
 ├── scripts/                   # 스텝별 실행 엔트리포인트
-├── tests/                     # 테스트
+├── tests/                     # 테스트 (750+ passed)
 │   └── eval/                  # 평가 테스트
-├── utils/                     # 유틸리티
+├── docs/                      # 문서 (Architecture, API, User Guide)
 ├── docker/                    # Docker Compose Harness
 ├── pyproject.toml             # 프로젝트 의존성 (uv 기반)
 ├── AGENTS.md                  # 이 파일 — AI와 기여자가 따를 규칙 문서

@@ -14,6 +14,16 @@ from youngs75_a2a.core.skills.loader import SkillLoader
 from youngs75_a2a.core.skills.schemas import Skill, SkillLevel
 
 
+# task_type → 검색할 스킬 태그 매핑
+TASK_TYPE_TAGS: dict[str, list[str]] = {
+    "generate": ["quality"],
+    "fix": ["fix", "debug"],
+    "refactor": ["refactor"],
+    "explain": ["explain"],
+    "analyze": ["review", "security"],
+}
+
+
 class SkillRegistry:
     """스킬 레지스트리 — 3-Level Progressive Loading 관리."""
 
@@ -94,6 +104,38 @@ class SkillRegistry:
             for skill in self._skills.values()
             if skill.metadata.enabled and set(skill.metadata.tags) & query_set
         ]
+
+    def auto_activate_for_task(self, task_type: str) -> list[str]:
+        """task_type에 맞는 스킬을 자동 검색 후 L2 활성화한다.
+
+        Args:
+            task_type: parse 결과의 task_type (generate, fix, refactor, explain, analyze)
+
+        Returns:
+            활성화된 스킬 이름 목록
+        """
+        tags = TASK_TYPE_TAGS.get(task_type, [])
+        if not tags:
+            return []
+
+        matched = self.search_by_tags(tags)
+        activated: list[str] = []
+        for skill in matched:
+            result = self.activate(skill.name)
+            if result:
+                activated.append(result.name)
+        return activated
+
+    def get_active_skill_bodies(self) -> list[str]:
+        """L2 이상 활성화된 스킬의 본문을 컨텍스트 주입용 문자열로 반환한다.
+
+        활성화되지 않은 스킬(L1 메타데이터만)은 제외한다.
+        """
+        entries: list[str] = []
+        for skill in self._skills.values():
+            if skill.loaded_level >= SkillLevel.L2_BODY and skill.body:
+                entries.append(f"### 스킬: {skill.name}\n{skill.body}")
+        return entries
 
     @property
     def activation_stats(self) -> dict[str, int]:

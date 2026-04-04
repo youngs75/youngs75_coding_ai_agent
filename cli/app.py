@@ -42,8 +42,9 @@ _NODE_LABELS: dict[str, str] = {
     # coding_assistant
     "parse_request": "요청 분석",
     "retrieve_memory": "메모리 검색",
-    "execute_code": "코드 생성",
+    "execute_code": "도구 호출 판단 (FAST)",
     "execute_tools": "도구 실행",
+    "generate_final": "코드 생성 (STRONG)",
     "verify_result": "코드 검증",
     # deep_research
     "clarify_with_user": "질문 명확화",
@@ -110,6 +111,7 @@ async def _create_agent(
     name: str,
     checkpointer: Any | None = None,
     memory_store: Any | None = None,
+    skill_registry: SkillRegistry | None = None,
 ) -> BaseGraphAgent:
     """에이전트를 비동기로 생성한다."""
     if name == "coding_assistant":
@@ -120,6 +122,7 @@ async def _create_agent(
             config=CodingConfig(),
             checkpointer=checkpointer,
             memory_store=memory_store,
+            skill_registry=skill_registry,
         )
 
     if name == "deep_research":
@@ -171,6 +174,7 @@ async def _get_or_create_agent(
             name,
             checkpointer=session.checkpointer,
             memory_store=session.memory,
+            skill_registry=session.skills,
         )
 
         # Phase 10 기능 주입 — 옵셔널 (세션에 설정된 경우에만)
@@ -388,9 +392,28 @@ async def _run_agent_turn(
                             if isinstance(msg, AIMessage) and msg.content:
                                 response_data["last_ai_message"] = msg.content
 
+                    # 스킬 자동 활성화 표시 (parse 노드 완료 시만)
+                    if node == "parse_request":
+                        exec_log = output.get("execution_log", [])
+                        for entry in exec_log:
+                            if "[skills] 자동 활성화:" in entry:
+                                names = entry.split("자동 활성화: ", 1)[-1]
+                                renderer.skill_activated(names.split(", "))
+
+                    # 서브에이전트 위임 표시 (orchestrator)
+                    selected = output.get("selected_agent")
+                    if selected and node in ("classify", "delegate"):
+                        renderer.subagent_delegate(selected)
+
         if token_streamed:
             renderer.flush_tokens()
 
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        if token_streamed:
+            renderer.flush_tokens()
+        renderer._stop_progress()
+        renderer.warning("작업이 중단되었습니다.")
+        return
     except Exception as e:
         if token_streamed:
             renderer.flush_tokens()
@@ -432,8 +455,15 @@ async def _run_agent_turn(
     _save_episodic_memory(session, user_input, response, passed=passed)
 
 
-def _init_skill_registry(skills_dir: str | None) -> SkillRegistry:
-    """스킬 레지스트리를 초기화한다."""
+def _init_skill_registry(
+    skills_dir: str | None,
+) -> tuple[SkillRegistry, list[str]]:
+    """스킬 레지스트리를 초기화한다.
+
+    Returns:
+        (레지스트리, 발견된 스킬 이름 목록)
+    """
+    discovered: list[str] = []
     registry = SkillRegistry()
     if skills_dir:
         loader = SkillLoader(skills_dir)
@@ -441,7 +471,7 @@ def _init_skill_registry(skills_dir: str | None) -> SkillRegistry:
         discovered = registry.discover()
         if discovered:
             logger.info("스킬 %d개 발견: %s", len(discovered), discovered)
-    return registry
+    return registry, discovered
 
 
 def _create_checkpointer(config: CLIConfig) -> Any:
@@ -463,7 +493,7 @@ async def _main_loop(config: CLIConfig) -> None:
     """대화형 메인 루프."""
     console = Console()
     renderer = CLIRenderer(console)
-    skill_registry = _init_skill_registry(config.skills_dir)
+    skill_registry, discovered_skills = _init_skill_registry(config.skills_dir)
     checkpointer = _create_checkpointer(config)
     session = CLISession(
         agent_name=config.default_agent,
@@ -502,6 +532,8 @@ async def _main_loop(config: CLIConfig) -> None:
     )
 
     renderer.welcome(session.info.agent_name)
+    if discovered_skills:
+        renderer.success(f"스킬 {len(discovered_skills)}개 로드: {', '.join(discovered_skills)}")
 
     while True:
         try:

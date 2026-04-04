@@ -69,7 +69,7 @@ def _make_event(
 class TestCLIConfig:
     def test_defaults(self):
         config = CLIConfig()
-        assert config.default_agent == "coding_assistant"
+        assert config.default_agent == "orchestrator"
         assert config.stream_output is True
 
     def test_checkpointer_default(self):
@@ -904,6 +904,7 @@ class TestProceduralMemoryCLI:
                 "coding_assistant",
                 checkpointer=session.checkpointer,
                 memory_store=session.memory,
+                skill_registry=session.skills,
             )
 
     def test_session_memory_shared_between_turns(self):
@@ -1060,7 +1061,7 @@ class TestTokenStreamingIntegration:
         output = buf.getvalue()
         # 노드 전환 상태 메시지가 출력됨 (스피너 포함)
         assert "요청 분석" in output
-        assert "코드 생성" in output
+        assert "도구 호출 판단" in output
         assert "코드 검증" in output
         # 스트리밍된 토큰이 출력됨
         assert "def " in output
@@ -1294,6 +1295,7 @@ class TestCheckpointerIntegration:
                 "coding_assistant",
                 checkpointer=cp,
                 memory_store=session.memory,
+                skill_registry=session.skills,
             )
 
     @pytest.mark.asyncio
@@ -1498,7 +1500,7 @@ class TestStreamingCheckpointerE2E:
 
         # 2. 노드 전환 메시지가 출력됨 (스피너 포함)
         assert "요청 분석" in output
-        assert "코드 생성" in output
+        assert "도구 호출 판단" in output
         assert "코드 검증" in output
 
         # 3. 세션 히스토리에 기록됨
