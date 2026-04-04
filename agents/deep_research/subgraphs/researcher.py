@@ -222,13 +222,13 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
         }
 
 
-def build_researcher_subgraph(config_schema: type | None = None) -> CompiledStateGraph:
+def build_researcher_subgraph(context_schema: type | None = None) -> CompiledStateGraph:
     """Researcher 서브그래프를 빌드한다."""
     builder = StateGraph(
         ResearcherState,
-        input=ResearcherInputState,
-        output=ResearcherOutputState,
-        config_schema=config_schema,
+        input_schema=ResearcherInputState,
+        output_schema=ResearcherOutputState,
+        context_schema=context_schema,
     )
 
     builder.add_node("researcher", researcher)

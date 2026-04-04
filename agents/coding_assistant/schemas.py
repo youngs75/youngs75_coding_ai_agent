@@ -62,3 +62,4 @@ class CodingState(TypedDict, total=False):
     # 반복 제어
     iteration: int  # 현재 반복 횟수
     max_iterations: int  # 최대 반복 횟수
+    tool_call_count: int  # ReAct 루프 내 도구 호출 누적 횟수

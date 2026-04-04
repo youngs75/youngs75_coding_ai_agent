@@ -541,6 +541,48 @@ class TestLangfuseModule:
         config = build_langchain_config(user_id="u1")
         assert "callbacks" not in config
 
+    def test_enabled_with_base_url_only(self):
+        """LANGFUSE_BASE_URL만 설정 시 enabled()=True 반환."""
+        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
+        from youngs75_a2a.eval_pipeline.settings import Settings
+
+        settings = Settings(
+            LANGFUSE_TRACING_ENABLED=True,
+            LANGFUSE_BASE_URL="http://localhost:3100",
+            LANGFUSE_HOST="",
+            LANGFUSE_PUBLIC_KEY="pk-test",
+            LANGFUSE_SECRET_KEY="sk-test",
+        )
+        assert enabled(settings) is True
+
+    def test_enabled_with_host_only(self):
+        """LANGFUSE_HOST만 설정 시 enabled()=True 반환 (하위 호환)."""
+        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
+        from youngs75_a2a.eval_pipeline.settings import Settings
+
+        settings = Settings(
+            LANGFUSE_TRACING_ENABLED=True,
+            LANGFUSE_BASE_URL="",
+            LANGFUSE_HOST="http://localhost:3100",
+            LANGFUSE_PUBLIC_KEY="pk-test",
+            LANGFUSE_SECRET_KEY="sk-test",
+        )
+        assert enabled(settings) is True
+
+    def test_enabled_with_neither_host_nor_base_url(self):
+        """LANGFUSE_HOST와 LANGFUSE_BASE_URL 둘 다 비어있으면 enabled()=False."""
+        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
+        from youngs75_a2a.eval_pipeline.settings import Settings
+
+        settings = Settings(
+            LANGFUSE_TRACING_ENABLED=True,
+            LANGFUSE_BASE_URL="",
+            LANGFUSE_HOST="",
+            LANGFUSE_PUBLIC_KEY="pk-test",
+            LANGFUSE_SECRET_KEY="sk-test",
+        )
+        assert enabled(settings) is False
+
     def test_enrich_trace_disabled(self):
         """Langfuse 비활성화 시 enrich_trace는 패스스루."""
         from youngs75_a2a.eval_pipeline.observability.langfuse import enrich_trace

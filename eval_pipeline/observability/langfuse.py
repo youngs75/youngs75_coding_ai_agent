@@ -79,7 +79,7 @@ def enabled(settings: Settings | None = None) -> bool:
     s = settings or get_settings()
     return bool(
         s.langfuse_tracing_enabled
-        and s.langfuse_host
+        and (s.langfuse_base_url or s.langfuse_host)
         and s.langfuse_public_key
         and s.langfuse_secret_key
     )

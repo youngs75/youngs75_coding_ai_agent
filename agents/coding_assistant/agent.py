@@ -155,6 +155,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             "execution_log": [f"[parse] task_type={parse_result.get('task_type')}"],
             "iteration": state.get("iteration", 0),
             "max_iterations": state.get("max_iterations", 3),
+            "tool_call_count": 0,
         }
 
     async def _execute_code(self, state: CodingState) -> dict[str, Any]:
@@ -217,8 +218,12 @@ class CodingAssistantAgent(BaseGraphAgent):
         # 검증 실패 재시도 시 피드백 반영
         if verify_result and not verify_result.get("passed"):
             issues = verify_result.get("issues", [])
+            issue_strs = [
+                i if isinstance(i, str) else json.dumps(i, ensure_ascii=False)
+                for i in issues
+            ]
             context_parts.append(
-                "\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issues)
+                "\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issue_strs)
             )
             context_parts.append("위 문제를 수정하여 다시 코드를 작성하세요.")
 
@@ -265,6 +270,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         - ToolPermissionManager가 설정되어 있으면 실행 전 권한 검사
         - ParallelToolExecutor가 설정되어 있으면 병렬/순차 분류 실행
         - 두 기능이 없으면 기존 순차 실행 폴백
+
+        Phase 12 강화:
+        - max_tool_calls 한도 체크 (초과 시 도구 실행 스킵)
+        - project_context 파일 경로 기준 중복 제거
+        - tool_call_count 누적
         """
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
@@ -273,8 +283,30 @@ class CodingAssistantAgent(BaseGraphAgent):
         if not tool_calls:
             return {}
 
+        # ── max_tool_calls 한도 체크 ──
+        current_count = state.get("tool_call_count", 0)
+        max_calls = self._coding_config.max_tool_calls
+        if current_count >= max_calls:
+            skip_messages = []
+            for call in tool_calls:
+                call_id = tc_id(call) or f"call_{tc_name(call)}"
+                skip_messages.append(
+                    ToolMessage(
+                        content=f"도구 호출 한도({max_calls}회) 초과. 수집된 정보로 코드를 생성하세요.",
+                        tool_call_id=call_id,
+                        name=tc_name(call) or "unknown",
+                    )
+                )
+            return {"messages": skip_messages}
+
         tools_by_name = _get_tools_by_name(self._tools)
         context_entries = list(state.get("project_context", []))
+
+        # project_context 중복 제거를 위한 기존 경로 추적
+        seen_paths: set[str] = set()
+        for entry in context_entries:
+            if entry.startswith("[") and "]\n" in entry:
+                seen_paths.add(entry[1 : entry.index("]\n")])
 
         # 병렬 실행기가 있으면 ParallelToolExecutor를 통한 실행
         if self.tool_executor:
@@ -290,11 +322,18 @@ class CodingAssistantAgent(BaseGraphAgent):
 
                 if name in tools_by_name:
                     result = await _execute_tool_safely(tools_by_name[name], args)
-                    # read_file 결과를 project_context에 축적
+                    # read_file 결과를 project_context에 축적 (중복 경로 갱신)
                     if name == "read_file":
-                        context_entries.append(
-                            f"[{args.get('path', '?')}]\n{result[:2000]}"
-                        )
+                        path = args.get("path", "?")
+                        new_entry = f"[{path}]\n{result[:2000]}"
+                        if path not in seen_paths:
+                            context_entries.append(new_entry)
+                            seen_paths.add(path)
+                        else:
+                            for i, e in enumerate(context_entries):
+                                if e.startswith(f"[{path}]"):
+                                    context_entries[i] = new_entry
+                                    break
                     return result
                 return f"알 수 없는 도구: {name}"
 
@@ -324,11 +363,18 @@ class CodingAssistantAgent(BaseGraphAgent):
 
                 if name and name in tools_by_name:
                     result = await _execute_tool_safely(tools_by_name[name], args)
-                    # read_file 결과를 project_context에 축적
+                    # read_file 결과를 project_context에 축적 (중복 경로 갱신)
                     if name == "read_file":
-                        context_entries.append(
-                            f"[{args.get('path', '?')}]\n{result[:2000]}"
-                        )
+                        path = args.get("path", "?")
+                        new_entry = f"[{path}]\n{result[:2000]}"
+                        if path not in seen_paths:
+                            context_entries.append(new_entry)
+                            seen_paths.add(path)
+                        else:
+                            for i, e in enumerate(context_entries):
+                                if e.startswith(f"[{path}]"):
+                                    context_entries[i] = new_entry
+                                    break
                 else:
                     result = f"알 수 없는 도구: {name}"
 
@@ -343,6 +389,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         return {
             "messages": tool_messages,
             "project_context": context_entries,
+            "tool_call_count": current_count + len(tool_calls),
         }
 
     async def _verify_result(self, state: CodingState) -> dict[str, Any]:
@@ -386,6 +433,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             "verify_result": verify_result,
             "execution_log": log,
             "iteration": state.get("iteration", 0) + 1,
+            "tool_call_count": 0,  # 재시도 시 도구 호출 카운터 리셋
         }
 
         # Procedural Memory 훅: 검증 통과 시 코드 패턴 자동 누적

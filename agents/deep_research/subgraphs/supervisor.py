@@ -202,13 +202,13 @@ def _should_continue_supervisor(state: SupervisorState, config: RunnableConfig) 
     return "supervisor_tools"
 
 
-def build_supervisor_subgraph(config_schema: type | None = None) -> CompiledStateGraph:
+def build_supervisor_subgraph(context_schema: type | None = None) -> CompiledStateGraph:
     """Supervisor 서브그래프를 빌드한다."""
     builder = StateGraph(
         SupervisorState,
-        input=SupervisorInputState,
-        output=SupervisorOutputState,
-        config_schema=config_schema,
+        input_schema=SupervisorInputState,
+        output_schema=SupervisorOutputState,
+        context_schema=context_schema,
     )
 
     builder.add_node("supervisor", supervisor)

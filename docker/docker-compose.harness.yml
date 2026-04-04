@@ -76,6 +76,35 @@ services:
       - harness_net
 
   # ═══════════════════════════════════════════════
+  #  MCP Code Tools (파일 I/O, 코드 검색, 코드 실행)
+  # ═══════════════════════════════════════════════
+
+  mcp-code-tools:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
+    container_name: harness_mcp_code_tools
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - CODE_TOOLS_PORT=3003
+      - CODE_TOOLS_WORKSPACE=/workspace
+    env_file:
+      - ../.env
+    volumes:
+      - ${CODE_TOOLS_WORKSPACE:-..}:/workspace
+    command: ["python", "/app/run_code_tools_mcp.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3003/mcp"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - harness_net
+
+  # ═══════════════════════════════════════════════
   #  에이전트 (A2A 프로토콜)
   # ═══════════════════════════════════════════════
 
@@ -92,13 +121,22 @@ services:
     environment:
       - AGENT_PORT=18084
       - AGENT_MODEL=deepseek/deepseek-v3.2
+      - CODE_TOOLS_MCP_URL=http://mcp-code-tools:3003/mcp/
+      # Phase 11 설정
+      - HOOK_CONFIG_PATH=${HOOK_CONFIG_PATH:-}
+      - TOOL_PERMISSIONS_PATH=${TOOL_PERMISSIONS_PATH:-}
+      - ENABLE_PARALLEL_TOOLS=${ENABLE_PARALLEL_TOOLS:-true}
+      - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
     command: ["python", "-m", "youngs75_a2a.tests.run_coding_assistant_server"]
+    depends_on:
+      mcp-code-tools:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:18084/health"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 20s
+      retries: 5
+      start_period: 30s
     networks:
       - harness_net
 
@@ -123,6 +161,7 @@ services:
       - DEEP_RESEARCH_URL=http://agent-deep-research:18082
       - DEEP_RESEARCH_A2A_URL=http://agent-deep-research-a2a:18083
       - CODING_ASSISTANT_URL=http://agent-coding-assistant:18084
+      - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
     command: ["python", "-m", "youngs75_a2a.tests.run_orchestrator_server"]
     depends_on:
       agent-coding-assistant:

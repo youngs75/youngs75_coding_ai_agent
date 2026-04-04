@@ -53,9 +53,9 @@ class BaseGraphAgent:
         config: BaseAgentConfig | None = None,
         model: BaseChatModel | None = None,
         state_schema: type | None = None,
-        config_schema: type | None = None,
-        input_state: type | None = None,
-        output_state: type | None = None,
+        context_schema: type | None = None,
+        input_schema: type | None = None,
+        output_schema: type | None = None,
         checkpointer: BaseCheckpointSaver | None = None,
         store: BaseStore | None = None,
         max_retry_attempts: int = 2,
@@ -67,9 +67,9 @@ class BaseGraphAgent:
         self.agent_config = config
         self.model = model
         self.state_schema = state_schema
-        self.config_schema = config_schema
-        self.input_state = input_state
-        self.output_state = output_state
+        self.context_schema = context_schema
+        self.input_schema = input_schema
+        self.output_schema = output_schema
         self.checkpointer = checkpointer
         self.store = store
         self.agent_name = agent_name or self.__class__.__name__
@@ -157,9 +157,9 @@ class BaseGraphAgent:
         """StateGraph를 빌드하고 컴파일한다."""
         builder = StateGraph(
             state_schema=self.state_schema,
-            config_schema=self.config_schema,
-            input=self.input_state,
-            output=self.output_state,
+            context_schema=self.context_schema,
+            input_schema=self.input_schema,
+            output_schema=self.output_schema,
         )
         self.init_nodes(builder)
         self.init_edges(builder)

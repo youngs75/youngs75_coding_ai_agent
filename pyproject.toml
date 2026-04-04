@@ -40,6 +40,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.2.2",
     "langchain-openai>=1.1.12",
     "langfuse>=4.0.6",
+    "langgraph>=1.1.4",
     "langgraph-cli>=0.4.19",
     "mcp[cli]>=1.26.0",
     "pydantic-settings>=2.2,<3",
