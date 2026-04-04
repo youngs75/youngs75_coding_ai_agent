@@ -24,6 +24,10 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
+from youngs75_a2a.core.context_manager import (
+    ContextManager,
+    invoke_with_max_tokens_recovery,
+)
 from youngs75_a2a.core.mcp_loader import MCPToolLoader
 from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
@@ -77,6 +81,10 @@ class CodingAssistantAgent(BaseGraphAgent):
         self._gen_model: BaseChatModel | None = None
         self._verify_model: BaseChatModel | None = None
         self._parse_model: BaseChatModel | None = None
+        self._context_manager = ContextManager(
+            max_tokens=getattr(self._coding_config, "max_context_tokens", 128000),
+            compact_threshold=getattr(self._coding_config, "compact_threshold", 0.8),
+        )
 
         kwargs.pop("auto_build", None)
         super().__init__(
@@ -119,7 +127,16 @@ class CodingAssistantAgent(BaseGraphAgent):
             SystemMessage(content=PARSE_SYSTEM_PROMPT),
             *state["messages"],
         ]
-        response = await self._get_parse_model().ainvoke(messages)
+        # 컨텍스트 컴팩션 + max_tokens 복구 적용
+        if self._context_manager.should_compact(messages):
+            messages = await self._context_manager.compact(
+                messages, self._get_parse_model()
+            )
+        response = await invoke_with_max_tokens_recovery(
+            self._get_parse_model(),
+            messages,
+            self._context_manager,
+        )
 
         try:
             parse_result = json.loads(response.content)
@@ -217,7 +234,16 @@ class CodingAssistantAgent(BaseGraphAgent):
             context_msg,
         ]
 
-        response = await llm_with_tools.ainvoke(messages)
+        # 컨텍스트 컴팩션 + max_tokens 복구 적용
+        if self._context_manager.should_compact(messages):
+            messages = await self._context_manager.compact(
+                messages, self._get_gen_model()
+            )
+        response = await invoke_with_max_tokens_recovery(
+            llm_with_tools,
+            messages,
+            self._context_manager,
+        )
 
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
@@ -284,7 +310,12 @@ class CodingAssistantAgent(BaseGraphAgent):
             SystemMessage(content=verify_prompt),
             HumanMessage(content=verify_context),
         ]
-        response = await self._get_verify_model().ainvoke(messages)
+        # max_tokens 복구 적용
+        response = await invoke_with_max_tokens_recovery(
+            self._get_verify_model(),
+            messages,
+            self._context_manager,
+        )
 
         try:
             verify_result = json.loads(response.content)

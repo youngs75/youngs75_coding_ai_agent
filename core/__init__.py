@@ -17,6 +17,10 @@ from .model_tiers import (
     analyze_tier_tradeoffs,
 )
 from .batch_executor import BatchExecutor, BatchResult, TaskResult
+from .context_manager import ContextManager, invoke_with_max_tokens_recovery
+from .parallel_tool_executor import ParallelToolExecutor
+from .project_context import ProjectContextLoader
+from .tool_permissions import PermissionDecision, ToolPermissionManager
 from .memory import (
     MemoryItem,
     MemoryType,
@@ -47,6 +51,12 @@ __all__ = [
     "BatchExecutor",
     "BatchResult",
     "TaskResult",
+    "ContextManager",
+    "invoke_with_max_tokens_recovery",
+    "ParallelToolExecutor",
+    "ProjectContextLoader",
+    "PermissionDecision",
+    "ToolPermissionManager",
     "MemoryItem",
     "MemoryType",
     "MemoryStore",

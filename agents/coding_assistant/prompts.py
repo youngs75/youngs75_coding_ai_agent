@@ -13,6 +13,38 @@
 
 from __future__ import annotations
 
+from youngs75_a2a.core.project_context import ProjectContextLoader
+
+
+def inject_project_context(
+    base_prompt: str,
+    workspace: str | None = None,
+    max_context_tokens: int = 4000,
+) -> str:
+    """시스템 프롬프트에 프로젝트 컨텍스트를 주입한다.
+
+    workspace가 지정되면 ProjectContextLoader로 컨텍스트를 검색하여
+    기본 프롬프트 뒤에 추가한다. 컨텍스트가 없으면 원본 프롬프트를 그대로 반환.
+
+    Args:
+        base_prompt: 기본 시스템 프롬프트
+        workspace: 프로젝트 워크스페이스 경로 (None이면 주입하지 않음)
+        max_context_tokens: 최대 컨텍스트 토큰 수
+
+    Returns:
+        프로젝트 컨텍스트가 주입된 시스템 프롬프트
+    """
+    if workspace is None:
+        return base_prompt
+
+    loader = ProjectContextLoader(workspace, max_context_tokens=max_context_tokens)
+    section = loader.build_system_prompt_section()
+    if not section:
+        return base_prompt
+
+    return base_prompt + section
+
+
 PARSE_SYSTEM_PROMPT = """\
 당신은 소프트웨어 개발 요청을 분석하는 전문가입니다.
 

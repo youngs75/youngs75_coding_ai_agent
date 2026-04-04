@@ -5,6 +5,34 @@
 
 from datetime import datetime
 
+from youngs75_a2a.core.project_context import ProjectContextLoader
+
+
+def inject_project_context(
+    base_prompt: str,
+    workspace: str | None = None,
+    max_context_tokens: int = 4000,
+) -> str:
+    """시스템 프롬프트에 프로젝트 컨텍스트를 주입한다.
+
+    Args:
+        base_prompt: 기본 시스템 프롬프트
+        workspace: 프로젝트 워크스페이스 경로 (None이면 주입하지 않음)
+        max_context_tokens: 최대 컨텍스트 토큰 수
+
+    Returns:
+        프로젝트 컨텍스트가 주입된 시스템 프롬프트
+    """
+    if workspace is None:
+        return base_prompt
+
+    loader = ProjectContextLoader(workspace, max_context_tokens=max_context_tokens)
+    section = loader.build_system_prompt_section()
+    if not section:
+        return base_prompt
+
+    return base_prompt + section
+
 
 def get_today_str() -> str:
     return datetime.now().strftime("%a %b %d, %Y")

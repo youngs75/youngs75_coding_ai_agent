@@ -27,8 +27,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, END, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
+from youngs75_a2a.core.context_manager import ContextManager
 from .config import OrchestratorConfig
 from .schemas import OrchestratorState
+
+# 오케스트레이터용 컨텍스트 매니저 (서브에이전트 호출 시 히스토리 필터링)
+_orchestrator_context_manager = ContextManager()
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +104,12 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
             "agent_response": f"에이전트 '{selected}'의 엔드포인트를 찾을 수 없습니다."
         }
 
-    # 마지막 사용자 메시지 추출
+    # 서브에이전트용 히스토리 필터링 후 마지막 사용자 메시지 추출
+    truncated_messages = _orchestrator_context_manager.truncate_for_subagent(
+        state["messages"], last_n_turns=3
+    )
     user_message = ""
-    for msg in reversed(state["messages"]):
+    for msg in reversed(truncated_messages):
         if isinstance(msg, HumanMessage):
             user_message = msg.content
             break

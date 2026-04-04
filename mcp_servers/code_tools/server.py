@@ -221,6 +221,141 @@ def run_python(code: str, timeout: int = 30) -> str:
         os.unlink(tmp_path)
 
 
+@mcp.tool()
+def str_replace(path: str, old_str: str, new_str: str) -> str:
+    """파일에서 특정 문자열을 찾아 교체한다.
+
+    전체 파일 덮어쓰기 대신 정확한 부분만 수정하여 안전성을 높인다.
+
+    Args:
+        path: workspace 기준 상대 경로
+        old_str: 교체할 기존 문자열 (정확히 일치해야 함)
+        new_str: 새로운 문자열
+    """
+    target = _safe_path(path)
+    if not target.exists():
+        return f"Error: 파일이 존재하지 않습니다 — {path}"
+    if not target.is_file():
+        return f"Error: 파일이 아닙니다 — {path}"
+
+    content = target.read_text(encoding="utf-8")
+    count = content.count(old_str)
+
+    if count == 0:
+        return "Error: 찾을 수 없음 — old_str이 파일에 존재하지 않습니다. 정확한 문자열을 확인하세요."
+    if count > 1:
+        return (
+            f"Error: 모호한 매치 — old_str이 {count}번 발견되었습니다. "
+            "더 많은 컨텍스트(주변 줄)를 포함하여 고유하게 만들어주세요."
+        )
+
+    new_content = content.replace(old_str, new_str, 1)
+    target.write_text(new_content, encoding="utf-8")
+    return f"✓ {path}: 교체 완료 ({len(old_str)} → {len(new_str)} 문자)"
+
+
+@mcp.tool()
+def apply_patch(patch: str) -> str:
+    """Unified diff 형식의 패치를 파일에 적용한다.
+
+    Args:
+        patch: unified diff 형식 패치 문자열.
+               --- a/path 와 +++ b/path 헤더로 대상 파일을 식별한다.
+    """
+    lines = patch.strip().splitlines()
+
+    # 대상 파일 찾기 (+++ b/path)
+    target_path = None
+    for line in lines:
+        if line.startswith("+++ b/"):
+            target_path = line[6:].strip()
+            break
+        if line.startswith("+++ "):
+            target_path = line[4:].strip()
+            break
+
+    if not target_path:
+        return "Error: 패치에서 대상 파일을 찾을 수 없습니다 (+++ 헤더 필요)"
+
+    target = _safe_path(target_path)
+
+    # 새 파일 생성 (--- /dev/null)
+    is_new_file = any(line.startswith("--- /dev/null") for line in lines)
+    if is_new_file:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        new_content = []
+        in_hunk = False
+        for line in lines:
+            if line.startswith("@@"):
+                in_hunk = True
+                continue
+            if in_hunk:
+                if line.startswith("+"):
+                    new_content.append(line[1:])
+                elif line.startswith("-"):
+                    continue
+                elif not line.startswith("\\"):
+                    new_content.append(line[1:] if line.startswith(" ") else line)
+        target.write_text("\n".join(new_content) + "\n", encoding="utf-8")
+        return f"✓ {target_path}: 새 파일 생성"
+
+    if not target.exists():
+        return f"Error: 파일이 존재하지 않습니다 — {target_path}"
+
+    original = target.read_text(encoding="utf-8")
+    original_lines = original.splitlines(keepends=True)
+
+    # 헝크 파싱 및 적용
+    hunks = []
+    current_hunk = None
+    for line in lines:
+        if line.startswith("@@"):
+            # @@ -start,count +start,count @@ 파싱
+            import re
+
+            m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+            if m:
+                current_hunk = {
+                    "orig_start": int(m.group(1)) - 1,
+                    "lines": [],
+                }
+                hunks.append(current_hunk)
+        elif current_hunk is not None:
+            current_hunk["lines"].append(line)
+
+    if not hunks:
+        return "Error: 패치에 유효한 헝크(@@ ... @@)가 없습니다"
+
+    # 헝크를 역순으로 적용 (인덱스 밀림 방지)
+    result_lines = list(original_lines)
+    for hunk in reversed(hunks):
+        offset = hunk["orig_start"]
+        new_lines = []
+        remove_count = 0
+
+        for hl in hunk["lines"]:
+            if hl.startswith("-"):
+                remove_count += 1
+            elif hl.startswith("+"):
+                content = hl[1:]
+                if not content.endswith("\n"):
+                    content += "\n"
+                new_lines.append(content)
+            elif hl.startswith(" "):
+                content = hl[1:]
+                if not content.endswith("\n"):
+                    content += "\n"
+                new_lines.append(content)
+                remove_count += 1
+            elif hl.startswith("\\"):
+                continue
+
+        result_lines[offset : offset + remove_count] = new_lines
+
+    target.write_text("".join(result_lines), encoding="utf-8")
+    return f"✓ {target_path}: 패치 적용 완료 ({len(hunks)}개 헝크)"
+
+
 if __name__ == "__main__":
     print(f"Code Tools MCP 서버 시작: http://0.0.0.0:{_PORT}/mcp")
     print(f"Workspace: {_WORKSPACE}")

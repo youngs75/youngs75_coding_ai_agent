@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -21,6 +22,7 @@ from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+from youngs75_a2a.core.project_context import ProjectContextLoader
 from youngs75_a2a.core.skills.loader import SkillLoader
 from youngs75_a2a.core.skills.registry import SkillRegistry
 from youngs75_a2a.eval_pipeline.observability.callback_handler import (
@@ -434,6 +436,14 @@ async def _main_loop(config: CLIConfig) -> None:
         skill_registry=skill_registry,
         checkpointer=checkpointer,
     )
+
+    # 프로젝트 컨텍스트 로더 초기화
+    workspace = os.getenv("CODE_TOOLS_WORKSPACE", os.getcwd())
+    context_loader = ProjectContextLoader(workspace)
+    context_section = context_loader.build_system_prompt_section()
+    if context_section:
+        renderer.system_message("프로젝트 컨텍스트 로드 완료")
+        logger.info("프로젝트 컨텍스트 파일 %d개 발견", len(context_loader.discover()))
 
     # Langfuse 콜백 핸들러 초기화 (설정으로 on/off 가능)
     langfuse_handler = None
