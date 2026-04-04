@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import ToolMessage
 
+from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
 
 logger = logging.getLogger(__name__)
@@ -46,12 +47,14 @@ class ToolExecutionResult:
         tool_message: LangChain ToolMessage 객체
         duration_s: 실행 소요 시간 (초)
         success: 실행 성공 여부
+        cancelled: 훅에 의해 실행이 취소되었는지 여부
     """
 
     index: int
     tool_message: ToolMessage
     duration_s: float = 0.0
     success: bool = True
+    cancelled: bool = False
 
 
 @dataclass
@@ -105,6 +108,7 @@ class ParallelToolExecutor:
         concurrency_safe_tools: set[str] | None = None,
         max_parallel: int = 10,
         timeout_s: float | None = 60.0,
+        hook_manager: HookManager | None = None,
     ) -> None:
         self._safe_tools = (
             concurrency_safe_tools
@@ -113,6 +117,7 @@ class ParallelToolExecutor:
         )
         self._max_parallel = max_parallel
         self._timeout_s = timeout_s
+        self.hook_manager = hook_manager or HookManager()
 
     def is_concurrency_safe(self, tool_name: str | None) -> bool:
         """도구가 병렬 실행 안전한지 판단한다."""
@@ -149,6 +154,9 @@ class ParallelToolExecutor:
     ) -> ToolExecutionResult:
         """단일 도구를 실행하고 ToolExecutionResult를 반환한다.
 
+        PRE_TOOL_CALL 훅에서 context를 수정하면 변경된 인자로 실행된다.
+        PRE_TOOL_CALL 훅에서 cancel=True 설정 시 실행을 스킵한다.
+
         Args:
             index: 원래 tool_calls 리스트에서의 인덱스
             tool_call: 도구 호출 객체
@@ -159,22 +167,68 @@ class ParallelToolExecutor:
         args = tc_args(tool_call)
         call_id = tc_id(tool_call) or f"call_{index}"
 
+        # PRE_TOOL_CALL 훅 발행
+        pre_ctx = HookContext(
+            event=HookEvent.PRE_TOOL_CALL,
+            tool_name=name,
+            tool_args=dict(args) if args else {},
+        )
+        pre_ctx = await self.hook_manager.emit(pre_ctx)
+
+        # 훅에 의한 취소 처리
+        if pre_ctx.metadata.get("cancel"):
+            logger.info("[ParallelToolExecutor] %s 훅에 의해 취소됨", name)
+            return ToolExecutionResult(
+                index=index,
+                tool_message=ToolMessage(
+                    content=f"도구 실행 취소됨 (훅): {name}",
+                    tool_call_id=call_id,
+                    name=name,
+                ),
+                duration_s=0.0,
+                success=True,
+                cancelled=True,
+            )
+
+        # 훅이 수정했을 수 있는 인자/이름 사용
+        effective_name = pre_ctx.tool_name or name
+        effective_args = pre_ctx.tool_args if pre_ctx.tool_args is not None else args
+
         start = time.perf_counter()
         try:
             if semaphore is not None:
                 async with semaphore:
-                    result = await self._invoke_with_timeout(tool_executor, name, args)
+                    result = await self._invoke_with_timeout(
+                        tool_executor, effective_name, effective_args
+                    )
             else:
-                result = await self._invoke_with_timeout(tool_executor, name, args)
+                result = await self._invoke_with_timeout(
+                    tool_executor, effective_name, effective_args
+                )
 
             duration = time.perf_counter() - start
-            logger.debug("[ParallelToolExecutor] %s 완료 (%.2fs)", name, duration)
+            logger.debug(
+                "[ParallelToolExecutor] %s 완료 (%.2fs)", effective_name, duration
+            )
+
+            # POST_TOOL_CALL 훅 발행
+            post_ctx = HookContext(
+                event=HookEvent.POST_TOOL_CALL,
+                tool_name=effective_name,
+                tool_args=effective_args,
+                tool_result=result,
+                metadata=dict(pre_ctx.metadata),
+            )
+            post_ctx = await self.hook_manager.emit(post_ctx)
+
             return ToolExecutionResult(
                 index=index,
                 tool_message=ToolMessage(
-                    content=str(result) if result else "실행 완료 (출력 없음)",
+                    content=str(post_ctx.tool_result)
+                    if post_ctx.tool_result
+                    else "실행 완료 (출력 없음)",
                     tool_call_id=call_id,
-                    name=name,
+                    name=effective_name,
                 ),
                 duration_s=duration,
                 success=True,
@@ -182,14 +236,17 @@ class ParallelToolExecutor:
         except Exception as e:
             duration = time.perf_counter() - start
             logger.warning(
-                "[ParallelToolExecutor] %s 실패 (%.2fs): %s", name, duration, e
+                "[ParallelToolExecutor] %s 실패 (%.2fs): %s",
+                effective_name,
+                duration,
+                e,
             )
             return ToolExecutionResult(
                 index=index,
                 tool_message=ToolMessage(
                     content=f"도구 실행 오류: {e}",
                     tool_call_id=call_id,
-                    name=name,
+                    name=effective_name,
                 ),
                 duration_s=duration,
                 success=False,

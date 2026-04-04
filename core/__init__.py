@@ -4,6 +4,7 @@ from .config import BaseAgentConfig
 from .reducers import override_reducer
 from .mcp_loader import MCPToolLoader
 from .tool_call_utils import tc_name, tc_id, tc_args
+from .hooks import HookManager, HookEvent, HookContext
 from .model_tiers import (
     ModelTier,
     TierConfig,
@@ -62,4 +63,7 @@ __all__ = [
     "MemoryStore",
     "MemoryAwareState",
     "TwoStageSearch",
+    "HookManager",
+    "HookEvent",
+    "HookContext",
 ]

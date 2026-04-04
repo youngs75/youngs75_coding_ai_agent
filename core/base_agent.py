@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -16,6 +16,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
 from .config import BaseAgentConfig
+from .hooks import HookContext, HookEvent, HookManager
 
 
 class BaseGraphAgent:
@@ -48,6 +49,7 @@ class BaseGraphAgent:
         agent_name: str | None = None,
         debug: bool = False,
         auto_build: bool = True,
+        hook_manager: HookManager | None = None,
     ) -> None:
         self.agent_config = config
         self.model = model
@@ -65,6 +67,7 @@ class BaseGraphAgent:
             else None
         )
         self.graph: CompiledStateGraph | None = None
+        self.hook_manager = hook_manager or HookManager()
 
         if auto_build:
             self.build_graph()
@@ -106,6 +109,70 @@ class BaseGraphAgent:
             name=self.agent_name,
             debug=self.debug,
         )
+
+    async def _wrap_node(
+        self,
+        node_name: str,
+        node_func: Callable[..., Any],
+        state: Any,
+        config: Any = None,
+    ) -> Any:
+        """노드 실행을 훅으로 감싸는 헬퍼.
+
+        PRE_NODE, POST_NODE, ON_ERROR 훅을 자동으로 발행한다.
+        PRE_NODE 훅에서 cancel=True 설정 시 노드 실행을 스킵한다.
+
+        Args:
+            node_name: 노드 이름
+            node_func: 실행할 노드 함수
+            state: 그래프 상태
+            config: LangGraph 실행 설정 (선택)
+
+        Returns:
+            노드 함수의 반환값 (또는 취소 시 원래 상태)
+        """
+        # state를 dict로 변환 (가능한 경우)
+        state_dict = dict(state) if isinstance(state, dict) else None
+
+        # PRE_NODE 훅
+        pre_ctx = HookContext(
+            event=HookEvent.PRE_NODE,
+            node_name=node_name,
+            state=state_dict,
+        )
+        pre_ctx = await self.hook_manager.emit(pre_ctx)
+
+        if pre_ctx.metadata.get("cancel"):
+            return state
+
+        try:
+            result = node_func(state, config) if config else node_func(state)
+            # 비동기 노드 함수 지원
+            import inspect
+
+            if inspect.isawaitable(result):
+                result = await result
+
+            # POST_NODE 훅
+            post_ctx = HookContext(
+                event=HookEvent.POST_NODE,
+                node_name=node_name,
+                state=dict(result) if isinstance(result, dict) else state_dict,
+                metadata=dict(pre_ctx.metadata),
+            )
+            await self.hook_manager.emit(post_ctx)
+
+            return result
+        except Exception as e:
+            # ON_ERROR 훅
+            err_ctx = HookContext(
+                event=HookEvent.ON_ERROR,
+                node_name=node_name,
+                state=state_dict,
+                error=e,
+            )
+            await self.hook_manager.emit(err_ctx)
+            raise
 
     def init_nodes(self, graph: StateGraph) -> None:
         raise NotImplementedError
