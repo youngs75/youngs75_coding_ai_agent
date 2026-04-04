@@ -1650,6 +1650,37 @@ class TestPromptRegistry:
         assert "verify" in updated
         assert registry.get_current_version("verify") == "v2"
 
+    def test_execute_prompt_contains_citation_guide(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        prompt = registry.get_prompt("execute")
+        assert "인용 형식 규칙" in prompt
+        assert "파일: path/to/file.py:42" in prompt
+        assert "출처 URL" in prompt
+
+    def test_verify_prompt_contains_citation_quality_check(self):
+        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        registry = PromptRegistry()
+        prompt = registry.get_prompt("verify")
+        assert "인용 품질" in prompt
+        assert "파일 경로/라인 번호" in prompt
+
+    def test_deep_research_prompts_contain_citation_rules(self):
+        from youngs75_a2a.agents.deep_research.prompts import (
+            RESEARCHER_SYSTEM_PROMPT,
+            FINAL_REPORT_PROMPT,
+        )
+        assert "인용 형식 규칙" in RESEARCHER_SYSTEM_PROMPT
+        assert "출처 인용 형식" in FINAL_REPORT_PROMPT
+        assert "참고 자료" in FINAL_REPORT_PROMPT
+
+    def test_citation_quality_eval_prompt_includes_code_policy(self):
+        from youngs75_a2a.eval_pipeline.loop2_evaluation.prompts import (
+            CITATION_QUALITY_PROMPT,
+        )
+        assert "Code-specific citation policy" in CITATION_QUALITY_PROMPT
+        assert "file path and line number" in CITATION_QUALITY_PROMPT
+
     def test_singleton_registry(self):
         from youngs75_a2a.agents.coding_assistant.prompts import (
             get_prompt_registry,

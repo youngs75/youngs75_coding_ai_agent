@@ -1,0 +1,89 @@
+# ═══════════════════════════════════════════════════════════════
+# youngs75-coding-ai-agent — 개발 편의 Makefile
+# ═══════════════════════════════════════════════════════════════
+# 사용법:
+#   make help       — 사용 가능한 명령 목록
+#   make lint       — ruff 린트 + 포맷 검사
+#   make test       — pytest 실행 (eval 제외)
+#   make build      — Docker 이미지 빌드
+#   make up         — Docker Compose 전체 기동
+#   make down       — Docker Compose 종료
+# ═══════════════════════════════════════════════════════════════
+
+.DEFAULT_GOAL := help
+.PHONY: help lint format test test-eval build up down logs clean
+
+# ── 린트 & 포맷 ──
+
+lint: ## ruff 린트 + 포맷 검사
+	uv run ruff check .
+	uv run ruff format --check .
+
+format: ## ruff 자동 포맷 적용
+	uv run ruff check --fix .
+	uv run ruff format .
+
+# ── 테스트 ──
+
+test: ## pytest 실행 (eval 테스트 제외)
+	uv run pytest tests/ --ignore=tests/eval/ -v
+
+test-eval: ## eval 파이프라인 테스트 실행
+	uv run pytest tests/eval/ -v
+
+test-all: ## 전체 테스트 실행
+	uv run pytest tests/ -v
+
+# ── Docker ──
+
+build: ## Docker Compose 이미지 빌드
+	cd docker && docker compose build
+
+up: ## Docker Compose 전체 기동 (백그라운드)
+	cd docker && docker compose up -d
+
+down: ## Docker Compose 종료 및 컨테이너 제거
+	cd docker && docker compose down
+
+logs: ## Docker Compose 로그 스트리밍
+	cd docker && docker compose logs -f
+
+ps: ## Docker Compose 서비스 상태 확인
+	cd docker && docker compose ps
+
+# ── 환경별 Docker 기동 ──
+
+up-dev: ## 개발 환경으로 Docker 기동
+	cd docker && docker compose --env-file ../config/settings.dev.env up -d
+
+up-staging: ## 스테이징 환경으로 Docker 기동
+	cd docker && docker compose --env-file ../config/settings.staging.env up -d
+
+up-prod: ## 프로덕션 환경으로 Docker 기동
+	cd docker && docker compose --env-file ../config/settings.prod.env up -d
+
+# ── Langfuse (관측성 인프라) ──
+
+langfuse-up: ## Langfuse 인프라 기동
+	cd docker && docker compose -f docker-compose.langfuse.yaml up -d
+
+langfuse-down: ## Langfuse 인프라 종료
+	cd docker && docker compose -f docker-compose.langfuse.yaml down
+
+# ── 유틸리티 ──
+
+sync: ## uv 의존성 동기화
+	uv sync --frozen
+
+clean: ## 캐시 및 빌드 산출물 정리
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf dist/ build/ htmlcov/ .coverage
+
+# ── 도움말 ──
+
+help: ## 사용 가능한 명령 목록 표시
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'

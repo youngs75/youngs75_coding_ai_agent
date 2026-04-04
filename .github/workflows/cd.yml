@@ -1,0 +1,72 @@
+# CD 파이프라인 — 릴리스 태그 시 Docker 이미지 빌드 및 ghcr.io 푸시
+#
+# 트리거: v* 패턴의 태그 push (예: v0.1.0, v1.0.0-rc.1)
+# ghcr.io/<owner>/<image>:<tag> 형태로 4개 이미지를 게시한다.
+
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Docker 이미지 빌드 + ghcr.io 푸시
+  # ──────────────────────────────────────────────
+  release:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: agent
+            dockerfile: docker/Dockerfile.agent
+          - image: cli
+            dockerfile: docker/Dockerfile.cli
+          - image: mcp
+            dockerfile: docker/Dockerfile.mcp
+          - image: eval
+            dockerfile: docker/Dockerfile.eval
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: ghcr.io 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker 메타데이터 추출 (태그, 라벨)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

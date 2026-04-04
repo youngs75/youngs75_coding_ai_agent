@@ -59,6 +59,12 @@ services:
       --maxmemory-policy noeviction
     ports:
       - ${HOST_IP:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_AUTH:-myredissecret}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 1s
     networks:
       - default
 
@@ -97,7 +103,7 @@ services:
       minio:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "127.0.0.1:3030:3030"
     environment: &langfuse-worker-env

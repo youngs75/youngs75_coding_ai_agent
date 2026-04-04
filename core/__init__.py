@@ -11,7 +11,12 @@ from .model_tiers import (
     build_default_purpose_tiers,
     resolve_tier_config,
     create_chat_model,
+    ModelCostInfo,
+    recommend_tier_for_purpose,
+    estimate_cost,
+    analyze_tier_tradeoffs,
 )
+from .batch_executor import BatchExecutor, BatchResult, TaskResult
 from .memory import (
     MemoryItem,
     MemoryType,
@@ -35,6 +40,13 @@ __all__ = [
     "build_default_purpose_tiers",
     "resolve_tier_config",
     "create_chat_model",
+    "ModelCostInfo",
+    "recommend_tier_for_purpose",
+    "estimate_cost",
+    "analyze_tier_tradeoffs",
+    "BatchExecutor",
+    "BatchResult",
+    "TaskResult",
     "MemoryItem",
     "MemoryType",
     "MemoryStore",
