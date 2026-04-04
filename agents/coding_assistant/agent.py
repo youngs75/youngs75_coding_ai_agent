@@ -29,6 +29,7 @@ from youngs75_a2a.core.context_manager import (
     invoke_with_max_tokens_recovery,
 )
 from youngs75_a2a.core.mcp_loader import MCPToolLoader
+from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
 from youngs75_a2a.core.tool_permissions import PermissionDecision
@@ -60,6 +61,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
         "PARSE": "parse_request",
+        "RETRIEVE_MEMORY": "retrieve_memory",
         "EXECUTE": "execute_code",
         "EXECUTE_TOOLS": "execute_tools",
         "VERIFY": "verify_result",
@@ -157,6 +159,56 @@ class CodingAssistantAgent(BaseGraphAgent):
             "max_iterations": state.get("max_iterations", 3),
             "tool_call_count": 0,
         }
+
+    async def _retrieve_memory(self, state: CodingState) -> dict[str, Any]:
+        """Episodic/Procedural Memory를 검색하여 상태에 주입한다.
+
+        parse 후 execute 전에 실행되어 관련 과거 이력과
+        학습된 스킬 패턴을 자동으로 컨텍스트에 포함시킨다.
+        """
+        if not self._memory_store:
+            return {}
+
+        parse_result = state.get("parse_result", {})
+        description = parse_result.get("description", "")
+        language = parse_result.get("language", "python")
+        task_type = parse_result.get("task_type", "generate")
+
+        # 검색 쿼리: 작업 설명 기반
+        query = description or f"{task_type} {language}"
+
+        result: dict[str, Any] = {}
+
+        # ── Procedural Memory 검색: 학습된 스킬 패턴 ──
+        try:
+            skills = self._memory_store.retrieve_skills(
+                query=query,
+                tags=[language, task_type],
+                limit=5,
+            )
+            if skills:
+                result["procedural_skills"] = [
+                    f"[{s.tags}] {s.metadata.get('description', s.content[:100])}"
+                    for s in skills
+                ]
+        except Exception:
+            pass  # 검색 실패 시 무시
+
+        # ── Episodic Memory 검색: 이전 실행 이력 ──
+        try:
+            episodes = self._memory_store.search(
+                query=query,
+                memory_type=MemoryType.EPISODIC,
+                limit=3,
+            )
+            if episodes:
+                result["episodic_log"] = [
+                    e.content for e in episodes
+                ]
+        except Exception:
+            pass  # 검색 실패 시 무시
+
+        return result
 
     async def _execute_code(self, state: CodingState) -> dict[str, Any]:
         """ReAct 루프: LLM이 MCP 도구로 컨텍스트를 수집하고 코드를 생성한다."""
@@ -440,6 +492,10 @@ class CodingAssistantAgent(BaseGraphAgent):
         if verify_result.get("passed") and self._memory_store:
             self._accumulate_skill_from_execution(state, result)
 
+        # Episodic Memory 훅: 실행 결과를 에피소딕 메모리에 기록
+        if self._memory_store:
+            self._record_episodic_memory(state, verify_result)
+
         return result
 
     # ── Procedural Memory 훅 ─────────────────────────────────
@@ -474,6 +530,51 @@ class CodingAssistantAgent(BaseGraphAgent):
                 f"[procedural] 스킬 저장됨: {skill_description[:80]}"
             )
 
+    # ── Episodic Memory 훅 ─────────────────────────────────
+
+    def _record_episodic_memory(
+        self, state: CodingState, verify_result: dict[str, Any]
+    ) -> None:
+        """실행 결과를 Episodic Memory에 기록한다.
+
+        성공/실패 여부, 작업 설명, 언어 등을 포함하여
+        이후 유사한 작업 수행 시 참고 컨텍스트로 활용한다.
+        """
+        try:
+            parse_result = state.get("parse_result", {})
+            task_type = parse_result.get("task_type", "generate")
+            language = parse_result.get("language", "python")
+            description = parse_result.get("description", "")
+            passed = verify_result.get("passed", False)
+
+            status = "성공" if passed else "실패"
+            issues = verify_result.get("issues", [])
+            issue_summary = ""
+            if issues:
+                issue_strs = [
+                    i if isinstance(i, str) else json.dumps(i, ensure_ascii=False)
+                    for i in issues[:3]
+                ]
+                issue_summary = f" | 이슈: {', '.join(issue_strs)}"
+
+            content = f"[{status}] {task_type}/{language}: {description}{issue_summary}"
+
+            tags = [task_type, language, status]
+
+            item = MemoryItem(
+                type=MemoryType.EPISODIC,
+                content=content,
+                tags=tags,
+                metadata={
+                    "task_type": task_type,
+                    "language": language,
+                    "passed": passed,
+                },
+            )
+            self._memory_store.put(item)
+        except Exception:
+            pass  # 에피소딕 기록 실패 시 무시
+
     # ── 라우팅 ──────────────────────────────────────────────
 
     def _should_use_tools(self, state: CodingState) -> str:
@@ -502,15 +603,20 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     def init_nodes(self, graph: StateGraph) -> None:
         graph.add_node(self.get_node_name("PARSE"), self._parse_request)
+        graph.add_node(self.get_node_name("RETRIEVE_MEMORY"), self._retrieve_memory)
         graph.add_node(self.get_node_name("EXECUTE"), self._execute_code)
         graph.add_node(self.get_node_name("EXECUTE_TOOLS"), self._execute_tools)
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
 
     def init_edges(self, graph: StateGraph) -> None:
-        # parse → execute
+        # parse → retrieve_memory → execute
         graph.set_entry_point(self.get_node_name("PARSE"))
         graph.add_edge(
             self.get_node_name("PARSE"),
+            self.get_node_name("RETRIEVE_MEMORY"),
+        )
+        graph.add_edge(
+            self.get_node_name("RETRIEVE_MEMORY"),
             self.get_node_name("EXECUTE"),
         )
         # execute → (tools or verify)

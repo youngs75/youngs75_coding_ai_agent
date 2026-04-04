@@ -34,6 +34,7 @@ def test_step1_graph_structure():
     node_names = set(agent.graph.get_graph().nodes.keys())
     expected = {
         "parse_request",
+        "retrieve_memory",
         "execute_code",
         "verify_result",
         "__start__",
@@ -133,7 +134,7 @@ class TestMaxToolCallsEnforcement:
         from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
 
         config = CodingConfig()
-        agent = CodingAssistantAgent(config=config)
+        CodingAssistantAgent(config=config)
         # _parse_request는 비동기이므로 직접 호출하지 않고 스키마를 확인
         from youngs75_a2a.agents.coding_assistant.schemas import CodingState
 
@@ -287,6 +288,237 @@ class TestProjectContextDeduplication:
 
         ctx = result["project_context"]
         assert len(ctx) == 2, f"서로 다른 경로는 모두 유지되어야 함: {len(ctx)}개"
+
+
+##############################################################################
+# Memory Integration 테스트
+##############################################################################
+
+
+class TestMemoryRetrieval:
+    """_retrieve_memory 노드 — Procedural/Episodic Memory 자동 검색."""
+
+    def _make_agent_with_memory(self):
+        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.core.memory.store import MemoryStore
+
+        store = MemoryStore()
+        config = CodingConfig()
+        agent = CodingAssistantAgent(config=config, memory_store=store)
+        agent.build_graph()
+        return agent, store
+
+    @pytest.mark.asyncio
+    async def test_retrieve_memory_returns_empty_without_store(self):
+        """memory_store가 없으면 빈 딕셔너리를 반환한다."""
+        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+
+        agent = CodingAssistantAgent(config=CodingConfig())
+        agent.build_graph()
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "피보나치 함수",
+            },
+        }
+        result = await agent._retrieve_memory(state)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_retrieve_procedural_skills(self):
+        """저장된 Procedural 스킬이 검색되어 상태에 주입된다."""
+        agent, store = self._make_agent_with_memory()
+
+        # 스킬 사전 저장
+        store.accumulate_skill(
+            code="def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)",
+            description="피보나치 재귀 함수 생성",
+            tags=["generate", "python"],
+        )
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "피보나치 함수를 작성해줘",
+            },
+        }
+        result = await agent._retrieve_memory(state)
+
+        assert "procedural_skills" in result
+        assert len(result["procedural_skills"]) >= 1
+        assert any("피보나치" in s for s in result["procedural_skills"])
+
+    @pytest.mark.asyncio
+    async def test_retrieve_episodic_log(self):
+        """저장된 Episodic 이력이 검색되어 상태에 주입된다."""
+        from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+
+        agent, store = self._make_agent_with_memory()
+
+        # 에피소딕 이력 사전 저장
+        store.put(MemoryItem(
+            type=MemoryType.EPISODIC,
+            content="[성공] generate/python: 피보나치 함수 작성",
+            tags=["generate", "python", "성공"],
+        ))
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "피보나치 함수를 작성해줘",
+            },
+        }
+        result = await agent._retrieve_memory(state)
+
+        assert "episodic_log" in result
+        assert len(result["episodic_log"]) >= 1
+        assert any("피보나치" in e for e in result["episodic_log"])
+
+    @pytest.mark.asyncio
+    async def test_retrieve_memory_empty_store_returns_empty(self):
+        """메모리가 비어 있으면 관련 키가 반환되지 않는다."""
+        agent, store = self._make_agent_with_memory()
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "리스트 정렬",
+            },
+        }
+        result = await agent._retrieve_memory(state)
+
+        # 빈 스토어에서는 결과 없음 → 키 자체가 없어야 함
+        assert "procedural_skills" not in result
+        assert "episodic_log" not in result
+
+    @pytest.mark.asyncio
+    async def test_retrieve_memory_node_in_graph(self):
+        """retrieve_memory 노드가 그래프에 등록되어 있다."""
+        agent, _ = self._make_agent_with_memory()
+        node_names = set(agent.graph.get_graph().nodes.keys())
+        assert "retrieve_memory" in node_names
+
+
+class TestEpisodicMemoryAccumulation:
+    """_record_episodic_memory — 실행 결과를 Episodic Memory에 기록."""
+
+    def _make_agent_with_memory(self):
+        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        from youngs75_a2a.core.memory.store import MemoryStore
+
+        store = MemoryStore()
+        config = CodingConfig()
+        agent = CodingAssistantAgent(config=config, memory_store=store)
+        agent.build_graph()
+        return agent, store
+
+    def test_record_episodic_on_pass(self):
+        """검증 통과 시 에피소딕 메모리가 기록된다."""
+        from youngs75_a2a.core.memory.schemas import MemoryType
+
+        agent, store = self._make_agent_with_memory()
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "피보나치 함수 작성",
+            },
+            "generated_code": "def fib(n): ...",
+        }
+        verify_result = {"passed": True, "issues": [], "suggestions": []}
+
+        agent._record_episodic_memory(state, verify_result)
+
+        items = store.list_by_type(MemoryType.EPISODIC)
+        assert len(items) == 1
+        assert "성공" in items[0].content
+        assert "피보나치" in items[0].content
+        assert items[0].metadata["passed"] is True
+
+    def test_record_episodic_on_fail(self):
+        """검증 실패 시 에피소딕 메모리에 실패 이력이 기록된다."""
+        from youngs75_a2a.core.memory.schemas import MemoryType
+
+        agent, store = self._make_agent_with_memory()
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "fix",
+                "language": "javascript",
+                "description": "버그 수정",
+            },
+            "generated_code": "console.log('fix')",
+        }
+        verify_result = {
+            "passed": False,
+            "issues": ["타입 오류 발견"],
+            "suggestions": [],
+        }
+
+        agent._record_episodic_memory(state, verify_result)
+
+        items = store.list_by_type(MemoryType.EPISODIC)
+        assert len(items) == 1
+        assert "실패" in items[0].content
+        assert "버그 수정" in items[0].content
+        assert "타입 오류" in items[0].content
+        assert items[0].metadata["passed"] is False
+
+    def test_no_record_without_memory_store(self):
+        """memory_store가 없으면 에러 없이 무시된다."""
+        from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+
+        agent = CodingAssistantAgent(config=CodingConfig())
+        agent.build_graph()
+
+        state = {
+            "messages": [],
+            "parse_result": {"task_type": "generate", "language": "python", "description": "test"},
+        }
+        verify_result = {"passed": True, "issues": []}
+
+        # memory_store가 None이므로 _record_episodic_memory는 호출되지 않지만,
+        # 직접 호출해도 에러가 나지 않아야 한다 (try/except 보호)
+        agent._record_episodic_memory(state, verify_result)
+        # 에러 없이 통과하면 성공
+
+    def test_episodic_tags_include_status(self):
+        """에피소딕 메모리 태그에 성공/실패 상태가 포함된다."""
+        from youngs75_a2a.core.memory.schemas import MemoryType
+
+        agent, store = self._make_agent_with_memory()
+
+        state = {
+            "messages": [],
+            "parse_result": {
+                "task_type": "generate",
+                "language": "python",
+                "description": "테스트",
+            },
+        }
+
+        # 성공 케이스
+        agent._record_episodic_memory(state, {"passed": True, "issues": []})
+        items = store.list_by_type(MemoryType.EPISODIC)
+        assert "성공" in items[0].tags
+
+        # 실패 케이스
+        agent._record_episodic_memory(state, {"passed": False, "issues": ["에러"]})
+        items = store.list_by_type(MemoryType.EPISODIC)
+        fail_items = [i for i in items if "실패" in i.tags]
+        assert len(fail_items) == 1
 
 
 if __name__ == "__main__":

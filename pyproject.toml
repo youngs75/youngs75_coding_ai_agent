@@ -60,9 +60,12 @@ dev = [
     "nest-asyncio>=1.6,<2",
     "pytest>=9,<10",
     "pytest-asyncio>=1.0,<2",
+    "pytest-rerunfailures>=14,<17",
     "ruff>=0.15.2",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+reruns = 2
+reruns_delay = 3

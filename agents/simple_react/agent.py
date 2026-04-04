@@ -1,6 +1,6 @@
 """MCP 도구를 사용하는 Simple ReAct 에이전트.
 
-단일 노드로 create_react_agent를 사용하여 MCP 도구를 호출하는 에이전트.
+단일 노드로 create_agent를 사용하여 MCP 도구를 호출하는 에이전트.
 비동기 초기화(MCP 도구 로딩)가 필요하므로 await create()로 생성한다.
 
 Phase 10 통합:
@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph import StateGraph
-from langgraph.prebuilt import create_react_agent
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.base_state import BaseGraphState
@@ -73,10 +73,11 @@ class SimpleMCPReActAgent(BaseGraphAgent):
     def init_nodes(self, graph: StateGraph) -> None:
         # 프로젝트 컨텍스트가 주입된 시스템 프롬프트 사용
         prompt = self._get_system_prompt()
-        react_agent = create_react_agent(
+        # create_agent: langgraph deprecated → langchain 마이그레이션
+        react_agent = create_agent(
             model=self.model,
             tools=self._tools,
-            prompt=prompt if prompt else None,
+            system_prompt=prompt if prompt else None,
         )
         graph.add_node(self.get_node_name("REACT"), react_agent)
 

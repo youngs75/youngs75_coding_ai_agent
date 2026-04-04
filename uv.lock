@@ -1901,6 +1901,7 @@ dev = [
     { name = "nest-asyncio" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-rerunfailures" },
     { name = "ruff" },
 ]
 
@@ -1928,6 +1929,7 @@ dev = [
     { name = "nest-asyncio", specifier = ">=1.6,<2" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-asyncio", specifier = ">=1.0,<2" },
+    { name = "pytest-rerunfailures", specifier = ">=14,<17" },
     { name = "ruff", specifier = ">=0.15.2" },
 ]
 

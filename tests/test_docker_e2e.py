@@ -250,6 +250,7 @@ class TestA2AProtocol:
     """Agent 서비스에 A2A 프로토콜로 메시지를 전송하고 응답을 검증한다."""
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_a2a_message_send(self, docker_available, name: str, url: str):
         """A2A message/send 호출이 유효한 JSON-RPC 응답을 반환하는지 확인한다."""
         await _skip_if_service_down(url, name)
@@ -262,6 +263,7 @@ class TestA2AProtocol:
         # result 또는 error 중 하나는 있어야 함
         assert "result" in result or "error" in result, "result/error 필드 모두 누락"
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_simple_react_query(self, docker_available):
         """SimpleReAct 에이전트에 검색 질의가 정상 처리되는지 확인한다."""
         url = AGENT_SERVICES["SimpleReAct"]
@@ -269,6 +271,7 @@ class TestA2AProtocol:
         result = await _send_a2a_message(url, "Python GIL이란?", timeout=120.0)
         assert "result" in result, f"에러 응답: {result.get('error')}"
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_deep_research_query(self, docker_available):
         """DeepResearch 에이전트에 연구 질의가 정상 처리되는지 확인한다."""
         url = AGENT_SERVICES["DeepResearch"]
@@ -290,6 +293,7 @@ class TestCLIToAgentChain:
     """
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_agent_accepts_cli_format_request(
         self, docker_available, name: str, url: str
     ):
@@ -345,6 +349,7 @@ class TestAgentToMCPChain:
     전체 체인(Agent → MCP)이 동작하는지 확인한다.
     """
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_simple_react_uses_tavily_mcp(self, docker_available):
         """SimpleReAct가 Tavily MCP를 통해 검색을 수행하는지 확인한다.
 
@@ -360,6 +365,7 @@ class TestAgentToMCPChain:
         )
         assert "result" in result, f"Agent→MCP 체인 실패: {result.get('error')}"
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_deep_research_uses_multiple_mcp(self, docker_available):
         """DeepResearch가 여러 MCP 서비스를 활용하는지 확인한다.
 
@@ -682,6 +688,7 @@ class TestDockerConfigValidation:
 class TestIntegrationScenario:
     """전체 시스템의 통합 시나리오를 검증한다."""
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_full_chain_health_then_query(self, docker_available):
         """MCP 헬스 → Agent 헬스 → AgentCard → 질의 순서의 전체 흐름을 검증한다."""
         # 1단계: MCP 서비스 중 하나라도 정상인지 확인
@@ -714,6 +721,7 @@ class TestIntegrationScenario:
         assert "jsonrpc" in result
         assert result["jsonrpc"] == "2.0"
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_concurrent_agent_queries(self, docker_available):
         """여러 Agent에 동시 질의가 가능한지 확인한다."""
         available = {}

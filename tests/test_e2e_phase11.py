@@ -334,6 +334,7 @@ class TestCoordinatorModeE2E:
     """Coordinator Mode가 실제 LLM으로 작업을 분해하고 실행하는지 검증."""
 
     @_skip_no_api
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_task_decomposition_with_real_llm(self):
         """실제 LLM이 복합 작업을 서브태스크로 분해한다."""
         from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
@@ -427,6 +428,7 @@ class TestCoordinatorModeE2E:
             print(f"    Wave {i+1}: {ids}")
 
     @_skip_no_api
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_coordinator_full_pipeline_with_mock_workers(self):
         """Coordinator 전체 파이프라인: decompose → execute → synthesize."""
         from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
@@ -502,6 +504,7 @@ class TestCodingAssistantE2E:
 
     @_skip_no_api
     @_skip_no_mcp
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_full_pipeline_with_hooks_and_permissions(self):
         """CodingAssistant가 훅+권한+MCP로 코드를 생성한다."""
         from langchain_core.messages import HumanMessage
@@ -651,18 +654,18 @@ class TestFullSystemIntegration:
     async def test_all_phase11_modules_importable(self):
         """Phase 11 모든 모듈이 정상 임포트된다."""
         # Hook system
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.builtin_hooks import logging_hook, timing_hook, audit_hook
+        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager  # noqa: F401
+        from youngs75_a2a.core.builtin_hooks import logging_hook, timing_hook, audit_hook  # noqa: F401
 
         # Coordinator
-        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
-        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
+        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode  # noqa: F401
+        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph  # noqa: F401
 
         # Phase 10 integration
         from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
         from youngs75_a2a.core.tool_permissions import ToolPermissionManager
         from youngs75_a2a.core.context_manager import ContextManager
-        from youngs75_a2a.core.project_context import ProjectContextLoader
+        from youngs75_a2a.core.project_context import ProjectContextLoader  # noqa: F401
 
         # 인스턴스 생성 확인
         assert HookManager() is not None
@@ -672,6 +675,7 @@ class TestFullSystemIntegration:
 
     @_skip_no_api
     @_skip_no_mcp
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_smoke_simple_react_with_phase11(self):
         """SimpleReActAgent가 Phase 11 기능과 함께 동작한다."""
         from langchain_core.messages import HumanMessage

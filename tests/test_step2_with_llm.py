@@ -42,6 +42,7 @@ def check_api_key():
 
 
 @_skip_no_api_key
+@pytest.mark.flaky(reruns=3, reruns_delay=5)
 async def test_base_agent_executor():
     """BaseAgentExecutor로 간단한 에이전트 테스트."""
     from langchain_openai import ChatOpenAI
@@ -57,6 +58,7 @@ async def test_base_agent_executor():
 
 
 @_skip_no_api_key
+@pytest.mark.flaky(reruns=3, reruns_delay=5)
 async def test_deep_research_clarify_only():
     """DeepResearchAgent의 clarify 노드만 테스트.
 
