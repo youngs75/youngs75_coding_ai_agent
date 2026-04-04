@@ -4,7 +4,10 @@
 A2A 프로토콜로 위임한 결과를 반환한다.
 
 흐름:
-    START → [CLASSIFY] → [DELEGATE] → [RESPOND] → END
+    START → [CLASSIFY] ─→ [DELEGATE]    → [RESPOND] → END
+                        └→ [COORDINATE] ↗
+
+    복합 작업 감지 시 coordinator 모드로 병렬 워커 오케스트레이션.
 
 사용 예:
     config = OrchestratorConfig(agent_endpoints=[...])
@@ -28,7 +31,9 @@ from langgraph.graph import START, END, StateGraph
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.context_manager import ContextManager
+from youngs75_a2a.core.subagents.registry import SubAgentRegistry
 from .config import OrchestratorConfig
+from .coordinator import CoordinatorMode
 from .schemas import OrchestratorState
 
 # 오케스트레이터용 컨텍스트 매니저 (서브에이전트 호출 시 히스토리 필터링)
@@ -46,6 +51,8 @@ CLASSIFY_SYSTEM_PROMPT = """\
 1. 사용자의 요청 의도를 파악하고, 위 목록에서 가장 적합한 에이전트 이름을 정확히 하나만 선택하세요.
 2. 에이전트 이름만 출력하세요. 다른 텍스트는 포함하지 마세요.
 3. 어떤 에이전트에도 맞지 않으면 "none"을 출력하세요.
+4. 요청이 여러 에이전트의 협업이 필요한 복합 작업이면 "coordinate"를 출력하세요.
+   복합 작업 예시: "코드를 작성하고 리뷰해줘", "조사해서 보고서를 작성해줘" 등
 """
 
 
@@ -72,6 +79,11 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
     )
 
     selected = response.content.strip().lower()
+
+    # 코디네이터 모드 감지
+    if selected == "coordinate" or selected == "__coordinator__":
+        logger.info(f"라우팅 결정: '{user_message[:50]}...' → __coordinator__")
+        return {"selected_agent": "__coordinator__"}
 
     # 등록된 에이전트 이름과 매칭
     agent_names = [ep.name.lower() for ep in oc.agent_endpoints]
@@ -151,6 +163,51 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
         }
 
 
+async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:
+    """복합 작업을 서브태스크로 분해하고 병렬 워커에 위임한다."""
+    oc = OrchestratorConfig.from_runnable_config(config)
+    llm = oc.get_model("default")
+
+    # 사용자 메시지 추출
+    user_message = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            user_message = msg.content
+            break
+
+    # SubAgentRegistry 구성 — 등록된 에이전트 엔드포인트를 SubAgentSpec으로 변환
+    registry = SubAgentRegistry()
+    from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+
+    for ep in oc.agent_endpoints:
+        registry.register(
+            SubAgentSpec(
+                name=ep.name,
+                description=ep.description,
+                capabilities=[ep.name],
+                endpoint=ep.url,
+            )
+        )
+
+    coordinator = CoordinatorMode(
+        registry=registry,
+        context_manager=_orchestrator_context_manager,
+    )
+
+    try:
+        result = await coordinator.run(
+            task=user_message,
+            context=state["messages"],
+            llm=llm,
+        )
+        return {"agent_response": result["synthesized_response"]}
+    except Exception as e:
+        logger.error(f"코디네이터 실행 실패: {e}")
+        return {
+            "agent_response": f"복합 작업 처리 중 오류가 발생했습니다: {e}"
+        }
+
+
 async def respond(state: OrchestratorState, config: RunnableConfig) -> dict:
     """에이전트 응답을 최종 메시지로 포맷팅한다."""
     selected = state.get("selected_agent", "unknown")
@@ -164,12 +221,27 @@ async def respond(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {"messages": [AIMessage(content=content)]}
 
 
+def _route_after_classify(state: OrchestratorState) -> str:
+    """classify 노드 이후 라우팅 결정.
+
+    복합 작업(coordinate)이면 coordinate 노드로,
+    그 외에는 기존 delegate 노드로 라우팅한다.
+    """
+    if state.get("selected_agent") == "__coordinator__":
+        return "coordinate"
+    return "delegate"
+
+
 class OrchestratorAgent(BaseGraphAgent):
-    """사용자 요청을 분석하고 적합한 에이전트로 라우팅하는 오케스트레이터."""
+    """사용자 요청을 분석하고 적합한 에이전트로 라우팅하는 오케스트레이터.
+
+    단일 에이전트 위임(delegate)과 복합 작업 병렬 오케스트레이션(coordinate)을 지원.
+    """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
         "CLASSIFY": "classify",
         "DELEGATE": "delegate",
+        "COORDINATE": "coordinate",
         "RESPOND": "respond",
     }
 
@@ -190,10 +262,22 @@ class OrchestratorAgent(BaseGraphAgent):
     def init_nodes(self, graph: StateGraph) -> None:
         graph.add_node(self.get_node_name("CLASSIFY"), classify)
         graph.add_node(self.get_node_name("DELEGATE"), delegate)
+        graph.add_node(self.get_node_name("COORDINATE"), coordinate)
         graph.add_node(self.get_node_name("RESPOND"), respond)
 
     def init_edges(self, graph: StateGraph) -> None:
         graph.add_edge(START, self.get_node_name("CLASSIFY"))
-        graph.add_edge(self.get_node_name("CLASSIFY"), self.get_node_name("DELEGATE"))
+        # classify 이후 조건부 라우팅: delegate 또는 coordinate
+        graph.add_conditional_edges(
+            self.get_node_name("CLASSIFY"),
+            _route_after_classify,
+            {
+                "delegate": self.get_node_name("DELEGATE"),
+                "coordinate": self.get_node_name("COORDINATE"),
+            },
+        )
         graph.add_edge(self.get_node_name("DELEGATE"), self.get_node_name("RESPOND"))
+        graph.add_edge(
+            self.get_node_name("COORDINATE"), self.get_node_name("RESPOND")
+        )
         graph.add_edge(self.get_node_name("RESPOND"), END)
