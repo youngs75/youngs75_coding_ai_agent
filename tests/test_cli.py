@@ -1058,10 +1058,10 @@ class TestTokenStreamingIntegration:
         await _run_agent_turn("함수 작성", session, renderer)
 
         output = buf.getvalue()
-        # 노드 전환 상태 메시지가 출력됨
-        assert "요청 분석 중" in output
-        assert "코드 생성 중" in output
-        assert "코드 검증 중" in output
+        # 노드 전환 상태 메시지가 출력됨 (스피너 포함)
+        assert "요청 분석" in output
+        assert "코드 생성" in output
+        assert "코드 검증" in output
         # 스트리밍된 토큰이 출력됨
         assert "def " in output
         assert "hello():" in output
@@ -1496,10 +1496,10 @@ class TestStreamingCheckpointerE2E:
         assert "sort" in output
         assert "return sorted(arr)" in output
 
-        # 2. 노드 전환 메시지가 출력됨
-        assert "요청 분석 중" in output
-        assert "코드 생성 중" in output
-        assert "코드 검증 중" in output
+        # 2. 노드 전환 메시지가 출력됨 (스피너 포함)
+        assert "요청 분석" in output
+        assert "코드 생성" in output
+        assert "코드 검증" in output
 
         # 3. 세션 히스토리에 기록됨
         assert session.info.message_count == 2

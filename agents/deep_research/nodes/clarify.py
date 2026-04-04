@@ -20,7 +20,7 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
     rc = ResearchConfig.from_runnable_config(config)
 
     if not rc.allow_clarification:
-        return Command(goto="write_research_brief")
+        return Command(goto="retrieve_memory")
 
     messages_str = get_buffer_string(state["messages"])
     llm = rc.get_model("research", structured=ClarifyWithUser)
@@ -39,9 +39,9 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
                     update={"messages": [AIMessage(content=parsed.question)]},
                     goto="__end__",
                 )
-            return Command(goto="write_research_brief")
+            return Command(goto="retrieve_memory")
         except Exception as e:
             logger.warning(f"명확화 판단 시도 {attempt + 1} 실패: {e}")
 
     # 모든 시도 실패 시 그냥 진행
-    return Command(goto="write_research_brief")
+    return Command(goto="retrieve_memory")

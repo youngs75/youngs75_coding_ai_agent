@@ -100,20 +100,60 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {"selected_agent": selected}
 
 
+async def _invoke_local_agent(agent_name: str, user_message: str) -> str | None:
+    """로컬 에이전트를 직접 호출한다 (A2A 엔드포인트 없을 때 폴백)."""
+    try:
+        if agent_name in ("coding_assistant", "coder"):
+            from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+            from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+            agent = await CodingAssistantAgent.create(config=CodingConfig())
+            result = await agent.graph.ainvoke({
+                "messages": [HumanMessage(content=user_message)],
+                "iteration": 0,
+                "max_iterations": 2,
+            })
+            return result.get("generated_code") or result.get("messages", [{}])[-1].content
+
+        if agent_name in ("deep_research", "researcher"):
+            from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
+            from youngs75_a2a.agents.deep_research.config import ResearchConfig
+
+            agent = DeepResearchAgent(config=ResearchConfig())
+            result = await agent.graph.ainvoke({
+                "messages": [HumanMessage(content=user_message)],
+            })
+            return result.get("final_report", "")
+
+        if agent_name in ("simple_react", "react"):
+            from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+            from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
+
+            agent = await SimpleMCPReActAgent.create(config=SimpleReActConfig())
+            result = await agent.graph.ainvoke({
+                "messages": [HumanMessage(content=user_message)],
+            })
+            msgs = result.get("messages", [])
+            return msgs[-1].content if msgs else None
+
+    except Exception as e:
+        logger.warning(f"로컬 에이전트 '{agent_name}' 호출 실패: {e}")
+    return None
+
+
 async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
-    """선택된 에이전트에 A2A 프로토콜로 요청을 위임한다."""
+    """선택된 에이전트에 요청을 위임한다.
+
+    우선순위:
+    1. A2A 프로토콜 (HTTP 엔드포인트가 접근 가능한 경우)
+    2. 로컬 에이전트 직접 호출 (폴백)
+    """
     oc = OrchestratorConfig.from_runnable_config(config)
     selected = state.get("selected_agent", "none")
 
     if selected == "none":
         return {
             "agent_response": "죄송합니다. 현재 등록된 에이전트 중 적합한 것을 찾지 못했습니다. 질문을 다시 한번 구체적으로 말씀해 주세요."
-        }
-
-    url = oc.get_endpoint_url(selected)
-    if not url:
-        return {
-            "agent_response": f"에이전트 '{selected}'의 엔드포인트를 찾을 수 없습니다."
         }
 
     # 서브에이전트용 히스토리 필터링 후 마지막 사용자 메시지 추출
@@ -126,41 +166,46 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
             user_message = msg.content
             break
 
-    try:
-        # A2A 프로토콜로 요청
-        from a2a.client import A2AClient
-        from a2a.client.helpers import create_text_message_object
-        from a2a.types import MessageSendParams, SendMessageRequest
+    # A2A 프로토콜 시도
+    url = oc.get_endpoint_url(selected)
+    if url:
+        try:
+            from a2a.client import A2AClient
+            from a2a.client.helpers import create_text_message_object
+            from a2a.types import MessageSendParams, SendMessageRequest
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as hc:
-            client = A2AClient(httpx_client=hc, url=url)
-            msg = create_text_message_object(content=user_message)
-            request = SendMessageRequest(
-                id=str(uuid.uuid4()),
-                params=MessageSendParams(message=msg),
-            )
-            response = await client.send_message(request)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as hc:
+                client = A2AClient(httpx_client=hc, url=url)
+                msg = create_text_message_object(content=user_message)
+                request = SendMessageRequest(
+                    id=str(uuid.uuid4()),
+                    params=MessageSendParams(message=msg),
+                )
+                response = await client.send_message(request)
 
-        # 응답에서 텍스트 추출
-        result = response.root
-        if hasattr(result, "result"):
-            obj = result.result
-            if hasattr(obj, "artifacts") and obj.artifacts:
-                for artifact in obj.artifacts:
-                    for part in artifact.parts or []:
-                        root = getattr(part, "root", part)
-                        if hasattr(root, "text") and root.text and len(root.text) > 5:
-                            return {"agent_response": root.text}
-            if hasattr(obj, "status"):
-                return {"agent_response": f"[에이전트 작업 상태: {obj.status}]"}
+            result = response.root
+            if hasattr(result, "result"):
+                obj = result.result
+                if hasattr(obj, "artifacts") and obj.artifacts:
+                    for artifact in obj.artifacts:
+                        for part in artifact.parts or []:
+                            root = getattr(part, "root", part)
+                            if hasattr(root, "text") and root.text and len(root.text) > 5:
+                                return {"agent_response": root.text}
+                if hasattr(obj, "status"):
+                    return {"agent_response": f"[에이전트 작업 상태: {obj.status}]"}
 
-        return {"agent_response": "[에이전트 응답 파싱 실패]"}
+        except Exception as e:
+            logger.warning(f"A2A 호출 실패 ({selected}), 로컬 폴백: {e}")
 
-    except Exception as e:
-        logger.error(f"에이전트 '{selected}' 호출 실패: {e}")
-        return {
-            "agent_response": f"에이전트 '{selected}' 호출 중 오류가 발생했습니다: {e}"
-        }
+    # 로컬 에이전트 폴백
+    local_result = await _invoke_local_agent(selected, user_message)
+    if local_result:
+        return {"agent_response": local_result}
+
+    return {
+        "agent_response": f"에이전트 '{selected}'를 호출할 수 없습니다 (A2A 엔드포인트 미설정, 로컬 에이전트 미지원)."
+    }
 
 
 async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:

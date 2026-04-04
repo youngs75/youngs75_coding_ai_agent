@@ -16,7 +16,7 @@ from youngs75_a2a.core.reducers import override_reducer
 class ParseResult(TypedDict, total=False):
     """parse_request 노드 출력."""
 
-    task_type: str  # "generate" | "fix" | "refactor" | "explain"
+    task_type: str  # "generate" | "fix" | "refactor" | "explain" | "analyze"
     language: str  # 감지된 프로그래밍 언어 (기본: "python")
     description: str  # 작업 설명
     target_files: list[str]  # 대상 파일 경로

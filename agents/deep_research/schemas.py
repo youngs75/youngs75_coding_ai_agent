@@ -53,9 +53,13 @@ class AgentState(BaseGraphState):
     notes: Annotated[list[str], override_reducer]
     final_report: str
 
+    # CoALA 메모리 필드
+    semantic_context: Annotated[list[str], override_reducer]
+    episodic_log: Annotated[list[str], override_reducer]
+
 
 class HITLAgentState(AgentState):
-    """HITL 지원 에이전트 상태."""
+    """HITL 지원 에이전트 상태 (AgentState의 메모리 필드 상속)."""
 
     revision_count: int
     human_feedback: Optional[str]

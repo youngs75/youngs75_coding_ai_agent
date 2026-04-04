@@ -40,21 +40,23 @@ logger = logging.getLogger(__name__)
 # 노드 이름 → 한국어 상태 레이블
 _NODE_LABELS: dict[str, str] = {
     # coding_assistant
-    "parse_request": "요청 분석 중...",
-    "execute_code": "코드 생성 중...",
-    "execute_tools": "도구 실행 중...",
-    "verify_result": "코드 검증 중...",
+    "parse_request": "요청 분석",
+    "retrieve_memory": "메모리 검색",
+    "execute_code": "코드 생성",
+    "execute_tools": "도구 실행",
+    "verify_result": "코드 검증",
     # deep_research
-    "clarify_with_user": "질문 명확화...",
-    "write_research_brief": "연구 브리프 작성...",
-    "research_supervisor": "연구 수행 중...",
-    "final_report_generation": "보고서 작성 중...",
+    "clarify_with_user": "질문 명확화",
+    "write_research_brief": "연구 브리프 작성",
+    "research_supervisor": "연구 수행",
+    "final_report_generation": "보고서 작성",
+    "record_episodic": "연구 이력 기록",
     # simple_react
-    "react_agent": "처리 중...",
+    "react_agent": "처리",
     # orchestrator
-    "classify": "요청 분류 중...",
-    "delegate": "에이전트 위임 중...",
-    "respond": "응답 생성 중...",
+    "classify": "요청 분류",
+    "delegate": "에이전트 위임",
+    "respond": "응답 생성",
 }
 
 # Episodic 메모리 안전장치 상수 (Agent-as-a-Judge)
@@ -163,7 +165,7 @@ async def _get_or_create_agent(
     if cached is not None:
         return cached
 
-    renderer.system_message(f"[{name}] 에이전트 초기화 중...")
+    renderer.start_progress(f"{name} 에이전트 초기화")
     try:
         agent = await _create_agent(
             name,
@@ -184,11 +186,12 @@ async def _get_or_create_agent(
             agent.context_manager = ContextManager()
 
         session.cache_agent(name, agent)
-        renderer.system_message(f"[{name}] 에이전트 준비 완료")
+        renderer.stop_progress_with_result(f"{name} 준비 완료")
         return agent
     except Exception as e:
+        renderer.stop_progress_with_result(f"{name} 초기화 실패", success=False)
         logger.exception("에이전트 초기화 실패")
-        renderer.error(f"에이전트 초기화 실패: {e}")
+        renderer.error(f"{e}")
         return None
 
 
@@ -296,6 +299,7 @@ async def _run_agent_turn(
     Langfuse 콜백 핸들러가 주어지면 트레이스/메트릭을 자동 수집합니다.
     """
     session.add_message("user", user_input)
+    renderer.start_turn()
 
     agent = await _get_or_create_agent(session, renderer)
     if agent is None:
@@ -327,12 +331,12 @@ async def _run_agent_turn(
             kind = event["event"]
             node = event.get("metadata", {}).get("langgraph_node", "")
 
-            # 노드 시작 시 진행 상태 표시
+            # 노드 시작 시 스피너로 진행 상태 표시
             if kind == "on_chain_start" and node in _NODE_LABELS and node != last_node:
                 if token_streamed:
                     renderer.flush_tokens()
                     token_streamed = False
-                renderer.system_message(f"  > {_NODE_LABELS[node]}")
+                renderer.start_progress(_NODE_LABELS[node])
                 metrics.record_node_start(node)
                 last_node = node
 
@@ -357,6 +361,13 @@ async def _run_agent_turn(
                         prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
                         completion_tokens=getattr(usage, "output_tokens", 0) or 0,
                     )
+
+            # 도구 호출 표시
+            elif kind == "on_tool_start":
+                tool_name = event.get("name", "")
+                tool_input = event.get("data", {}).get("input", {})
+                if tool_name:
+                    renderer.tool_call(tool_name, tool_input if isinstance(tool_input, dict) else None)
 
             # 노드 완료 시 응답 데이터 수집
             elif kind == "on_chain_end" and node:
@@ -383,37 +394,37 @@ async def _run_agent_turn(
     except Exception as e:
         if token_streamed:
             renderer.flush_tokens()
+        renderer._stop_progress()
         metrics.record_error()
         logger.exception("에이전트 실행 오류")
         renderer.error(f"에이전트 실행 오류: {e}")
         return
     finally:
+        renderer._stop_progress()
         # 메트릭 수집 완료 및 Langfuse flush
         metrics.finalize()
         if langfuse_handler is not None:
             logger.debug("에이전트 메트릭: %s", metrics.to_dict())
             safe_flush()
 
-    # 검증 결과에서 passed 여부 추출 및 요약 출력
+    # 검증 결과 표시 (새 렌더러 API)
     verify = response_data.get("verify_result")
     if isinstance(verify, dict):
         passed = verify.get("passed", True)
-        status = "통과" if passed else "실패"
-        icon = "✓" if passed else "✗"
-        renderer.system_message(f"  {icon} 검증 결과: {status}")
-        issues = verify.get("issues", [])
-        if issues:
-            for issue in issues[:3]:
-                renderer.system_message(f"    - {issue}")
-        suggestions = verify.get("suggestions", [])
-        if suggestions:
-            renderer.system_message(f"  💡 제안 {len(suggestions)}건")
+        renderer.verify_result(
+            passed=passed,
+            issues=verify.get("issues"),
+            suggestions=verify.get("suggestions"),
+        )
 
     response = _extract_response(session.info.agent_name, response_data)
 
     # 토큰 스트리밍이 된 경우 이미 출력되었으므로 중복 출력 방지
     if not token_streamed:
         renderer.agent_message(response)
+
+    # 소요시간 표시
+    renderer.end_turn()
 
     session.add_message("assistant", response)
 
@@ -468,7 +479,7 @@ async def _main_loop(config: CLIConfig) -> None:
     context_section = context_loader.build_system_prompt_section()
     if context_section:
         session.project_context = context_section
-        renderer.system_message("프로젝트 컨텍스트 로드 완료")
+        renderer.success("프로젝트 컨텍스트 로드 완료")
         logger.info("프로젝트 컨텍스트 파일 %d개 발견", len(context_loader.discover()))
 
     # 도구 권한 관리자
@@ -484,7 +495,7 @@ async def _main_loop(config: CLIConfig) -> None:
     if config.langfuse_enabled:
         langfuse_handler = create_langfuse_handler()
         if langfuse_handler is not None:
-            renderer.system_message("Langfuse 관측성 활성화됨")
+            renderer.success("Langfuse 관측성 활성화됨")
 
     prompt_session: PromptSession[str] = PromptSession(
         history=FileHistory(config.history_file),

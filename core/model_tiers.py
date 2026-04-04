@@ -61,6 +61,21 @@ class ModelCostInfo(BaseModel):
 
 # 알려진 모델의 비용/성능 데이터 (참고용, 환경변수로 오버라이드 가능)
 _MODEL_COST_DB: dict[str, ModelCostInfo] = {
+    # ── Qwen 시리즈 (메인) ──
+    "qwen/qwen3-coder-plus": ModelCostInfo(
+        model="qwen/qwen3-coder-plus",
+        input_cost_per_1m=0.65,
+        output_cost_per_1m=3.25,
+        latency_category="medium",
+        capability_scores={"code": 0.98, "reasoning": 0.95, "speed": 0.65},
+    ),
+    "qwen/qwen3-coder-next": ModelCostInfo(
+        model="qwen/qwen3-coder-next",
+        input_cost_per_1m=0.12,
+        output_cost_per_1m=0.75,
+        latency_category="medium",
+        capability_scores={"code": 0.96, "reasoning": 0.92, "speed": 0.78},
+    ),
     "qwen/qwen3-coder": ModelCostInfo(
         model="qwen/qwen3-coder",
         input_cost_per_1m=0.22,
@@ -68,12 +83,12 @@ _MODEL_COST_DB: dict[str, ModelCostInfo] = {
         latency_category="medium",
         capability_scores={"code": 0.95, "reasoning": 0.90, "speed": 0.75},
     ),
-    "deepseek/deepseek-v3.2": ModelCostInfo(
-        model="deepseek/deepseek-v3.2",
-        input_cost_per_1m=0.26,
-        output_cost_per_1m=0.38,
+    "qwen/qwen3.5-flash-02-23": ModelCostInfo(
+        model="qwen/qwen3.5-flash-02-23",
+        input_cost_per_1m=0.07,
+        output_cost_per_1m=0.26,
         latency_category="low",
-        capability_scores={"code": 0.90, "reasoning": 0.92, "speed": 0.85},
+        capability_scores={"code": 0.78, "reasoning": 0.80, "speed": 0.92},
     ),
     "qwen/qwen3.5-9b": ModelCostInfo(
         model="qwen/qwen3.5-9b",
@@ -82,12 +97,20 @@ _MODEL_COST_DB: dict[str, ModelCostInfo] = {
         latency_category="low",
         capability_scores={"code": 0.70, "reasoning": 0.70, "speed": 0.95},
     ),
-    "deepseek/deepseek-r1": ModelCostInfo(
-        model="deepseek/deepseek-r1",
-        input_cost_per_1m=0.70,
-        output_cost_per_1m=2.50,
-        latency_category="high",
-        capability_scores={"code": 0.92, "reasoning": 0.98, "speed": 0.50},
+    "qwen/qwen3.5-397b-a17b": ModelCostInfo(
+        model="qwen/qwen3.5-397b-a17b",
+        input_cost_per_1m=0.39,
+        output_cost_per_1m=2.34,
+        latency_category="medium",
+        capability_scores={"code": 0.94, "reasoning": 0.96, "speed": 0.60},
+    ),
+    # ── 기타 참조 모델 ──
+    "deepseek/deepseek-v3.2": ModelCostInfo(
+        model="deepseek/deepseek-v3.2",
+        input_cost_per_1m=0.26,
+        output_cost_per_1m=0.38,
+        latency_category="low",
+        capability_scores={"code": 0.90, "reasoning": 0.92, "speed": 0.85},
     ),
     "z-ai/glm-5": ModelCostInfo(
         model="z-ai/glm-5",
@@ -135,19 +158,19 @@ def build_default_tiers() -> dict[str, TierConfig]:
     """환경변수에서 티어별 설정을 로드하여 기본 티어 구성을 반환한다."""
     return {
         ModelTier.STRONG: TierConfig(
-            model=os.getenv("STRONG_MODEL", "qwen/qwen3-coder"),
+            model=os.getenv("STRONG_MODEL", "qwen/qwen3-coder-plus"),
             provider=os.getenv("STRONG_PROVIDER", "openrouter"),
-            context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "262144")),
+            context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "1000000")),
         ),
         ModelTier.DEFAULT: TierConfig(
-            model=os.getenv("DEFAULT_MODEL", "deepseek/deepseek-v3.2"),
+            model=os.getenv("DEFAULT_MODEL", "qwen/qwen3-coder-next"),
             provider=os.getenv("DEFAULT_PROVIDER", "openrouter"),
-            context_window=int(os.getenv("DEFAULT_CONTEXT_WINDOW", "128000")),
+            context_window=int(os.getenv("DEFAULT_CONTEXT_WINDOW", "262144")),
         ),
         ModelTier.FAST: TierConfig(
-            model=os.getenv("FAST_MODEL", "qwen/qwen3.5-9b"),
+            model=os.getenv("FAST_MODEL", "qwen/qwen3.5-flash-02-23"),
             provider=os.getenv("FAST_PROVIDER", "openrouter"),
-            context_window=int(os.getenv("FAST_CONTEXT_WINDOW", "128000")),
+            context_window=int(os.getenv("FAST_CONTEXT_WINDOW", "1000000")),
         ),
     }
 
@@ -185,7 +208,7 @@ def resolve_tier_config(
     if config is None:
         config = tiers.get(ModelTier.DEFAULT)
     if config is None:
-        return TierConfig(model="deepseek/deepseek-v3.2", provider="openrouter")
+        return TierConfig(model="qwen/qwen3-coder-next", provider="openrouter")
     return config
 
 
@@ -292,7 +315,7 @@ def recommend_tier_for_purpose(
     if best_config is None:
         default_config = tiers.get(
             ModelTier.DEFAULT,
-            TierConfig(model="deepseek/deepseek-v3.2", provider="openrouter"),
+            TierConfig(model="qwen/qwen3-coder-next", provider="openrouter"),
         )
         return ModelTier.DEFAULT, default_config, analysis
 

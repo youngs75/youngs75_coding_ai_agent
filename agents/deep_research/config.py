@@ -55,16 +55,16 @@ class ResearchConfig(BaseAgentConfig):
 
     # --- LLM 모델 (용도별) ---
     research_model: str = Field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2"),
+        default_factory=lambda: os.getenv("MODEL_NAME", "qwen/qwen3-coder-next"),
     )
     compression_model: str = Field(
         default_factory=lambda: os.getenv(
-            "COMPRESSION_MODEL", "deepseek/deepseek-v3.2"
+            "COMPRESSION_MODEL", "qwen/qwen3-coder-next"
         ),
     )
     final_report_model: str = Field(
         default_factory=lambda: os.getenv(
-            "FINAL_REPORT_MODEL", "deepseek/deepseek-v3.2"
+            "FINAL_REPORT_MODEL", "qwen/qwen3-coder-next"
         ),
     )
 

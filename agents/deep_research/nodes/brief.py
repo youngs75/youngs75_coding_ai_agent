@@ -27,6 +27,19 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
         messages=messages_str,
         max_concurrent_research_units=rc.max_concurrent_research_units,
     )
+
+    # Semantic Memory 주입 — 프로젝트 규칙/컨벤션
+    semantic_context = state.get("semantic_context") or []
+    if semantic_context:
+        prompt += "\n\n## 프로젝트 컨텍스트 (Semantic Memory)\n"
+        prompt += "\n".join(f"- {ctx}" for ctx in semantic_context)
+
+    # Episodic Memory 주입 — 과거 유사 연구 이력
+    episodic_log = state.get("episodic_log") or []
+    if episodic_log:
+        prompt += "\n\n## 과거 연구 이력 (Episodic Memory)\n"
+        prompt += "\n".join(f"- {entry}" for entry in episodic_log)
+
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     research_brief = response.content
 

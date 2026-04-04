@@ -52,8 +52,9 @@ class TestBuildDefaultTiers:
 
     def test_default_models(self):
         tiers = build_default_tiers()
-        assert tiers[ModelTier.STRONG].model == "qwen/qwen3-coder"
-        assert tiers[ModelTier.FAST].model == "qwen/qwen3.5-9b"
+        assert tiers[ModelTier.STRONG].model == "qwen/qwen3-coder-plus"
+        assert tiers[ModelTier.DEFAULT].model == "qwen/qwen3-coder-next"
+        assert tiers[ModelTier.FAST].model == "qwen/qwen3.5-flash-02-23"
 
     def test_env_override(self):
         env = {
@@ -125,7 +126,7 @@ class TestResolveTierConfig:
 
     def test_all_missing_returns_hardcoded_fallback(self):
         cfg = resolve_tier_config("x", {}, {})
-        assert cfg.model == "deepseek/deepseek-v3.2"
+        assert cfg.model == "qwen/qwen3-coder-next"
         assert cfg.provider == "openrouter"
 
 

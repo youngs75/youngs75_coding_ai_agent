@@ -22,7 +22,25 @@ class OrchestratorConfig(BaseAgentConfig):
     agent_endpoints: 라우팅 대상 에이전트 목록
     """
 
-    agent_endpoints: list[AgentEndpoint] = Field(default_factory=list)
+    agent_endpoints: list[AgentEndpoint] = Field(
+        default_factory=lambda: [
+            AgentEndpoint(
+                name="coding_assistant",
+                url="",
+                description="코드 생성, 수정, 리팩토링, 버그 수정, 코드 리뷰",
+            ),
+            AgentEndpoint(
+                name="deep_research",
+                url="",
+                description="심층 조사, 리서치, 기술 분석, 보고서 작성",
+            ),
+            AgentEndpoint(
+                name="simple_react",
+                url="",
+                description="MCP 도구를 사용한 간단한 질의응답, 파일 조회",
+            ),
+        ]
+    )
 
     def get_agent_descriptions(self) -> str:
         """LLM 프롬프트용 에이전트 목록 문자열 생성."""

@@ -41,6 +41,14 @@ _SENSITIVE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"token\.json", re.IGNORECASE),
 ]
 
+# 금지 경로 패턴 (쓰기 시 즉시 거부)
+_FORBIDDEN_WRITE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\.claude/"),  # Claude Code 내부 디렉토리
+    re.compile(r"\.git/"),  # Git 내부 디렉토리
+    re.compile(r"__pycache__/"),  # Python 캐시
+    re.compile(r"node_modules/"),  # Node.js 의존성
+]
+
 
 def _is_sensitive_path(path: str) -> bool:
     """경로가 민감 파일 패턴에 해당하는지 확인한다."""
@@ -205,13 +213,22 @@ class ToolPermissionManager:
                 self.record_denial(tool_name, reason)
                 return PermissionDecision.DENY
 
-            # 쓰기/삭제 도구 + 민감 파일 → ASK
+            # 쓰기/삭제 도구 + 금지 경로 → DENY
             write_tools = {
                 "write_file",
                 "str_replace",
                 "apply_patch",
                 "delete_file",
             }
+            if tool_name in write_tools:
+                for pattern in _FORBIDDEN_WRITE_PATTERNS:
+                    if pattern.search(path):
+                        reason = f"금지 경로 쓰기 시도: {path}"
+                        logger.warning("권한 거부: %s — %s", tool_name, reason)
+                        self.record_denial(tool_name, reason)
+                        return PermissionDecision.DENY
+
+            # 쓰기/삭제 도구 + 민감 파일 → ASK
             if tool_name in write_tools and _is_sensitive_path(path):
                 logger.info(
                     "민감 파일 접근 — 사용자 확인 필요: %s → %s",

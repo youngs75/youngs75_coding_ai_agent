@@ -399,3 +399,123 @@ class TestCoreImport:
 
         assert MemoryType.SEMANTIC.value == "semantic"
         assert MemoryStore is not None
+
+
+# ── SemanticMemoryLoader ──
+
+
+class TestSemanticMemoryLoader:
+    """SemanticMemoryLoader — AGENTS.md/pyproject.toml에서 자동 로딩."""
+
+    @pytest.fixture()
+    def store(self):
+        return MemoryStore()
+
+    @pytest.fixture()
+    def workspace(self, tmp_path):
+        return tmp_path
+
+    def test_load_from_agents_md(self, store, workspace):
+        """AGENTS.md에서 핵심 섹션을 추출하여 Semantic Memory에 저장."""
+        agents_md = workspace / "AGENTS.md"
+        agents_md.write_text(
+            "# Repo\n\n"
+            "## 커뮤니케이션 규칙\n한국어로 소통합니다.\n\n"
+            "## 주요 기술 스택\n- LangGraph\n- MCP\n\n"
+            "## 프로젝트 구조\n```\nsrc/\n```\n",
+            encoding="utf-8",
+        )
+        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+
+        loader = SemanticMemoryLoader(workspace=workspace, store=store)
+        count = loader._load_from_agents_md()
+        assert count == 3
+        items = store.list_by_type(MemoryType.SEMANTIC)
+        assert len(items) == 3
+        contents = [i.content for i in items]
+        assert any("커뮤니케이션" in c for c in contents)
+        assert any("기술 스택" in c for c in contents)
+        assert any("프로젝트 구조" in c for c in contents)
+
+    def test_load_from_pyproject(self, store, workspace):
+        """pyproject.toml에서 메타데이터를 추출."""
+        pyproject = workspace / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "test-project"\nversion = "1.0.0"\n'
+            'requires-python = ">=3.11"\n'
+            'dependencies = [\n  "langchain>=1.2",\n  "pydantic>=2.0",\n]\n',
+            encoding="utf-8",
+        )
+        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+
+        loader = SemanticMemoryLoader(workspace=workspace, store=store)
+        count = loader._load_from_pyproject()
+        assert count == 2  # meta + deps
+        items = store.list_by_type(MemoryType.SEMANTIC)
+        contents = [i.content for i in items]
+        assert any("test-project" in c for c in contents)
+        assert any("langchain" in c for c in contents)
+
+    def test_load_all_clears_existing(self, store, workspace):
+        """load_all은 기존 semantic 메모리를 초기화하고 재로딩."""
+        store.put(_make_item("기존 메모리"))
+        assert store.total_count == 1
+
+        (workspace / "AGENTS.md").write_text(
+            "# Repo\n\n## 커밋 및 PR 규칙\nConventional Commits\n",
+            encoding="utf-8",
+        )
+        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+
+        loader = SemanticMemoryLoader(workspace=workspace, store=store)
+        count = loader.load_all()
+        assert count == 1
+        assert store.total_count == 1
+
+    def test_load_all_no_files(self, store, workspace):
+        """AGENTS.md도 pyproject.toml도 없을 때 0건."""
+        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+
+        loader = SemanticMemoryLoader(workspace=workspace, store=store)
+        count = loader.load_all()
+        assert count == 0
+
+    def test_real_workspace(self, store):
+        """실제 프로젝트 루트에서 로딩 (통합 테스트)."""
+        import pathlib
+
+        project_root = pathlib.Path(__file__).resolve().parent.parent
+        if not (project_root / "AGENTS.md").exists():
+            pytest.skip("AGENTS.md not found")
+
+        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+
+        loader = SemanticMemoryLoader(workspace=project_root, store=store)
+        count = loader.load_all()
+        assert count >= 3  # AGENTS.md에서 최소 3개 섹션 + pyproject 메타
+
+
+# ── DeepResearch 메모리 상태 필드 ──
+
+
+class TestDeepResearchMemoryState:
+    def test_agent_state_has_memory_fields(self):
+        """AgentState에 semantic_context, episodic_log 필드 존재 확인."""
+        from youngs75_a2a.agents.deep_research.schemas import AgentState
+
+        annotations = AgentState.__annotations__
+        assert "semantic_context" in annotations
+        assert "episodic_log" in annotations
+
+    def test_hitl_state_inherits_memory_fields(self):
+        """HITLAgentState가 AgentState의 메모리 필드를 상속."""
+        from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
+
+        annotations = HITLAgentState.__annotations__
+        # 직접 또는 상속으로 보유
+        all_fields = {}
+        for cls in HITLAgentState.__mro__:
+            if hasattr(cls, "__annotations__"):
+                all_fields.update(cls.__annotations__)
+        assert "semantic_context" in all_fields
+        assert "episodic_log" in all_fields
