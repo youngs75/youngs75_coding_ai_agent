@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -16,12 +18,23 @@ from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
 from .config import BaseAgentConfig
+from .context_manager import ContextManager
+from .parallel_tool_executor import ParallelToolExecutor
+from .tool_permissions import ToolPermissionManager
+
+logger = logging.getLogger(__name__)
 
 
 class BaseGraphAgent:
     """LangGraph 그래프 에이전트 기본 클래스.
 
     서브클래스는 init_nodes()와 init_edges()를 구현해야 한다.
+
+    Phase 10 통합:
+    - permission_manager: 도구 실행 전 권한 검사
+    - tool_executor: 병렬 도구 실행기
+    - project_context: 프로젝트 컨텍스트 문자열 (시스템 프롬프트에 주입)
+    - context_manager: 컨텍스트 윈도우 관리 + 자동 컴팩션
 
     사용 패턴:
         # 동기 초기화 (MCP 등 비동기 작업 불필요 시)
@@ -66,8 +79,55 @@ class BaseGraphAgent:
         )
         self.graph: CompiledStateGraph | None = None
 
+        # Phase 10 통합 필드 — 옵셔널 (None이면 비활성)
+        self.permission_manager: ToolPermissionManager | None = None
+        self.tool_executor: ParallelToolExecutor | None = None
+        self.project_context: str | None = None
+        self.context_manager: ContextManager | None = None
+
         if auto_build:
             self.build_graph()
+
+    # ── Phase 10: 시스템 프롬프트 빌더 ────────────────────────
+
+    def _build_system_prompt(self, base_prompt: str) -> str:
+        """기본 시스템 프롬프트에 프로젝트 컨텍스트를 추가한다.
+
+        Args:
+            base_prompt: 기본 시스템 프롬프트 문자열
+
+        Returns:
+            프로젝트 컨텍스트가 추가된 시스템 프롬프트
+        """
+        if self.project_context:
+            return f"{base_prompt}\n\n{self.project_context}"
+        return base_prompt
+
+    # ── Phase 10: 컨텍스트 컴팩션 ─────────────────────────────
+
+    async def _check_context_and_compact(
+        self,
+        messages: list[BaseMessage],
+        llm: Any,
+    ) -> list[BaseMessage]:
+        """컨텍스트 윈도우 확인 후 필요시 자동 컴팩션을 수행한다.
+
+        context_manager가 설정되어 있고 컴팩션이 필요한 경우에만 동작한다.
+        설정되지 않은 경우 원본 메시지를 그대로 반환한다.
+
+        Args:
+            messages: 현재 메시지 리스트
+            llm: 요약에 사용할 LLM 인스턴스
+
+        Returns:
+            (필요시 컴팩션된) 메시지 리스트
+        """
+        if self.context_manager and self.context_manager.should_compact(messages):
+            logger.info(
+                "[%s] 컨텍스트 컴팩션 수행 중...", self.agent_name
+            )
+            return await self.context_manager.compact(messages, llm)
+        return messages
 
     @classmethod
     async def create(cls, **kwargs: Any) -> "BaseGraphAgent":

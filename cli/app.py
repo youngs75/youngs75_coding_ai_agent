@@ -21,10 +21,13 @@ from youngs75_a2a.cli.config import CLIConfig
 from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
 from youngs75_a2a.core.base_agent import BaseGraphAgent
+from youngs75_a2a.core.context_manager import ContextManager
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
 from youngs75_a2a.core.project_context import ProjectContextLoader
 from youngs75_a2a.core.skills.loader import SkillLoader
 from youngs75_a2a.core.skills.registry import SkillRegistry
+from youngs75_a2a.core.tool_permissions import ToolPermissionManager
 from youngs75_a2a.eval_pipeline.observability.callback_handler import (
     AgentMetricsCollector,
     build_observed_config,
@@ -147,7 +150,14 @@ async def _create_agent(
 async def _get_or_create_agent(
     session: CLISession, renderer: CLIRenderer
 ) -> BaseGraphAgent | None:
-    """세션에서 에이전트를 가져오거나 새로 생성한다."""
+    """세션에서 에이전트를 가져오거나 새로 생성한다.
+
+    Phase 10 통합: 생성된 에이전트에 세션의 Phase 10 기능을 주입한다.
+    - project_context: 프로젝트 컨텍스트 문자열
+    - permission_manager: 도구 실행 권한 관리자
+    - tool_executor: 병렬 도구 실행기
+    - context_manager: 컨텍스트 윈도우 관리자
+    """
     name = session.info.agent_name
     cached = session.get_cached_agent(name)
     if cached is not None:
@@ -160,6 +170,19 @@ async def _get_or_create_agent(
             checkpointer=session.checkpointer,
             memory_store=session.memory,
         )
+
+        # Phase 10 기능 주입 — 옵셔널 (세션에 설정된 경우에만)
+        if session.project_context:
+            agent.project_context = session.project_context
+        if session.permission_manager:
+            agent.permission_manager = session.permission_manager
+        if session.tool_executor:
+            agent.tool_executor = session.tool_executor
+        # ContextManager는 CodingAssistantAgent에 이미 내장되어 있지만,
+        # 다른 에이전트에도 기본 인스턴스를 주입한다
+        if agent.context_manager is None:
+            agent.context_manager = ContextManager()
+
         session.cache_agent(name, agent)
         renderer.system_message(f"[{name}] 에이전트 준비 완료")
         return agent
@@ -437,13 +460,24 @@ async def _main_loop(config: CLIConfig) -> None:
         checkpointer=checkpointer,
     )
 
-    # 프로젝트 컨텍스트 로더 초기화
+    # Phase 10: 프로젝트 컨텍스트 + 권한 + 병렬 실행기 초기화
     workspace = os.getenv("CODE_TOOLS_WORKSPACE", os.getcwd())
+
+    # 프로젝트 컨텍스트 로더
     context_loader = ProjectContextLoader(workspace)
     context_section = context_loader.build_system_prompt_section()
     if context_section:
+        session.project_context = context_section
         renderer.system_message("프로젝트 컨텍스트 로드 완료")
         logger.info("프로젝트 컨텍스트 파일 %d개 발견", len(context_loader.discover()))
+
+    # 도구 권한 관리자
+    session.permission_manager = ToolPermissionManager(workspace)
+    logger.info("도구 권한 관리자 초기화 (workspace: %s)", workspace)
+
+    # 병렬 도구 실행기
+    session.tool_executor = ParallelToolExecutor()
+    logger.info("병렬 도구 실행기 초기화 완료")
 
     # Langfuse 콜백 핸들러 초기화 (설정으로 on/off 가능)
     langfuse_handler = None

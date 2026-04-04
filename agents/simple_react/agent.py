@@ -3,6 +3,10 @@
 단일 노드로 create_react_agent를 사용하여 MCP 도구를 호출하는 에이전트.
 비동기 초기화(MCP 도구 로딩)가 필요하므로 await create()로 생성한다.
 
+Phase 10 통합:
+- BaseGraphAgent의 context_manager를 통한 컨텍스트 윈도우 관리
+- project_context를 시스템 프롬프트에 주입
+
 사용 예:
     agent = await SimpleMCPReActAgent.create(
         config=SimpleReActConfig(),
@@ -26,7 +30,10 @@ from .config import SimpleReActConfig
 
 
 class SimpleMCPReActAgent(BaseGraphAgent):
-    """MCP 도구를 사용하는 Simple ReAct 에이전트."""
+    """MCP 도구를 사용하는 Simple ReAct 에이전트.
+
+    Phase 10: BaseGraphAgent에서 상속받은 context_manager, project_context 활용.
+    """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {"REACT": "react_agent"}
 
@@ -58,11 +65,18 @@ class SimpleMCPReActAgent(BaseGraphAgent):
         """MCP 도구를 비동기로 로딩한다."""
         self._tools = await self._mcp_loader.load()
 
+    def _get_system_prompt(self) -> str:
+        """프로젝트 컨텍스트가 포함된 시스템 프롬프트를 반환한다."""
+        base_prompt = self._react_config.system_prompt or ""
+        return self._build_system_prompt(base_prompt)
+
     def init_nodes(self, graph: StateGraph) -> None:
+        # 프로젝트 컨텍스트가 주입된 시스템 프롬프트 사용
+        prompt = self._get_system_prompt()
         react_agent = create_react_agent(
             model=self.model,
             tools=self._tools,
-            prompt=self._react_config.system_prompt,
+            prompt=prompt if prompt else None,
         )
         graph.add_node(self.get_node_name("REACT"), react_agent)
 

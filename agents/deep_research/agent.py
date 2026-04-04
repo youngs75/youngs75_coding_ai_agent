@@ -3,6 +3,10 @@
 다단계 연구 워크플로우:
   질문 명확화 → 연구 브리프 → Supervisor(병렬 연구) → 최종 보고서
 
+Phase 10 통합:
+- BaseGraphAgent의 context_manager를 통한 컨텍스트 윈도우 관리
+- project_context를 시스템 프롬프트에 주입
+
 사용 예:
     agent = DeepResearchAgent(config=ResearchConfig())
     result = await agent.graph.ainvoke(
@@ -30,7 +34,10 @@ from youngs75_a2a.agents.deep_research.subgraphs.supervisor import (
 
 
 class DeepResearchAgent(BaseGraphAgent):
-    """다단계 심층 연구 에이전트."""
+    """다단계 심층 연구 에이전트.
+
+    Phase 10: BaseGraphAgent에서 상속받은 context_manager, project_context 활용.
+    """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
         "CLARIFY": "clarify_with_user",

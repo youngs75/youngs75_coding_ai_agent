@@ -31,6 +31,7 @@ from youngs75_a2a.core.context_manager import (
 from youngs75_a2a.core.mcp_loader import MCPToolLoader
 from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
+from youngs75_a2a.core.tool_permissions import PermissionDecision
 
 from .config import CodingConfig
 from .prompts import EXECUTE_SYSTEM_PROMPT, PARSE_SYSTEM_PROMPT, VERIFY_SYSTEM_PROMPT
@@ -169,10 +170,12 @@ class CodingAssistantAgent(BaseGraphAgent):
             else "사용 가능한 도구 없음"
         )
 
-        # 시스템 프롬프트 구성
-        system_prompt = EXECUTE_SYSTEM_PROMPT.format(
-            language=language,
-            tool_descriptions=tool_descriptions,
+        # 시스템 프롬프트 구성 (프로젝트 컨텍스트 포함)
+        system_prompt = self._build_system_prompt(
+            EXECUTE_SYSTEM_PROMPT.format(
+                language=language,
+                tool_descriptions=tool_descriptions,
+            )
         )
 
         # Semantic Memory 주입 — 프로젝트 규칙/컨벤션
@@ -256,7 +259,13 @@ class CodingAssistantAgent(BaseGraphAgent):
         }
 
     async def _execute_tools(self, state: CodingState) -> dict[str, Any]:
-        """LLM이 요청한 도구를 실행하고 결과를 반환한다."""
+        """LLM이 요청한 도구를 실행하고 결과를 반환한다.
+
+        Phase 10 통합:
+        - ToolPermissionManager가 설정되어 있으면 실행 전 권한 검사
+        - ParallelToolExecutor가 설정되어 있으면 병렬/순차 분류 실행
+        - 두 기능이 없으면 기존 순차 실행 폴백
+        """
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
         tool_calls = getattr(last_msg, "tool_calls", None) or []
@@ -265,27 +274,71 @@ class CodingAssistantAgent(BaseGraphAgent):
             return {}
 
         tools_by_name = _get_tools_by_name(self._tools)
-        tool_messages = []
         context_entries = list(state.get("project_context", []))
 
-        for call in tool_calls:
-            name = tc_name(call)
-            args = tc_args(call)
-            call_id = tc_id(call)
+        # 병렬 실행기가 있으면 ParallelToolExecutor를 통한 실행
+        if self.tool_executor:
+            # 권한 검사를 포함하는 도구 실행 함수
+            async def _checked_tool_executor(name: str, args: dict) -> str:
+                """권한 검사 후 도구를 실행하는 래퍼."""
+                # 권한 검사
+                if self.permission_manager:
+                    decision = self.permission_manager.check(name, args)
+                    if decision == PermissionDecision.DENY:
+                        return f"권한 거부: {name}"
+                    # ASK인 경우 로그만 남기고 실행 허용 (CLI 레벨에서 처리)
 
-            if name in tools_by_name:
-                result = await _execute_tool_safely(tools_by_name[name], args)
-                # read_file 결과를 project_context에 축적
-                if name == "read_file":
-                    context_entries.append(
-                        f"[{args.get('path', '?')}]\n{result[:2000]}"
-                    )
-            else:
-                result = f"알 수 없는 도구: {name}"
+                if name in tools_by_name:
+                    result = await _execute_tool_safely(tools_by_name[name], args)
+                    # read_file 결과를 project_context에 축적
+                    if name == "read_file":
+                        context_entries.append(
+                            f"[{args.get('path', '?')}]\n{result[:2000]}"
+                        )
+                    return result
+                return f"알 수 없는 도구: {name}"
 
-            tool_messages.append(
-                ToolMessage(content=result, tool_call_id=call_id, name=name)
+            tool_messages = await self.tool_executor.execute_batch(
+                tool_calls, _checked_tool_executor
             )
+        else:
+            # 기존 순차 실행 폴백
+            tool_messages = []
+            for call in tool_calls:
+                name = tc_name(call)
+                args = tc_args(call)
+                call_id = tc_id(call)
+
+                # 권한 검사 (permission_manager가 있는 경우)
+                if self.permission_manager and name:
+                    decision = self.permission_manager.check(name, args)
+                    if decision == PermissionDecision.DENY:
+                        tool_messages.append(
+                            ToolMessage(
+                                content=f"권한 거부: {name}",
+                                tool_call_id=call_id or f"call_{name}",
+                                name=name,
+                            )
+                        )
+                        continue
+
+                if name and name in tools_by_name:
+                    result = await _execute_tool_safely(tools_by_name[name], args)
+                    # read_file 결과를 project_context에 축적
+                    if name == "read_file":
+                        context_entries.append(
+                            f"[{args.get('path', '?')}]\n{result[:2000]}"
+                        )
+                else:
+                    result = f"알 수 없는 도구: {name}"
+
+                tool_messages.append(
+                    ToolMessage(
+                        content=result,
+                        tool_call_id=call_id or f"call_{name}",
+                        name=name or "unknown",
+                    )
+                )
 
         return {
             "messages": tool_messages,
