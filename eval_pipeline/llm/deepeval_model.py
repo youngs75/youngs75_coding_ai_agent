@@ -39,9 +39,18 @@ class OpenAIModel(DeepEvalBaseLLM):
         if model_name is None:
             model_name = os.getenv("DEFAULT_MODEL", "qwen/qwen3.5-9b")
         self._model_name = model_name
-        self._client = OpenAI(
-            api_key=api_key or os.getenv("OPENAI_API_KEY"),
-        )
+
+        # OpenRouter 모델인 경우 OpenRouter API 사용
+        provider = os.getenv("MODEL_PROVIDER", "openrouter")
+        if provider == "openrouter" or "/" in self._model_name:
+            self._client = OpenAI(
+                api_key=api_key or os.getenv("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+            )
+        else:
+            self._client = OpenAI(
+                api_key=api_key or os.getenv("OPENAI_API_KEY"),
+            )
 
     def load_model(self):
         """모델 클라이언트를 반환합니다 (DeepEvalBaseLLM 인터페이스)."""

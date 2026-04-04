@@ -312,9 +312,15 @@ async def _run_agent_turn(
                 last_node = node
 
             # LLM 토큰 스트리밍 및 사용량 수집
+            # parse_request, verify_result 노드는 내부 JSON이므로 스트리밍 제외
             elif kind in ("on_chat_model_stream", "on_llm_stream"):
                 chunk = event["data"].get("chunk")
-                if chunk and hasattr(chunk, "content") and chunk.content:
+                if (
+                    chunk
+                    and hasattr(chunk, "content")
+                    and chunk.content
+                    and node not in ("parse_request", "verify_result")
+                ):
                     if not token_streamed:
                         renderer.start_token_stream()
                         token_streamed = True
@@ -363,10 +369,20 @@ async def _run_agent_turn(
             logger.debug("에이전트 메트릭: %s", metrics.to_dict())
             safe_flush()
 
-    # 검증 결과에서 passed 여부 추출
+    # 검증 결과에서 passed 여부 추출 및 요약 출력
     verify = response_data.get("verify_result")
     if isinstance(verify, dict):
         passed = verify.get("passed", True)
+        status = "통과" if passed else "실패"
+        icon = "✓" if passed else "✗"
+        renderer.system_message(f"  {icon} 검증 결과: {status}")
+        issues = verify.get("issues", [])
+        if issues:
+            for issue in issues[:3]:
+                renderer.system_message(f"    - {issue}")
+        suggestions = verify.get("suggestions", [])
+        if suggestions:
+            renderer.system_message(f"  💡 제안 {len(suggestions)}건")
 
     response = _extract_response(session.info.agent_name, response_data)
 

@@ -2,6 +2,26 @@
 # Tavily, ArXiv, Serper 검색 서버들을 독립적으로 실행
 
 services:
+  # Code Tools MCP 서버 (파일 I/O, 코드 검색, 코드 실행)
+  code-tools-mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
+    container_name: mcp_code_tools_server
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - CODE_TOOLS_PORT=3003
+      - CODE_TOOLS_WORKSPACE=/workspace
+    env_file:
+      - ../.env
+    volumes:
+      - ${CODE_TOOLS_WORKSPACE:-..}:/workspace
+    command: ["python", "/app/run_code_tools_mcp.py"]
+    networks:
+      - mcp_network
+
   # Tavily 웹 검색 MCP 서버
   tavily-mcp:
     build:
@@ -12,19 +32,10 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - PORT=3001
-      - HOST=0.0.0.0
-      - LOG_LEVEL=info
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     env_file:
       - ../.env
-    command: ["mcp_servers.tavily_search.server:create_app", "--host", "0.0.0.0", "--port", "3001", "--factory", "--workers", "1"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    command: ["python", "/app/run_tavily_mcp.py"]
     networks:
       - mcp_network
 
@@ -37,19 +48,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      - PORT=3000
-      - HOST=0.0.0.0
-      - LOG_LEVEL=info
     env_file:
       - ../.env
-    command: ["mcp_servers.arxiv_search.server:create_app", "--host", "0.0.0.0", "--port", "3000", "--factory", "--workers", "1"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    command: ["python", "/app/run_arxiv_mcp.py"]
     networks:
       - mcp_network
 
@@ -63,19 +64,10 @@ services:
     ports:
       - "3002:3002"
     environment:
-      - PORT=3002
-      - HOST=0.0.0.0
-      - LOG_LEVEL=info
       - SERPER_API_KEY=${SERPER_API_KEY:-}
     env_file:
       - ../.env
-    command: ["mcp_servers.serper_search.server:create_app", "--host", "0.0.0.0", "--port", "3002", "--factory", "--workers", "1"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    command: ["python", "/app/run_serper_mcp.py"]
     networks:
       - mcp_network
 
