@@ -1,6 +1,11 @@
 """CLI 세션 관리.
 
 대화 히스토리, 에이전트 상태, 메모리 스토어를 세션 단위로 관리한다.
+
+Phase 10 통합:
+- project_context: 프로젝트 컨텍스트 문자열 (에이전트에 전달)
+- permission_manager: 도구 권한 관리자 (에이전트에 전달)
+- tool_executor: 병렬 도구 실행기 (에이전트에 전달)
 """
 
 from __future__ import annotations
@@ -12,7 +17,9 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from youngs75_a2a.core.memory.store import MemoryStore
+from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
 from youngs75_a2a.core.skills.registry import SkillRegistry
+from youngs75_a2a.core.tool_permissions import ToolPermissionManager
 
 
 class SessionInfo(BaseModel):
@@ -25,7 +32,13 @@ class SessionInfo(BaseModel):
 
 
 class CLISession:
-    """CLI 세션 — 대화 상태와 메모리를 관리한다."""
+    """CLI 세션 — 대화 상태와 메모리를 관리한다.
+
+    Phase 10 통합 속성:
+    - project_context: 에이전트 시스템 프롬프트에 주입할 프로젝트 컨텍스트
+    - permission_manager: 도구 실행 권한 관리자
+    - tool_executor: 병렬 도구 실행기
+    """
 
     def __init__(
         self,
@@ -39,6 +52,11 @@ class CLISession:
         self.checkpointer = checkpointer
         self._history: list[dict[str, str]] = []
         self._agents: dict[str, Any] = {}
+
+        # Phase 10 통합 필드
+        self.project_context: str | None = None
+        self.permission_manager: ToolPermissionManager | None = None
+        self.tool_executor: ParallelToolExecutor | None = None
 
     @property
     def session_id(self) -> str:

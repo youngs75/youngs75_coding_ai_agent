@@ -1,4 +1,7 @@
-"""CLI 슬래시 커맨드 처리."""
+"""CLI 슬래시 커맨드 처리.
+
+Phase 10 통합: /permissions, /context, /tools 커맨드 추가.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from youngs75_a2a.cli.eval_runner import (
     load_last_remediation_report,
     run_evaluation_async,
 )
+from youngs75_a2a.core.tool_permissions import PermissionDecision
 
 if TYPE_CHECKING:
     from youngs75_a2a.cli.renderer import CLIRenderer
@@ -89,6 +93,18 @@ def handle_command(
         case "/eval":
             return _handle_eval(arg, renderer)
 
+        case "/permissions":
+            _show_permissions(session, renderer)
+            return CommandResult()
+
+        case "/context":
+            _show_context(session, renderer)
+            return CommandResult()
+
+        case "/tools":
+            _show_tools(session, renderer)
+            return CommandResult()
+
         case _:
             renderer.error(f"알 수 없는 커맨드: {cmd}. /help를 입력하세요.")
             return CommandResult()
@@ -108,6 +124,9 @@ def _show_help(renderer: CLIRenderer) -> None:
         "  /eval status       — 마지막 평가 결과 요약\n"
         "  /eval remediate    — Remediation 실행 (Loop 3)\n"
         "  /eval remediate status — 마지막 Remediation 결과\n"
+        "  /permissions       — 현재 도구 권한 설정 표시\n"
+        "  /context           — 로드된 프로젝트 컨텍스트 표시\n"
+        "  /tools             — 도구 목록 + 권한 상태 표시\n"
         "  /clear             — 대화 기록 초기화\n"
         "  /session           — 현재 세션 정보\n"
         "  /memory            — 메모리 상태\n"
@@ -220,6 +239,97 @@ def _handle_history(
         lines.append(f"  [{prefix}] {content}")
     renderer.system_message("\n".join(lines))
     return CommandResult()
+
+
+# ── Phase 10 슬래시 커맨드: /permissions, /context, /tools ──
+
+
+def _show_permissions(session: CLISession, renderer: CLIRenderer) -> None:
+    """현재 도구 권한 설정을 표시한다."""
+    mgr = session.permission_manager
+    if mgr is None:
+        renderer.system_message("도구 권한 관리자가 설정되지 않았습니다.")
+        return
+
+    lines = [
+        f"도구 권한 설정 (workspace: {mgr.workspace})",
+        "",
+        "도구별 권한:",
+    ]
+    for tool_name, decision in sorted(mgr.DEFAULT_PERMISSIONS.items()):
+        # 실제 적용 중인 권한 (프로젝트 설정/환경변수 오버라이드 포함)
+        actual = mgr.check(tool_name)
+        override = " (오버라이드)" if actual != decision else ""
+        lines.append(f"  {tool_name}: {actual.value}{override}")
+
+    # 거부 기록
+    denials = mgr.denial_log
+    if denials:
+        lines.append("")
+        lines.append(f"거부 기록 ({len(denials)}건):")
+        for entry in denials[-5:]:
+            lines.append(
+                f"  [{entry['timestamp'][:19]}] {entry['tool_name']}: "
+                f"{entry['reason']}"
+            )
+
+    renderer.system_message("\n".join(lines))
+
+
+def _show_context(session: CLISession, renderer: CLIRenderer) -> None:
+    """로드된 프로젝트 컨텍스트를 표시한다."""
+    ctx = session.project_context
+    if not ctx:
+        renderer.system_message("로드된 프로젝트 컨텍스트가 없습니다.")
+        return
+
+    # 긴 컨텍스트는 일부만 표시
+    max_display = 500
+    if len(ctx) > max_display:
+        display = ctx[:max_display] + f"\n... ({len(ctx)}자 중 {max_display}자 표시)"
+    else:
+        display = ctx
+
+    renderer.system_message(f"프로젝트 컨텍스트:\n{display}")
+
+
+def _show_tools(session: CLISession, renderer: CLIRenderer) -> None:
+    """도구 목록과 권한 상태를 표시한다."""
+    mgr = session.permission_manager
+
+    if mgr is None:
+        renderer.system_message("도구 권한 관리자가 설정되지 않았습니다.")
+        return
+
+    lines = ["도구 목록 + 권한 상태:"]
+
+    # 기본 등록된 도구의 권한 표시
+    all_tools = sorted(mgr.DEFAULT_PERMISSIONS.keys())
+    for tool_name in all_tools:
+        decision = mgr.check(tool_name)
+        # 권한에 따른 아이콘
+        if decision == PermissionDecision.ALLOW:
+            icon = "[허용]"
+        elif decision == PermissionDecision.ASK:
+            icon = "[확인필요]"
+        else:
+            icon = "[거부]"
+        lines.append(f"  {tool_name}: {icon}")
+
+    # 병렬 실행기 상태
+    executor = session.tool_executor
+    if executor:
+        from youngs75_a2a.core.parallel_tool_executor import CONCURRENCY_SAFE_TOOLS
+
+        lines.append("")
+        lines.append("병렬 실행 가능 도구:")
+        for tool_name in sorted(CONCURRENCY_SAFE_TOOLS):
+            lines.append(f"  {tool_name}")
+    else:
+        lines.append("")
+        lines.append("병렬 도구 실행기: 비활성")
+
+    renderer.system_message("\n".join(lines))
 
 
 def _handle_eval(arg: str, renderer: CLIRenderer) -> CommandResult:

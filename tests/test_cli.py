@@ -592,6 +592,11 @@ class TestGetOrCreateAgent:
         session = CLISession()
         renderer = _make_renderer()
         fake_agent = MagicMock(spec=["graph"])
+        # Phase 10 필드 추가 (에이전트 초기화 시 접근됨)
+        fake_agent.project_context = None
+        fake_agent.permission_manager = None
+        fake_agent.tool_executor = None
+        fake_agent.context_manager = None
 
         with patch(
             "youngs75_a2a.cli.app._create_agent",
