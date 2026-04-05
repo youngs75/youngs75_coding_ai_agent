@@ -20,6 +20,7 @@ from youngs75_a2a.cli.commands import handle_command
 from youngs75_a2a.cli.config import CLIConfig
 from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
+from youngs75_a2a.core.abort_controller import AbortController, AbortReason
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.context_manager import ContextManager
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
@@ -322,6 +323,10 @@ async def _run_agent_turn(
     # 메트릭 수집기 초기화
     metrics = AgentMetricsCollector(agent_name=session.info.agent_name)
 
+    # 협력적 중단 제어 (Claude Code AbortController 패턴)
+    abort_controller = AbortController()
+    agent.abort_controller = abort_controller
+
     response_data: dict[str, Any] = {}
     last_node = ""
     passed = True
@@ -384,6 +389,7 @@ async def _run_agent_turn(
                         "final_report",
                         "selected_agent",
                         "agent_response",
+                        "exit_reason",
                     ):
                         if key in output:
                             response_data[key] = output[key]
@@ -409,10 +415,11 @@ async def _run_agent_turn(
             renderer.flush_tokens()
 
     except (asyncio.CancelledError, KeyboardInterrupt):
+        abort_controller.abort(AbortReason.USER_INTERRUPT)
         if token_streamed:
             renderer.flush_tokens()
         renderer._stop_progress()
-        renderer.warning("작업이 중단되었습니다.")
+        renderer.warning(abort_controller.message)
         return
     except Exception as e:
         if token_streamed:
@@ -429,6 +436,17 @@ async def _run_agent_turn(
         if langfuse_handler is not None:
             logger.debug("에이전트 메트릭: %s", metrics.to_dict())
             safe_flush()
+
+    # 안전장치 발동 시 사용자에게 알림
+    exit_reason = response_data.get("exit_reason", "")
+    if exit_reason:
+        _EXIT_REASON_MESSAGES = {
+            "stall_detected": "반복 도구 호출이 감지되어 루프를 탈출했습니다.",
+            "budget_exceeded": "LLM 호출 예산을 초과하여 실행을 중단했습니다.",
+            "turn_limit": "도구 호출 한도에 도달하여 실행을 중단했습니다.",
+        }
+        msg = _EXIT_REASON_MESSAGES.get(exit_reason, f"실행 중단: {exit_reason}")
+        renderer.warning(msg)
 
     # 검증 결과 표시 (새 렌더러 API)
     verify = response_data.get("verify_result")

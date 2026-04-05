@@ -1,3 +1,4 @@
+from .abort_controller import AbortController, AbortError, AbortReason
 from .base_state import BaseGraphState
 from .base_agent import BaseGraphAgent
 from .config import BaseAgentConfig
@@ -18,6 +19,8 @@ from .model_tiers import (
     analyze_tier_tradeoffs,
 )
 from .batch_executor import BatchExecutor, BatchResult, TaskResult
+from .stall_detector import StallAction, StallDetector
+from .turn_budget import BudgetVerdict, TurnBudgetTracker
 from .context_manager import ContextManager, invoke_with_max_tokens_recovery
 from .parallel_tool_executor import ParallelToolExecutor
 from .project_context import ProjectContextLoader
@@ -31,6 +34,9 @@ from .memory import (
 )
 
 __all__ = [
+    "AbortController",
+    "AbortError",
+    "AbortReason",
     "BaseGraphState",
     "BaseGraphAgent",
     "BaseAgentConfig",
@@ -66,4 +72,8 @@ __all__ = [
     "HookManager",
     "HookEvent",
     "HookContext",
+    "StallAction",
+    "StallDetector",
+    "BudgetVerdict",
+    "TurnBudgetTracker",
 ]

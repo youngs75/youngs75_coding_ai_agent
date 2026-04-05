@@ -32,6 +32,8 @@ from youngs75_a2a.core.mcp_loader import MCPToolLoader
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.skills.registry import SkillRegistry
+from youngs75_a2a.core.stall_detector import StallAction, StallDetector
+from youngs75_a2a.core.turn_budget import BudgetVerdict, TurnBudgetTracker
 from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
 from youngs75_a2a.core.tool_permissions import PermissionDecision
 
@@ -94,6 +96,15 @@ class CodingAssistantAgent(BaseGraphAgent):
             compact_threshold=getattr(self._coding_config, "compact_threshold", 0.8),
         )
 
+        # 다층 안전장치 (Claude Code OS 패턴)
+        self._stall_detector = StallDetector(
+            warn_threshold=self._coding_config.stall_warn_threshold,
+            exit_threshold=self._coding_config.stall_exit_threshold,
+        )
+        self._turn_budget = TurnBudgetTracker(
+            max_llm_calls=self._coding_config.max_llm_calls_per_turn,
+        )
+
         kwargs.pop("auto_build", None)
         super().__init__(
             config=self._coding_config,
@@ -136,6 +147,10 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     async def _parse_request(self, state: CodingState) -> dict[str, Any]:
         """사용자 요청을 분석하여 작업 유형과 요구사항을 추출한다."""
+        # 턴 시작 시 안전장치 초기화
+        self._stall_detector.reset()
+        self._turn_budget.reset()
+
         messages = [
             SystemMessage(content=PARSE_SYSTEM_PROMPT),
             *state["messages"],
@@ -337,15 +352,34 @@ class CodingAssistantAgent(BaseGraphAgent):
             self._context_manager,
         )
 
+        # 토큰 예산 추적 (감소수익 감지)
+        output_tokens = 0
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            output_tokens = getattr(response.usage_metadata, "output_tokens", 0)
+        elif hasattr(response, "response_metadata"):
+            usage = response.response_metadata.get("usage", {})
+            output_tokens = usage.get("completion_tokens", 0)
+        # 폴백: 콘텐츠 길이 기반 추정
+        if output_tokens == 0 and response.content:
+            output_tokens = len(response.content) // 4
+
+        budget_verdict = self._turn_budget.record_llm_call(output_tokens)
+
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
         log.append(f"[execute] iteration={iteration}, tools_bound={len(self._tools)}, model=FAST")
 
-        return {
+        result: dict[str, Any] = {
             "generated_code": response.content or "",
             "execution_log": log,
             "messages": [response],
         }
+
+        if budget_verdict == BudgetVerdict.STOP:
+            result["exit_reason"] = "budget_exceeded"
+            log.append(f"[budget] {self._turn_budget.get_summary()}")
+
+        return result
 
     async def _generate_final(self, state: CodingState) -> dict[str, Any]:
         """2단계: STRONG 모델이 수집된 컨텍스트를 바탕으로 최종 코드를 생성한다.
@@ -423,7 +457,26 @@ class CodingAssistantAgent(BaseGraphAgent):
                         name=tc_name(call) or "unknown",
                     )
                 )
-            return {"messages": skip_messages}
+            return {"messages": skip_messages, "exit_reason": "turn_limit"}
+
+        # ── 반복 도구 호출 감지 (StallDetector) ──
+        for call in tool_calls:
+            action = self._stall_detector.record_and_check(
+                tc_name(call), tc_args(call)
+            )
+            if action == StallAction.FORCE_EXIT:
+                summary = self._stall_detector.get_stall_summary()
+                stall_messages = []
+                for c in tool_calls:
+                    c_id = tc_id(c) or f"call_{tc_name(c)}"
+                    stall_messages.append(
+                        ToolMessage(
+                            content=f"[루프 감지] {summary}",
+                            tool_call_id=c_id,
+                            name=tc_name(c) or "unknown",
+                        )
+                    )
+                return {"messages": stall_messages, "exit_reason": "stall_detected"}
 
         tools_by_name = _get_tools_by_name(self._tools)
         context_entries = list(state.get("project_context", []))
@@ -654,11 +707,18 @@ class CodingAssistantAgent(BaseGraphAgent):
     def _should_use_tools(self, state: CodingState) -> str:
         """execute 후 라우팅 판단.
 
-        - 도구 호출 한도 도달 → GENERATE_FINAL (루프 강제 탈출)
-        - 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
-        - 도구를 한 번이라도 사용했으면 → GENERATE_FINAL (STRONG으로 최종 생성)
-        - 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
+        우선순위:
+        1. exit_reason이 설정됨 → GENERATE_FINAL (안전장치 발동)
+        2. 도구 호출 한도 도달 → GENERATE_FINAL (루프 강제 탈출)
+        3. 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
+        4. 도구를 한 번이라도 사용했으면 → GENERATE_FINAL (STRONG으로 최종 생성)
+        5. 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
         """
+        # 안전장치 발동 시 즉시 최종 생성으로 전환
+        exit_reason = state.get("exit_reason", "")
+        if exit_reason:
+            return self.get_node_name("GENERATE_FINAL")
+
         tool_call_count = state.get("tool_call_count", 0)
         max_calls = self._coding_config.max_tool_calls
 

@@ -57,6 +57,20 @@ class CodingConfig(BaseAgentConfig):
     # ReAct 루프 최대 도구 호출 횟수
     max_tool_calls: int = Field(default=10)
 
+    # 다층 안전장치 설정 (Claude Code OS 패턴)
+    stall_warn_threshold: int = Field(
+        default=2,
+        description="동일 도구+인자 반복 N회 시 경고 메시지 주입",
+    )
+    stall_exit_threshold: int = Field(
+        default=3,
+        description="동일 도구+인자 반복 N회 시 강제 루프 ��출",
+    )
+    max_llm_calls_per_turn: int = Field(
+        default=15,
+        description="턴당 최대 LLM 호출 횟수",
+    )
+
     # Coding 전용 purpose → tier 매핑
     purpose_tiers: dict[str, str] = Field(
         default_factory=lambda: {

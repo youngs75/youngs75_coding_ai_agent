@@ -63,3 +63,7 @@ class CodingState(TypedDict, total=False):
     iteration: int  # 현재 반복 횟수
     max_iterations: int  # 최대 반복 횟수
     tool_call_count: int  # ReAct 루프 내 도구 호출 누적 횟수
+
+    # 다층 안전장치 — 루프 탈출 사유
+    # "" (정상) | "stall_detected" | "budget_exceeded" | "turn_limit"
+    exit_reason: str

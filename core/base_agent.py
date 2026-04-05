@@ -17,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
+from .abort_controller import AbortController
 from .config import BaseAgentConfig
 from .context_manager import ContextManager
 from .hooks import HookContext, HookEvent, HookManager
@@ -87,6 +88,7 @@ class BaseGraphAgent:
         self.tool_executor: ParallelToolExecutor | None = None
         self.project_context: str | None = None
         self.context_manager: ContextManager | None = None
+        self.abort_controller: AbortController | None = None
 
         if auto_build:
             self.build_graph()
@@ -201,6 +203,16 @@ class BaseGraphAgent:
         pre_ctx = await self.hook_manager.emit(pre_ctx)
 
         if pre_ctx.metadata.get("cancel"):
+            return state
+
+        # 중단 신호 체크 (AbortController)
+        if self.abort_controller and self.abort_controller.is_aborted:
+            logger.info(
+                "[%s] 노드 %s 실행 전 중단 감지: %s",
+                self.agent_name,
+                node_name,
+                self.abort_controller.reason,
+            )
             return state
 
         try:
