@@ -880,11 +880,21 @@ class TestRouteAfterClassify:
         state: dict[str, Any] = {"selected_agent": "__coordinator__"}
         assert _route_after_classify(state) == "coordinate"  # type: ignore[arg-type]
 
-    def test_route_to_delegate(self):
-        """selected_agent가 일반 에이전트이면 delegate로 라우팅."""
+    def test_route_to_plan_for_coding(self):
+        """selected_agent가 코딩 에이전트이면 plan으로 라우팅."""
         from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "coder"}
+        assert _route_after_classify(state) == "plan"  # type: ignore[arg-type]
+
+        state2: dict[str, Any] = {"selected_agent": "coding_assistant"}
+        assert _route_after_classify(state2) == "plan"  # type: ignore[arg-type]
+
+    def test_route_to_delegate_for_non_coding(self):
+        """selected_agent가 비코딩 에이전트이면 delegate로 직접 라우팅."""
+        from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
+
+        state: dict[str, Any] = {"selected_agent": "deep_research"}
         assert _route_after_classify(state) == "delegate"  # type: ignore[arg-type]
 
     def test_route_none_to_delegate(self):

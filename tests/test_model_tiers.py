@@ -181,7 +181,8 @@ class TestCodingConfigTiers:
 
         config = CodingConfig()
         assert config.purpose_tiers["generation"] == ModelTier.STRONG
-        assert config.purpose_tiers["tool_planning"] == ModelTier.FAST
+        # CodingConfig은 tool_planning을 DEFAULT로 오버라이드 (Flash 도구 판단 약함)
+        assert config.purpose_tiers["tool_planning"] == ModelTier.DEFAULT
         assert config.purpose_tiers["verification"] == ModelTier.DEFAULT
 
     def test_tier_config_for_generation(self):
