@@ -75,17 +75,60 @@ _FILEPATH_COMMENT_PATTERNS = [
     re.compile(r"^<!--\s*(\S+\.\S+)\s*-->$"),
 ]
 
+# 코드 블록 바로 위에 있는 filepath 마크다운 헤딩 패턴
+# LLM이 `# filepath: app.py` 를 코드 블록 밖에 제목으로 생성하는 경우 대응
+_HEADING_FILEPATH_RE = re.compile(r"#+\s*(?:filepath:\s*)?(\S+\.\S+)\s*$", re.MULTILINE)
+# 굵은 텍스트 형태: **filepath: app.py**
+_BOLD_FILEPATH_RE = re.compile(
+    r"\*{1,2}(?:filepath:\s*)?([^\s*]+\.[^\s*]+)\*{1,2}\s*$", re.MULTILINE
+)
+
 _FORBIDDEN_PATHS = (".claude/", ".git/", "__pycache__/", "node_modules/")
 
 
+def _find_filepath_before_fence(text: str, fence_start: int) -> str:
+    """코드 블록 바로 위 텍스트에서 filepath를 찾는다."""
+    # 코드 블록 앞 200자에서 검색
+    preceding = text[max(0, fence_start - 200) : fence_start]
+    # 빈 줄 기준으로 마지막 단락만 추출
+    lines = preceding.rstrip().rsplit("\n", 3)
+
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        # 마크다운 제목: # filepath: app.py  또는  ## app.py
+        m = _HEADING_FILEPATH_RE.match(line)
+        if m:
+            return m.group(1).strip()
+        # 굵은 텍스트: **filepath: app.py**
+        m = _BOLD_FILEPATH_RE.match(line)
+        if m:
+            return m.group(1).strip()
+        # 일반 텍스트 filepath: app.py
+        for pattern in _FILEPATH_COMMENT_PATTERNS:
+            m = pattern.match(line)
+            if m:
+                return m.group(1).strip()
+        # 첫 비빈 줄만 확인
+        break
+    return ""
+
+
 def _extract_code_blocks(text: str) -> list[dict[str, str]]:
-    """마크다운에서 파일 경로가 포함된 코드 블록을 추출한다."""
+    """마크다운에서 파일 경로가 포함된 코드 블록을 추출한다.
+
+    filepath를 다음 위치에서 순서대로 탐색:
+    1. 코드 블록 내부 첫 줄 (# filepath: app.py)
+    2. 코드 블록 바로 위 텍스트 (마크다운 제목, 주석 등)
+    """
     blocks: list[dict[str, str]] = []
     for match in _FENCE_RE.finditer(text):
         lang = match.group(1) or ""
         code = match.group(2)
 
         filepath = ""
+        # 전략 1: 코드 블록 내부 첫 줄에서 filepath 추출
         if code:
             first_line = code.split("\n", 1)[0].strip()
             for pattern in _FILEPATH_COMMENT_PATTERNS:
@@ -95,6 +138,10 @@ def _extract_code_blocks(text: str) -> list[dict[str, str]]:
                     # 파일 경로 주석 줄 제거
                     code = code.split("\n", 1)[1] if "\n" in code else ""
                     break
+
+        # 전략 2: 코드 블록 바로 위 텍스트에서 filepath 추출
+        if not filepath:
+            filepath = _find_filepath_before_fence(text, match.start())
 
         if filepath:
             blocks.append(
