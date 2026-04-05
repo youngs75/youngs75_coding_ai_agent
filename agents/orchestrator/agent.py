@@ -100,20 +100,52 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {"selected_agent": selected}
 
 
-async def _invoke_local_agent(agent_name: str, user_message: str) -> str | None:
+async def _invoke_planner(user_message: str) -> str | None:
+    """Planner Agent를 호출하여 구현 계획을 생성한다."""
+    try:
+        from youngs75_a2a.agents.planner.agent import PlannerAgent
+        from youngs75_a2a.agents.planner.config import PlannerConfig
+
+        planner = await PlannerAgent.create(config=PlannerConfig())
+        result = await planner.graph.ainvoke({
+            "messages": [HumanMessage(content=user_message)],
+            "user_request": user_message,
+        })
+        return result.get("plan_text", "")
+    except Exception as e:
+        logger.warning(f"Planner 호출 실패, 계획 없이 진행: {e}")
+        return None
+
+
+async def _invoke_local_agent(
+    agent_name: str,
+    user_message: str,
+    *,
+    task_plan: str | None = None,
+) -> str | None:
     """로컬 에이전트를 직접 호출한다 (A2A 엔드포인트 없을 때 폴백)."""
     try:
         if agent_name in ("coding_assistant", "coder"):
             from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
             from youngs75_a2a.agents.coding_assistant.config import CodingConfig
 
+            # 계획이 있으면 사용자 메시지에 포함
+            effective_message = user_message
+            if task_plan:
+                effective_message = f"{user_message}\n\n{task_plan}"
+
             agent = await CodingAssistantAgent.create(config=CodingConfig())
             result = await agent.graph.ainvoke({
-                "messages": [HumanMessage(content=user_message)],
+                "messages": [HumanMessage(content=effective_message)],
                 "iteration": 0,
                 "max_iterations": 2,
             })
-            return result.get("generated_code") or result.get("messages", [{}])[-1].content
+            code = result.get("generated_code") or result.get("messages", [{}])[-1].content
+            # 파일 저장 결과를 응답에 포함
+            written = result.get("written_files", [])
+            if written:
+                code += "\n\n📁 저장된 파일:\n" + "\n".join(f"  • {f}" for f in written)
+            return code
 
         if agent_name in ("deep_research", "researcher"):
             from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
@@ -198,8 +230,11 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
         except Exception as e:
             logger.warning(f"A2A 호출 실패 ({selected}), 로컬 폴백: {e}")
 
-    # 로컬 에이전트 폴백
-    local_result = await _invoke_local_agent(selected, user_message)
+    # 로컬 에이전트 폴백 — 계획이 있으면 함께 전달
+    task_plan = state.get("task_plan")
+    local_result = await _invoke_local_agent(
+        selected, user_message, task_plan=task_plan
+    )
     if local_result:
         return {"agent_response": local_result}
 
@@ -264,14 +299,47 @@ async def respond(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {"messages": [AIMessage(content=content)]}
 
 
+async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
+    """코딩 태스크에 대해 Planner Agent로 구현 계획을 수립한다.
+
+    coding_assistant 위임 전에 실행되어 구조화된 계획을 생성한다.
+    비코딩 태스크는 패스스루 (계획 없이 바로 delegate).
+    """
+    selected = state.get("selected_agent", "none")
+
+    # 코딩 에이전트 대상만 계획 수립
+    if selected not in ("coding_assistant", "coder"):
+        return {"task_plan": None}
+
+    user_message = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            user_message = msg.content
+            break
+
+    logger.info("Planner Agent 호출: '%s...'", user_message[:50])
+    plan_text = await _invoke_planner(user_message)
+
+    if plan_text:
+        logger.info("계획 수립 완료 (%d chars)", len(plan_text))
+    else:
+        logger.info("계획 수립 스킵 (planner 미응답)")
+
+    return {"task_plan": plan_text}
+
+
 def _route_after_classify(state: OrchestratorState) -> str:
     """classify 노드 이후 라우팅 결정.
 
     복합 작업(coordinate)이면 coordinate 노드로,
-    그 외에는 기존 delegate 노드로 라우팅한다.
+    코딩 작업이면 plan 노드로 (계획 수립 후 delegate),
+    그 외에는 delegate로 직행.
     """
-    if state.get("selected_agent") == "__coordinator__":
+    selected = state.get("selected_agent", "")
+    if selected == "__coordinator__":
         return "coordinate"
+    if selected in ("coding_assistant", "coder"):
+        return "plan"
     return "delegate"
 
 
@@ -283,6 +351,7 @@ class OrchestratorAgent(BaseGraphAgent):
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
         "CLASSIFY": "classify",
+        "PLAN": "plan",
         "DELEGATE": "delegate",
         "COORDINATE": "coordinate",
         "RESPOND": "respond",
@@ -304,21 +373,25 @@ class OrchestratorAgent(BaseGraphAgent):
 
     def init_nodes(self, graph: StateGraph) -> None:
         graph.add_node(self.get_node_name("CLASSIFY"), classify)
+        graph.add_node(self.get_node_name("PLAN"), plan)
         graph.add_node(self.get_node_name("DELEGATE"), delegate)
         graph.add_node(self.get_node_name("COORDINATE"), coordinate)
         graph.add_node(self.get_node_name("RESPOND"), respond)
 
     def init_edges(self, graph: StateGraph) -> None:
         graph.add_edge(START, self.get_node_name("CLASSIFY"))
-        # classify 이후 조건부 라우팅: delegate 또는 coordinate
+        # classify 이후 조건부 라우팅: plan(코딩) / delegate(기타) / coordinate(복합)
         graph.add_conditional_edges(
             self.get_node_name("CLASSIFY"),
             _route_after_classify,
             {
+                "plan": self.get_node_name("PLAN"),
                 "delegate": self.get_node_name("DELEGATE"),
                 "coordinate": self.get_node_name("COORDINATE"),
             },
         )
+        # plan → delegate (계획 수립 후 코딩 에이전트에 위임)
+        graph.add_edge(self.get_node_name("PLAN"), self.get_node_name("DELEGATE"))
         graph.add_edge(self.get_node_name("DELEGATE"), self.get_node_name("RESPOND"))
         graph.add_edge(self.get_node_name("COORDINATE"), self.get_node_name("RESPOND"))
         graph.add_edge(self.get_node_name("RESPOND"), END)

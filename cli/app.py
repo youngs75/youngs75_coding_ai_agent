@@ -13,6 +13,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
@@ -55,8 +56,15 @@ _NODE_LABELS: dict[str, str] = {
     "record_episodic": "연구 이력 기록",
     # simple_react
     "react_agent": "처리",
+    # apply_code
+    "apply_code": "파일 저장",
+    # planner
+    "analyze_task": "태스크 분석",
+    "explore_context": "프로젝트 탐색",
+    "create_plan": "구현 계획 수립",
     # orchestrator
     "classify": "요청 분류",
+    "plan": "계획 수립 (Planner Agent)",
     "delegate": "에이전트 위임",
     "respond": "응답 생성",
 }
@@ -394,6 +402,7 @@ async def _run_agent_turn(
                         "selected_agent",
                         "agent_response",
                         "exit_reason",
+                        "written_files",
                     ):
                         if key in output:
                             response_data[key] = output[key]
@@ -461,6 +470,11 @@ async def _run_agent_turn(
             issues=verify.get("issues"),
             suggestions=verify.get("suggestions"),
         )
+
+    # 파일 저장 결과 표시
+    written_files = response_data.get("written_files", [])
+    if written_files:
+        renderer.files_written(written_files)
 
     response = _extract_response(session.info.agent_name, response_data)
 
@@ -559,9 +573,12 @@ async def _main_loop(config: CLIConfig) -> None:
 
     while True:
         try:
+            prompt_text = ANSI(
+                f"\x1b[1;34m[{session.info.agent_name}]\x1b[0m \x1b[36m❯\x1b[0m "
+            )
             user_input = await asyncio.to_thread(
                 prompt_session.prompt,
-                f"[{session.info.agent_name}] > ",
+                prompt_text,
             )
         except (EOFError, KeyboardInterrupt):
             renderer.system_message("\n세션을 종료합니다.")

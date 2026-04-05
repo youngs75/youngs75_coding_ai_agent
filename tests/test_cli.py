@@ -1154,37 +1154,38 @@ class TestTokenStreamingIntegration:
         session = CLISession()
         buf = StringIO()
         renderer = CLIRenderer(console=Console(file=buf, force_terminal=True))
-        ai_msg = AIMessage(content="결과")
+        ai_msg = AIMessage(content="결과 코드")
         fake_graph = MagicMock()
 
         async def fake_astream_events(input_state, config=None, version="v2"):
-            yield _make_event("on_chain_start", "execute_code", node="execute_code")
+            # react_agent 노드는 스트리밍 대상 (execute_code는 제외 대상)
+            yield _make_event("on_chain_start", "react_agent", node="react_agent")
             # 빈 content 청크
             yield _make_event(
                 "on_chat_model_stream",
                 "ChatOpenAI",
                 data={"chunk": AIMessageChunk(content="")},
-                node="execute_code",
+                node="react_agent",
             )
             # None content 청크 (chunk 없음)
             yield _make_event(
                 "on_chat_model_stream",
                 "ChatOpenAI",
                 data={"chunk": None},
-                node="execute_code",
+                node="react_agent",
             )
             # 정상 content 청크
             yield _make_event(
                 "on_chat_model_stream",
                 "ChatOpenAI",
                 data={"chunk": AIMessageChunk(content="결과 코드")},
-                node="execute_code",
+                node="react_agent",
             )
             yield _make_event(
                 "on_chain_end",
-                "execute_code",
-                data={"output": {"generated_code": "결과 코드", "messages": [ai_msg]}},
-                node="execute_code",
+                "react_agent",
+                data={"output": {"messages": [ai_msg]}},
+                node="react_agent",
             )
 
         fake_graph.astream_events = fake_astream_events
@@ -1208,12 +1209,13 @@ class TestTokenStreamingIntegration:
         fake_graph = MagicMock()
 
         async def failing_midstream(input_state, config=None, version="v2"):
-            yield _make_event("on_chain_start", "execute_code", node="execute_code")
+            # generate_final 노드는 스트리밍 대상 (execute_code는 제외 대상)
+            yield _make_event("on_chain_start", "generate_final", node="generate_final")
             yield _make_event(
                 "on_chat_model_stream",
                 "ChatOpenAI",
                 data={"chunk": AIMessageChunk(content="partial ")},
-                node="execute_code",
+                node="generate_final",
             )
             raise RuntimeError("연결 끊김")
 
@@ -1225,7 +1227,7 @@ class TestTokenStreamingIntegration:
 
         output = buf.getvalue()
         # 부분 토큰이 출력된 후 에러 메시지 표시
-        assert "partial " in output
+        assert "partial" in output
         assert "에이전트 실행 오류" in output
 
     @pytest.mark.asyncio

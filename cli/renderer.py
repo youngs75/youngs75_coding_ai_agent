@@ -4,7 +4,7 @@ Claude Code UX 패턴 참조:
 - 스피너를 사용한 진행 상태 표시
 - 도구 호출 시 이름+인자 축약 표시
 - 색상 체계: 성공(녹색), 경고(노랑), 에러(빨강), 시스템(dim)
-- 코드 블록 구문 강조
+- 코드 블록 구문 강조 (Live Markdown 렌더링)
 - 소요시간 표시
 """
 
@@ -13,12 +13,13 @@ from __future__ import annotations
 import time
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.spinner import Spinner
-from rich.text import Text
-from rich.live import Live
 from rich.table import Table
+from rich.text import Text
 
 
 # 색상 상수
@@ -42,6 +43,9 @@ class CLIRenderer:
         self._live: Live | None = None
         self._spinner_text: str = ""
         self._turn_start: float = 0.0
+        # Live Markdown 스트리밍용 버퍼
+        self._token_buffer: str = ""
+        self._stream_live: Live | None = None
 
     # ── 배너 ──
 
@@ -99,6 +103,15 @@ class CLIRenderer:
         """성공 메시지 표시."""
         self.console.print(f"[{_CLR_SUCCESS}]✓[/] {content}")
 
+    # ── 구분선 ──
+
+    def divider(self, title: str = "") -> None:
+        """얇은 구분선을 출력한다."""
+        if title:
+            self.console.print(Rule(title, style="dim"))
+        else:
+            self.console.print(Rule(style="dim"))
+
     # ── 진행 상태 (스피너) ──
 
     def start_progress(self, label: str) -> None:
@@ -122,10 +135,13 @@ class CLIRenderer:
             self._live.update(spinner)
 
     def _stop_progress(self) -> None:
-        """스피너를 정지한다."""
+        """스피너 및 스트림 라이브를 정지한다."""
         if self._live is not None:
             self._live.stop()
             self._live = None
+        if self._stream_live is not None:
+            self._stream_live.stop()
+            self._stream_live = None
 
     def stop_progress_with_result(self, label: str, success: bool = True) -> None:
         """스피너를 멈추고 결과를 표시한다."""
@@ -176,21 +192,50 @@ class CLIRenderer:
             f"  [{_CLR_TOOL}]⇢[/] [{_CLR_DIM}]위임:[/] [{_CLR_AGENT}]{agent_name}[/]"
         )
 
-    # ── 토큰 스트리밍 ──
+    # ── 토큰 스트리밍 (Live Markdown 렌더링) ──
 
     def start_token_stream(self) -> None:
-        """토큰 스트리밍 시작 — 스피너 정지 + Agent 헤더."""
+        """토큰 스트리밍 시작 — 스피너 정지 + Live Markdown 프리뷰."""
         self._stop_progress()
+        self._token_buffer = ""
         self.console.print(f"\n[{_CLR_AGENT}]◆ Agent[/]")
+        self._stream_live = Live(
+            Text("▍", style="dim green"),
+            console=self.console,
+            transient=True,  # 프리뷰는 종료 시 제거, 최종 Markdown으로 교체
+            refresh_per_second=8,
+        )
+        self._stream_live.start()
 
     def render_token(self, token: str) -> None:
-        """토큰 단위 실시간 출력."""
-        self.console.print(token, end="", markup=False, highlight=False)
+        """토큰 단위 Live Markdown 렌더링."""
+        self._token_buffer += token
+        if self._stream_live is not None:
+            try:
+                self._stream_live.update(Markdown(self._token_buffer + " ▍"))
+            except Exception:
+                # Markdown 파싱 실패 시 일반 텍스트로 표시
+                self._stream_live.update(Text(self._token_buffer + " ▍"))
 
     def flush_tokens(self) -> None:
-        """토큰 스트리밍 완료 — 줄바꿈."""
-        self.console.print()
-        self.console.print()
+        """토큰 스트리밍 완료 — Live 프리뷰 제거 후 최종 Markdown 렌더링."""
+        if self._stream_live is not None:
+            self._stream_live.stop()
+            self._stream_live = None
+        if self._token_buffer:
+            self.console.print(Markdown(self._token_buffer))
+            self.console.print()
+        self._token_buffer = ""
+
+    # ── 파일 저장 결과 ──
+
+    def files_written(self, files: list[str]) -> None:
+        """디스크에 저장된 파일 목록을 표시한다."""
+        if not files:
+            return
+        self.console.print(f"\n  [{_CLR_SUCCESS}]📁 저장된 파일:[/]")
+        for f in files:
+            self.console.print(f"    [{_CLR_SUCCESS}]✓[/] [{_CLR_DIM}]{f}[/]")
 
     # ── 검증 결과 ──
 

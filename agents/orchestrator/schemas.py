@@ -13,11 +13,13 @@ class OrchestratorState(TypedDict):
 
     messages: 사용자와의 대화 이력
     selected_agent: 라우팅 결정된 에이전트 이름
+    task_plan: Planner Agent가 생성한 구현 계획 (마크다운)
     agent_response: 하위 에이전트의 응답
     """
 
     messages: Annotated[list[BaseMessage], add_messages]
     selected_agent: Optional[str]
+    task_plan: Optional[str]  # Planner Agent 출력 (마크다운)
     agent_response: Optional[str]
 
 

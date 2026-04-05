@@ -190,6 +190,7 @@ def build_default_purpose_tiers() -> dict[str, str]:
         return json.loads(env_val)
     return {
         "generation": ModelTier.STRONG,
+        "planning": ModelTier.STRONG,
         "tool_planning": ModelTier.FAST,
         "verification": ModelTier.DEFAULT,
         "parsing": ModelTier.FAST,
@@ -268,6 +269,7 @@ def create_chat_model(
 PURPOSE_CAPABILITY_WEIGHTS: dict[str, dict[str, float]] = {
     "parsing": {"speed": 0.6, "reasoning": 0.3, "code": 0.1},
     "generation": {"code": 0.6, "reasoning": 0.3, "speed": 0.1},
+    "planning": {"reasoning": 0.7, "code": 0.2, "speed": 0.1},
     "tool_planning": {"speed": 0.5, "reasoning": 0.3, "code": 0.2},
     "verification": {"reasoning": 0.6, "code": 0.3, "speed": 0.1},
     "default": {"code": 0.4, "reasoning": 0.4, "speed": 0.2},

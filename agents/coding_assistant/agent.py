@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
@@ -56,10 +58,58 @@ def _get_tools_by_name(tools: list[Any]) -> dict[str, Any]:
     return {getattr(t, "name", None): t for t in tools if getattr(t, "name", None)}
 
 
+# ── 코드 블록 파싱 ──
+
+_FENCE_RE = re.compile(r"```(\w+)?\s*\n(.*?)```", re.DOTALL)
+
+_FILEPATH_COMMENT_PATTERNS = [
+    # # filepath: path/to/file.py  또는  // filepath: path/to/file.py
+    re.compile(r"^(?:#|//)\s*(?:filepath:\s*)(\S+\.\S+)\s*$"),
+    # <!-- filepath: path/to/file.html -->
+    re.compile(r"^<!--\s*(?:filepath:\s*)(\S+\.\S+)\s*-->$"),
+    # /* filepath: path/to/file.css */
+    re.compile(r"^/\*\s*(?:filepath:\s*)(\S+\.\S+)\s*\*/$"),
+    # 경로만 있는 주석: // app.py  또는  # app.py
+    re.compile(r"^(?:#|//)\s*(\S+\.\S+)\s*$"),
+    # <!-- templates/index.html -->
+    re.compile(r"^<!--\s*(\S+\.\S+)\s*-->$"),
+]
+
+_FORBIDDEN_PATHS = (".claude/", ".git/", "__pycache__/", "node_modules/")
+
+
+def _extract_code_blocks(text: str) -> list[dict[str, str]]:
+    """마크다운에서 파일 경로가 포함된 코드 블록을 추출한다."""
+    blocks: list[dict[str, str]] = []
+    for match in _FENCE_RE.finditer(text):
+        lang = match.group(1) or ""
+        code = match.group(2)
+
+        filepath = ""
+        if code:
+            first_line = code.split("\n", 1)[0].strip()
+            for pattern in _FILEPATH_COMMENT_PATTERNS:
+                m = pattern.match(first_line)
+                if m:
+                    filepath = m.group(1).strip()
+                    # 파일 경로 주석 줄 제거
+                    code = code.split("\n", 1)[1] if "\n" in code else ""
+                    break
+
+        if filepath:
+            blocks.append({
+                "filepath": filepath,
+                "language": lang,
+                "code": code.rstrip("\n"),
+            })
+
+    return blocks
+
+
 class CodingAssistantAgent(BaseGraphAgent):
     """MCP 도구를 활용하는 Coding Assistant Harness.
 
-    parse → execute(ReAct 루프: LLM + MCP 도구) → verify → retry/END
+    parse → execute(ReAct 루프: LLM + MCP 도구) → verify → apply_code → END
     """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
@@ -69,6 +119,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         "EXECUTE_TOOLS": "execute_tools",
         "GENERATE_FINAL": "generate_final",
         "VERIFY": "verify_result",
+        "APPLY_CODE": "apply_code",
     }
 
     def __init__(
@@ -706,6 +757,63 @@ class CodingAssistantAgent(BaseGraphAgent):
         except Exception:
             pass  # 에피소딕 기록 실패 시 무시
 
+    # ── 코드 적용 (파일 저장) ──────────────────────────────
+
+    async def _apply_code(self, state: CodingState) -> dict[str, Any]:
+        """생성된 코드에서 파일 경로를 추출하여 디스크에 저장한다."""
+        generated_code = state.get("generated_code", "")
+        if not generated_code:
+            return {"written_files": []}
+
+        blocks = _extract_code_blocks(generated_code)
+        if not blocks:
+            return {"written_files": []}
+
+        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+        workspace_resolved = os.path.realpath(workspace)
+        written: list[str] = []
+        log = list(state.get("execution_log", []))
+
+        for block in blocks:
+            filepath = block["filepath"]
+            code = block["code"]
+
+            # 절대 경로 계산
+            if os.path.isabs(filepath):
+                full_path = filepath
+            else:
+                full_path = os.path.join(workspace, filepath)
+
+            resolved = os.path.realpath(full_path)
+
+            # 보안: workspace 밖 쓰기 금지
+            if not resolved.startswith(workspace_resolved + os.sep) and resolved != workspace_resolved:
+                log.append(f"[apply] workspace 외부 경로 스킵: {filepath}")
+                continue
+
+            # 보안: 금지 경로 체크
+            if any(forbidden in resolved for forbidden in _FORBIDDEN_PATHS):
+                log.append(f"[apply] 금지 경로 스킵: {filepath}")
+                continue
+
+            try:
+                dir_path = os.path.dirname(resolved)
+                if dir_path:
+                    os.makedirs(dir_path, exist_ok=True)
+                with open(resolved, "w", encoding="utf-8") as f:
+                    f.write(code)
+                    if not code.endswith("\n"):
+                        f.write("\n")
+                written.append(filepath)
+                log.append(f"[apply] ✓ {filepath}")
+            except OSError as e:
+                log.append(f"[apply] ✗ {filepath}: {e}")
+
+        return {
+            "written_files": written,
+            "execution_log": log,
+        }
+
     # ── 라우팅 ──────────────────────────────────────────────
 
     def _should_use_tools(self, state: CodingState) -> str:
@@ -757,9 +865,9 @@ class CodingAssistantAgent(BaseGraphAgent):
         max_iterations = state.get("max_iterations", 3)
 
         if verify_result.get("passed", True):
-            return END
+            return self.get_node_name("APPLY_CODE")
         if iteration >= max_iterations:
-            return END
+            return self.get_node_name("APPLY_CODE")
         return self.get_node_name("EXECUTE")
 
     # ── 그래프 구성 ─────────────────────────────────────────
@@ -771,6 +879,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("EXECUTE_TOOLS"), self._execute_tools)
         graph.add_node(self.get_node_name("GENERATE_FINAL"), self._generate_final)
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
+        graph.add_node(self.get_node_name("APPLY_CODE"), self._apply_code)
 
     def init_edges(self, graph: StateGraph) -> None:
         # parse → retrieve_memory → execute
@@ -798,8 +907,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             self.get_node_name("GENERATE_FINAL"),
             self.get_node_name("VERIFY"),
         )
-        # verify → (retry or END)
+        # verify → (retry or apply_code)
         graph.add_conditional_edges(
             self.get_node_name("VERIFY"),
             self._should_retry,
         )
+        # apply_code → END
+        graph.add_edge(self.get_node_name("APPLY_CODE"), END)
