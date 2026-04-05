@@ -81,13 +81,12 @@ youngs75_coding_ai_agent/
 
 ### 환경 설정
 ```bash
-# 가상환경 활성화
+# 초기 설정 (최초 1회 — Python 3.13 + 의존성 + .env + MCP)
+make setup
+
+# 이후 수동 설정이 필요한 경우
 source .venv/bin/activate
-
-# 의존성 설치
 uv sync
-
-# 환경변수 로드 (프로젝트 루트 .env)
 export $(grep -v '^#' .env | xargs)
 ```
 
@@ -105,11 +104,8 @@ python scripts/run_pipeline.py --help
 
 ### Docker 배포
 ```bash
-# 전체 서비스 (12개 서비스 Harness)
+# 전체 서비스 Harness
 cd docker && docker compose up -d
-
-# Langfuse 단독
-cd docker && docker compose -f docker-compose.langfuse.yaml up -d
 
 # MCP 서버 단독
 cd docker && docker compose -f docker-compose.mcp.yml up -d

@@ -654,10 +654,18 @@ class CodingAssistantAgent(BaseGraphAgent):
     def _should_use_tools(self, state: CodingState) -> str:
         """execute 후 라우팅 판단.
 
+        - 도구 호출 한도 도달 → GENERATE_FINAL (루프 강제 탈출)
         - 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
         - 도구를 한 번이라도 사용했으면 → GENERATE_FINAL (STRONG으로 최종 생성)
         - 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
         """
+        tool_call_count = state.get("tool_call_count", 0)
+        max_calls = self._coding_config.max_tool_calls
+
+        # 도구 호출 한도 도달 시 강제 탈출 (recursion_limit 방어)
+        if tool_call_count >= max_calls:
+            return self.get_node_name("GENERATE_FINAL")
+
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
         tool_calls = getattr(last_msg, "tool_calls", None) or []
@@ -666,7 +674,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             return self.get_node_name("EXECUTE_TOOLS")
 
         # 도구를 한 번이라도 사용했으면 STRONG 모델로 최종 생성
-        tool_call_count = state.get("tool_call_count", 0)
         if tool_call_count > 0:
             return self.get_node_name("GENERATE_FINAL")
 

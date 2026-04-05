@@ -329,7 +329,7 @@ async def _run_agent_turn(
     try:
         async for event in agent.graph.astream_events(
             input_state,
-            config=run_config,
+            config={**run_config, "recursion_limit": 50},
             version="v2",
         ):
             kind = event["event"]

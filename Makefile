@@ -11,7 +11,12 @@
 # ═══════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help lint format test test-eval build up down logs clean
+.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down
+
+# ── 초기 설정 ──
+
+setup: ## 원커맨드 초기 설정 (Python + 의존성 + .env + MCP)
+	@bash scripts/setup.sh
 
 # ── 린트 & 포맷 ──
 
@@ -51,6 +56,14 @@ logs: ## Docker Compose 로그 스트리밍
 ps: ## Docker Compose 서비스 상태 확인
 	cd docker && docker compose ps
 
+# ── MCP 서버 ──
+
+mcp-up: ## MCP 도구 서버 기동
+	cd docker && docker compose -f docker-compose.mcp.yml up -d
+
+mcp-down: ## MCP 도구 서버 종료
+	cd docker && docker compose -f docker-compose.mcp.yml down
+
 # ── 환경별 Docker 기동 ──
 
 up-dev: ## 개발 환경으로 Docker 기동
@@ -61,14 +74,6 @@ up-staging: ## 스테이징 환경으로 Docker 기동
 
 up-prod: ## 프로덕션 환경으로 Docker 기동
 	cd docker && docker compose --env-file ../config/settings.prod.env up -d
-
-# ── Langfuse (관측성 인프라) ──
-
-langfuse-up: ## Langfuse 인프라 기동
-	cd docker && docker compose -f docker-compose.langfuse.yaml up -d
-
-langfuse-down: ## Langfuse 인프라 종료
-	cd docker && docker compose -f docker-compose.langfuse.yaml down
 
 # ── 유틸리티 ──
 
