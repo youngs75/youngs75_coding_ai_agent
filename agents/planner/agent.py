@@ -251,7 +251,7 @@ class PlannerAgent(BaseGraphAgent):
     def _format_plan_as_markdown(plan: TaskPlan) -> str:
         """TaskPlan을 마크다운 문자열로 포맷팅한다."""
         parts: list[str] = []
-        parts.append(f"## 구현 계획\n")
+        parts.append("## 구현 계획\n")
 
         if plan.get("summary"):
             parts.append(f"**요약**: {plan['summary']}\n")
@@ -260,7 +260,7 @@ class PlannerAgent(BaseGraphAgent):
             parts.append(f"### 아키텍처\n{plan['architecture']}\n")
 
         if plan.get("tech_stack"):
-            parts.append(f"### 기술 스택\n- " + "\n- ".join(plan["tech_stack"]) + "\n")
+            parts.append("### 기술 스택\n- " + "\n- ".join(plan["tech_stack"]) + "\n")
 
         if plan.get("file_structure"):
             parts.append("### 파일 구조\n```")
