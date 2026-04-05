@@ -350,14 +350,18 @@ async def _run_agent_turn(
                 last_node = node
 
             # LLM 토큰 스트리밍 및 사용량 수집
-            # parse_request, verify_result 노드는 내부 JSON이므로 스트리밍 제외
+            # 내부 노드는 스트리밍 제외:
+            # - parse_request, verify_result: 내부 JSON
+            # - execute_code: ReAct 계획용 (반복 시 같은 텍스트 중복 출력 방지)
+            # - execute_tools: 도구 실행 결과
+            # 사용자에게는 generate_final(STRONG 모델 최종 응답)만 스트리밍
             elif kind in ("on_chat_model_stream", "on_llm_stream"):
                 chunk = event["data"].get("chunk")
                 if (
                     chunk
                     and hasattr(chunk, "content")
                     and chunk.content
-                    and node not in ("parse_request", "verify_result")
+                    and node not in ("parse_request", "verify_result", "execute_code", "execute_tools")
                 ):
                     if not token_streamed:
                         renderer.start_token_stream()

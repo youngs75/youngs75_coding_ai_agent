@@ -322,19 +322,23 @@ class CodingAssistantAgent(BaseGraphAgent):
         return HumanMessage(content="\n".join(context_parts))
 
     async def _execute_code(self, state: CodingState) -> dict[str, Any]:
-        """ReAct 루프 1단계: FAST 모델이 도구 호출을 판단하고 컨텍스트를 수집한다.
+        """ReAct 루프 1단계: 도구 호출을 판단하고 컨텍스트를 수집한다.
 
         도구 호출이 필요 없으면 generate_final로 라우팅되어 STRONG 모델이 최종 생성한다.
+        Claude Code 패턴: 필요 없는 도구는 제공하지 않는다.
         """
         system_prompt = self._build_execute_system_prompt(state)
         context_msg = self._build_context_message(state)
 
-        # FAST 모델에 도구 바인딩 (도구 호출 판단용)
-        llm_with_tools = (
-            self._get_tool_planning_model().bind_tools(self._tools)
-            if self._tools
-            else self._get_tool_planning_model()
-        )
+        # generate 작업은 기존 파일을 읽을 필요 없음 → 도구 불필요
+        # fix/refactor/analyze만 도구가 필요 (기존 파일 읽기/수정)
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        needs_tools = task_type in ("fix", "refactor", "analyze")
+
+        llm_with_tools = self._get_tool_planning_model()
+        if needs_tools and self._tools:
+            llm_with_tools = llm_with_tools.bind_tools(self._tools)
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -717,6 +721,12 @@ class CodingAssistantAgent(BaseGraphAgent):
         # 안전장치 발동 시 즉시 최종 생성으로 전환
         exit_reason = state.get("exit_reason", "")
         if exit_reason:
+            return self.get_node_name("GENERATE_FINAL")
+
+        # generate 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        if task_type == "generate":
             return self.get_node_name("GENERATE_FINAL")
 
         tool_call_count = state.get("tool_call_count", 0)

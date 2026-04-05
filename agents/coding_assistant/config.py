@@ -75,7 +75,7 @@ class CodingConfig(BaseAgentConfig):
     purpose_tiers: dict[str, str] = Field(
         default_factory=lambda: {
             "generation": ModelTier.STRONG,
-            "tool_planning": ModelTier.FAST,
+            "tool_planning": ModelTier.DEFAULT,  # FAST → DEFAULT: Flash는 ���구 판단이 약함
             "verification": ModelTier.DEFAULT,
             "parsing": ModelTier.FAST,
             "default": ModelTier.DEFAULT,
