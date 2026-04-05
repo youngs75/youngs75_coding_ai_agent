@@ -69,11 +69,13 @@ async def test_2_two_stage_pipeline():
     print(f"  그래프 노드: {nodes}")
     assert "generate_final" in nodes, "generate_final 노드가 있어야 합니다"
 
-    result = await agent.graph.ainvoke({
-        "messages": [HumanMessage(content="파이썬으로 이진 탐색 함수를 작성해줘")],
-        "iteration": 0,
-        "max_iterations": 3,
-    })
+    result = await agent.graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="파이썬으로 이진 탐색 함수를 작성해줘")],
+            "iteration": 0,
+            "max_iterations": 3,
+        }
+    )
 
     generated = result.get("generated_code", "")
     execution_log = result.get("execution_log", [])
@@ -110,11 +112,15 @@ async def test_3_tool_call_with_mcp():
         skill_registry=skill_registry,
     )
 
-    result = await agent.graph.ainvoke({
-        "messages": [HumanMessage(content="pyproject.toml 파일을 읽고 의존성을 분석해줘")],
-        "iteration": 0,
-        "max_iterations": 3,
-    })
+    result = await agent.graph.ainvoke(
+        {
+            "messages": [
+                HumanMessage(content="pyproject.toml 파일을 읽고 의존성을 분석해줘")
+            ],
+            "iteration": 0,
+            "max_iterations": 3,
+        }
+    )
 
     execution_log = result.get("execution_log", [])
     skill_context = result.get("skill_context", [])
