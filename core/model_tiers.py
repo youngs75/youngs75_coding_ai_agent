@@ -29,8 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 class ModelTier(str, Enum):
-    """모델 능력 등급."""
+    """모델 능력 등급.
 
+    4-tier 체계 (DashScope Flagship 모델 기준):
+    - REASONING: 최상위 추론 (계획/아키텍처 설계) — Qwen3-Max
+    - STRONG: 코딩 특화 (코드 생성/도구 호출) — Qwen3-Coder-Next
+    - DEFAULT: 범용 균형 (검증/분석) — Qwen-Plus
+    - FAST: 빠른 응답 (파싱/분류) — qwen-turbo
+    """
+
+    REASONING = "reasoning"
     STRONG = "strong"
     DEFAULT = "default"
     FAST = "fast"
@@ -114,10 +122,10 @@ _MODEL_COST_DB: dict[str, ModelCostInfo] = {
     ),
     "qwen-max": ModelCostInfo(
         model="qwen-max",
-        input_cost_per_1m=0.28,
-        output_cost_per_1m=0.83,
+        input_cost_per_1m=1.20,
+        output_cost_per_1m=6.00,
         latency_category="medium",
-        capability_scores={"code": 0.98, "reasoning": 0.96, "speed": 0.70},
+        capability_scores={"code": 0.95, "reasoning": 0.98, "speed": 0.60},
     ),
     "qwen-turbo": ModelCostInfo(
         model="qwen-turbo",
@@ -182,7 +190,10 @@ class TierConfig(BaseModel):
 
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_BASE_URL = os.getenv(
+    "DASHSCOPE_BASE_URL",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
 
 
 def build_default_tiers() -> dict[str, TierConfig]:
@@ -198,15 +209,23 @@ def build_default_tiers() -> dict[str, TierConfig]:
 
     # DashScope 기본 모델명 (OpenRouter와 다름)
     if global_provider == "dashscope":
+        default_reasoning = "qwen-max"
         default_strong = "qwen-coder-plus"
         default_default = "qwen-plus"
         default_fast = "qwen-turbo"
     else:
+        default_reasoning = "qwen/qwen3-max"
         default_strong = "qwen/qwen3-coder-plus"
         default_default = "qwen/qwen3-coder-next"
         default_fast = "qwen/qwen3.5-flash-02-23"
 
     return {
+        ModelTier.REASONING: TierConfig(
+            model=os.getenv("REASONING_MODEL", default_reasoning),
+            provider=os.getenv("REASONING_PROVIDER", global_provider),
+            context_window=int(os.getenv("REASONING_CONTEXT_WINDOW", "1000000")),
+            request_timeout=float(os.getenv("REASONING_TIMEOUT", "180")),
+        ),
         ModelTier.STRONG: TierConfig(
             model=os.getenv("STRONG_MODEL", default_strong),
             provider=os.getenv("STRONG_PROVIDER", global_provider),
@@ -238,8 +257,8 @@ def build_default_purpose_tiers() -> dict[str, str]:
     if env_val:
         return json.loads(env_val)
     return {
+        "planning": ModelTier.REASONING,
         "generation": ModelTier.STRONG,
-        "planning": ModelTier.STRONG,
         "tool_planning": ModelTier.FAST,
         "verification": ModelTier.DEFAULT,
         "parsing": ModelTier.FAST,
@@ -329,11 +348,11 @@ def create_chat_model(
 
 # 목적별 가중치: 어떤 capability를 중시하는지 정의
 PURPOSE_CAPABILITY_WEIGHTS: dict[str, dict[str, float]] = {
-    "parsing": {"speed": 0.6, "reasoning": 0.3, "code": 0.1},
+    "planning": {"reasoning": 0.8, "code": 0.1, "speed": 0.1},
     "generation": {"code": 0.6, "reasoning": 0.3, "speed": 0.1},
-    "planning": {"reasoning": 0.7, "code": 0.2, "speed": 0.1},
-    "tool_planning": {"speed": 0.5, "reasoning": 0.3, "code": 0.2},
     "verification": {"reasoning": 0.6, "code": 0.3, "speed": 0.1},
+    "tool_planning": {"speed": 0.5, "reasoning": 0.3, "code": 0.2},
+    "parsing": {"speed": 0.6, "reasoning": 0.3, "code": 0.1},
     "default": {"code": 0.4, "reasoning": 0.4, "speed": 0.2},
 }
 

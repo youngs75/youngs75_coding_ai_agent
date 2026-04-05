@@ -36,9 +36,9 @@ class PlannerConfig(BaseAgentConfig):
     simple_task_max_files: int = 2  # 이 이하면 simple로 판단
 
     def get_model(self, purpose: str = "default", **kwargs):
-        """Planning 목적에는 항상 STRONG 모델 사용."""
+        """Planning 목적에는 REASONING 티어 사용 (Qwen3-Max)."""
         if purpose in ("planning", "default"):
-            tier_config = self.model_tiers.get(ModelTier.STRONG)
+            tier_config = self.model_tiers.get(ModelTier.REASONING)
             if tier_config:
                 from youngs75_a2a.core.model_tiers import create_chat_model
 
