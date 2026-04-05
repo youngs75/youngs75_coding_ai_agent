@@ -30,7 +30,7 @@ graph TB
         MEM["Memory<br/>CoALA 4종 메모리"]
         SKL["Skills<br/>3-Level Progressive<br/>+ 자동 활성화"]
         SUB["SubAgents<br/>동적 선택 레지스트리"]
-        MT["ModelTiers<br/>멀티티어 모델 해석<br/>(5 purpose)"]
+        MT["ModelTiers<br/>4-Tier 모델 해석<br/>(REASONING/STRONG/DEFAULT/FAST)"]
     end
 
     subgraph A2A["A2A 프로토콜 계층"]
@@ -62,10 +62,13 @@ graph TB
     end
 
     CLI --> ORC
+    ORC -->|"계획 수립"| PL
+    PL -->|"interrupt: HITL 승인"| CLI
     ORC -->|"⇢ 위임"| CA
     ORC -->|"⇢ 위임"| DR
     ORC -->|"⇢ 위임"| SR
 
+    PL --> BGA
     CA --> BGA
     DR --> BGA
     SR --> BGA
@@ -112,14 +115,20 @@ sequenceDiagram
     participant U as 사용자
     participant CLI as CLI
     participant ORC as Orchestrator
+    participant PL as Planner
     participant CA as CodingAssistant
     participant DR as DeepResearch
     participant SR as SimpleReAct
 
     U->>CLI: 요청 입력
-    CLI->>ORC: classify (LLM)
+    CLI->>ORC: classify (FAST LLM)
     
     alt 코드 생성/수정/리뷰
+        ORC->>PL: plan (REASONING LLM)
+        PL-->>CLI: 📋 구현 계획 표시
+        Note over CLI,U: HITL: interrupt() → 사용자 승인 대기
+        U->>CLI: 계획 승인 (y/n)
+        CLI->>ORC: Command(resume=True)
         ORC->>CA: ⇢ 위임: coding_assistant
         CA-->>CLI: 코드 + 검증 결과
     else 심층 조사/기술 분석
@@ -336,6 +345,7 @@ classDiagram
     BaseGraphAgent <|-- DeepResearchAgent
     BaseGraphAgent <|-- SimpleMCPReActAgent
     BaseGraphAgent <|-- OrchestratorAgent
+    BaseGraphAgent <|-- PlannerAgent
 ```
 
 ### 5.2 BaseAgentConfig (모델 해석 체계)
@@ -344,13 +354,15 @@ classDiagram
 graph TD
     PURPOSE["get_model(purpose)"] --> TIER["get_tier_config(purpose)"]
     TIER --> PT["purpose_tiers 매핑"]
-    PT -->|generation| STRONG["STRONG<br/>qwen/qwen3-coder-plus"]
-    PT -->|tool_planning| FAST_TP["FAST<br/>qwen/qwen3.5-flash-02-23"]
-    PT -->|verification| DEFAULT["DEFAULT<br/>qwen/qwen3-coder-next"]
-    PT -->|parsing| FAST_P["FAST<br/>qwen/qwen3.5-flash-02-23"]
-    STRONG --> CREATE["create_chat_model()"]
-    FAST_TP --> CREATE
+    PT -->|planning| REASONING["REASONING<br/>qwen-max"]
+    PT -->|generation| STRONG["STRONG<br/>qwen-coder-plus"]
+    PT -->|verification| DEFAULT["DEFAULT<br/>qwen-plus"]
+    PT -->|tool_planning| FAST_TP["FAST<br/>qwen-turbo"]
+    PT -->|parsing| FAST_P["FAST<br/>qwen-turbo"]
+    REASONING --> CREATE["create_chat_model()<br/>(DashScope / OpenRouter)"]
+    STRONG --> CREATE
     DEFAULT --> CREATE
+    FAST_TP --> CREATE
     FAST_P --> CREATE
 ```
 
