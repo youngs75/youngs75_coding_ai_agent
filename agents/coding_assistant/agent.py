@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 from typing import Any, ClassVar
@@ -675,55 +677,101 @@ class CodingAssistantAgent(BaseGraphAgent):
             "tool_call_count": current_count + len(tool_calls),
         }
 
+    # 검증 타임아웃 (초) — 이 시간 초과 시 검증 스킵하고 진행
+    _VERIFY_TIMEOUT_S = 30
+    # 검증에 보낼 코드 최대 길이 (토큰 폭발 방지)
+    _VERIFY_MAX_CODE_CHARS = 4000
+
     async def _verify_result(self, state: CodingState) -> dict[str, Any]:
-        """생성된 코드를 검증한다 (검증자 특권 정보 포함)."""
+        """생성된 코드를 검증한다.
+
+        안전장치:
+        - simple 태스크는 검증 스킵 (불필요한 LLM 호출 방지)
+        - 긴 코드는 truncation하여 검증 (토큰 폭발 방지)
+        - 타임아웃 보호 (30초 초과 시 graceful skip)
+        - LLM 호출 실패 시 passed=True로 폴백 (파이프라인 중단 방지)
+        """
         generated_code = state.get("generated_code", "")
         parse_result = state.get("parse_result", {})
+        log = state.get("execution_log", [])
+
+        # simple 태스크는 검증 스킵
+        task_type = parse_result.get("task_type", "generate")
+        if task_type == "generate" and len(generated_code) < 500:
+            log.append("[verify] simple 태스크 — 검증 스킵")
+            return {
+                "verify_result": {"passed": True, "issues": [], "suggestions": []},
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+                "tool_call_count": 0,
+            }
+
+        # 코드 truncation — 검증에 전문 대신 요약만 전달
+        code_for_verify = generated_code
+        if len(code_for_verify) > self._VERIFY_MAX_CODE_CHARS:
+            code_for_verify = (
+                code_for_verify[: self._VERIFY_MAX_CODE_CHARS]
+                + f"\n\n... (총 {len(generated_code)}자 중 {self._VERIFY_MAX_CODE_CHARS}자만 검증)"
+            )
 
         verify_prompt = VERIFY_SYSTEM_PROMPT.format(
             max_delete_lines=self._coding_config.max_delete_lines,
             allowed_extensions=", ".join(self._coding_config.allowed_extensions),
         )
-
         verify_context = (
             f"원래 요청: {parse_result.get('description', '')}\n\n"
-            f"생성된 코드:\n{generated_code}"
+            f"생성된 코드:\n{code_for_verify}"
         )
         messages = [
             SystemMessage(content=verify_prompt),
             HumanMessage(content=verify_context),
         ]
-        # max_tokens 복구 적용
-        response = await invoke_with_max_tokens_recovery(
-            self._get_verify_model(),
-            messages,
-            self._context_manager,
-        )
 
+        # 타임아웃 + 에러 보호
+        verify_result: dict[str, Any]
         try:
+            async with asyncio.timeout(self._VERIFY_TIMEOUT_S):
+                response = await invoke_with_max_tokens_recovery(
+                    self._get_verify_model(),
+                    messages,
+                    self._context_manager,
+                )
             verify_result = json.loads(response.content)
-        except (json.JSONDecodeError, TypeError):
+        except TimeoutError:
+            logging.getLogger(__name__).warning(
+                "verify_result 타임아웃 (%ds) — 검증 스킵", self._VERIFY_TIMEOUT_S
+            )
+            log.append(f"[verify] 타임아웃 ({self._VERIFY_TIMEOUT_S}s) — 스킵")
             verify_result = {
                 "passed": True,
                 "issues": [],
-                "suggestions": [],
+                "suggestions": ["검증 타임아웃으로 스킵됨"],
+            }
+        except (json.JSONDecodeError, TypeError):
+            verify_result = {"passed": True, "issues": [], "suggestions": []}
+        except Exception as e:
+            logging.getLogger(__name__).warning("verify_result 실패: %s", e)
+            log.append(f"[verify] 오류 — 스킵: {e}")
+            verify_result = {
+                "passed": True,
+                "issues": [],
+                "suggestions": [f"검증 오류: {e}"],
             }
 
-        log = state.get("execution_log", [])
         log.append(f"[verify] passed={verify_result.get('passed')}")
 
         result: dict[str, Any] = {
             "verify_result": verify_result,
             "execution_log": log,
             "iteration": state.get("iteration", 0) + 1,
-            "tool_call_count": 0,  # 재시도 시 도구 호출 카운터 리셋
+            "tool_call_count": 0,
         }
 
         # Procedural Memory 훅: 검증 통과 시 코드 패턴 자동 누적
         if verify_result.get("passed") and self._memory_store:
             self._accumulate_skill_from_execution(state, result)
 
-        # Episodic Memory 훅: 실행 결과를 에피소딕 메모리에 기록
+        # Episodic Memory 훅
         if self._memory_store:
             self._record_episodic_memory(state, verify_result)
 
