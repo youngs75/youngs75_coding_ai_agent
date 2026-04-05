@@ -1,7 +1,5 @@
 """TurnBudgetTracker 단위 테스트."""
 
-import pytest
-
 from youngs75_a2a.core.turn_budget import BudgetVerdict, TurnBudgetTracker
 
 
@@ -44,7 +42,9 @@ class TestDiminishingReturns:
 
         # 저효율 연속 시작
         assert tracker.record_llm_call(100) == BudgetVerdict.OK  # streak=1
-        assert tracker.record_llm_call(100) == BudgetVerdict.WARN_DIMINISHING  # streak=2
+        assert (
+            tracker.record_llm_call(100) == BudgetVerdict.WARN_DIMINISHING
+        )  # streak=2
         assert tracker.record_llm_call(100) == BudgetVerdict.STOP  # streak=3
 
     def test_high_output_resets_streak(self):

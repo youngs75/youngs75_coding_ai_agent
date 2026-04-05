@@ -1,7 +1,5 @@
 """StallDetector 단위 테스트."""
 
-import pytest
-
 from youngs75_a2a.core.stall_detector import StallAction, StallDetector
 
 
@@ -11,29 +9,56 @@ class TestStallDetectorBasic:
     def test_no_stall_different_calls(self):
         """서로 다른 도구 호출은 stall이 아니다."""
         detector = StallDetector()
-        assert detector.record_and_check("read_file", {"path": "a.py"}) == StallAction.CONTINUE
-        assert detector.record_and_check("list_directory", {"path": "."}) == StallAction.CONTINUE
-        assert detector.record_and_check("search_code", {"query": "foo"}) == StallAction.CONTINUE
+        assert (
+            detector.record_and_check("read_file", {"path": "a.py"})
+            == StallAction.CONTINUE
+        )
+        assert (
+            detector.record_and_check("list_directory", {"path": "."})
+            == StallAction.CONTINUE
+        )
+        assert (
+            detector.record_and_check("search_code", {"query": "foo"})
+            == StallAction.CONTINUE
+        )
 
     def test_no_stall_same_tool_different_args(self):
         """같은 도구, 다른 인자는 stall이 아니다."""
         detector = StallDetector()
-        assert detector.record_and_check("read_file", {"path": "a.py"}) == StallAction.CONTINUE
-        assert detector.record_and_check("read_file", {"path": "b.py"}) == StallAction.CONTINUE
-        assert detector.record_and_check("read_file", {"path": "c.py"}) == StallAction.CONTINUE
+        assert (
+            detector.record_and_check("read_file", {"path": "a.py"})
+            == StallAction.CONTINUE
+        )
+        assert (
+            detector.record_and_check("read_file", {"path": "b.py"})
+            == StallAction.CONTINUE
+        )
+        assert (
+            detector.record_and_check("read_file", {"path": "c.py"})
+            == StallAction.CONTINUE
+        )
 
     def test_warn_on_second_identical_call(self):
         """동일 도구+인자 2회 반복 시 WARN."""
         detector = StallDetector(warn_threshold=2, exit_threshold=3)
-        assert detector.record_and_check("list_directory", {"path": "."}) == StallAction.CONTINUE
-        assert detector.record_and_check("list_directory", {"path": "."}) == StallAction.WARN
+        assert (
+            detector.record_and_check("list_directory", {"path": "."})
+            == StallAction.CONTINUE
+        )
+        assert (
+            detector.record_and_check("list_directory", {"path": "."})
+            == StallAction.WARN
+        )
 
     def test_force_exit_on_third_identical_call(self):
         """동일 도구+인자 3회 반복 시 FORCE_EXIT."""
         detector = StallDetector(warn_threshold=2, exit_threshold=3)
         detector.record_and_check("list_directory", {"path": "."})
         detector.record_and_check("list_directory", {"path": "."})
-        assert detector.record_and_check("list_directory", {"path": "."}) == StallAction.FORCE_EXIT
+        assert (
+            detector.record_and_check("list_directory", {"path": "."})
+            == StallAction.FORCE_EXIT
+        )
 
     def test_none_tool_name_continues(self):
         """tool_name이 None이면 CONTINUE."""
@@ -60,7 +85,10 @@ class TestStallDetectorReset:
         detector.reset()
 
         # reset 후 다시 시작
-        assert detector.record_and_check("list_directory", {"path": "."}) == StallAction.CONTINUE
+        assert (
+            detector.record_and_check("list_directory", {"path": "."})
+            == StallAction.CONTINUE
+        )
 
     def test_reset_empty_summary(self):
         """reset 후 summary가 빈 문자열."""

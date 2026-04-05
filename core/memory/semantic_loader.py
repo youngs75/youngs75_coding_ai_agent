@@ -129,9 +129,7 @@ class SemanticMemoryLoader:
         # 프로젝트명과 버전 추출
         name_match = re.search(r'^name\s*=\s*"(.+?)"', text, re.MULTILINE)
         version_match = re.search(r'^version\s*=\s*"(.+?)"', text, re.MULTILINE)
-        python_match = re.search(
-            r'^requires-python\s*=\s*"(.+?)"', text, re.MULTILINE
-        )
+        python_match = re.search(r'^requires-python\s*=\s*"(.+?)"', text, re.MULTILINE)
 
         meta_parts = []
         if name_match:
@@ -159,7 +157,10 @@ class SemanticMemoryLoader:
             deps_text = deps_match.group(1)
             deps = re.findall(r'"([^"]+)"', deps_text)
             if deps:
-                dep_names = [d.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip() for d in deps]
+                dep_names = [
+                    d.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip()
+                    for d in deps
+                ]
                 items.append(
                     MemoryItem(
                         type=MemoryType.SEMANTIC,

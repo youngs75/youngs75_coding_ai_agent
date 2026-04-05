@@ -19,9 +19,7 @@ class PlannerConfig(BaseAgentConfig):
 
     mcp_servers: dict[str, str] = Field(
         default_factory=lambda: {
-            "code_tools": os.getenv(
-                "CODE_TOOLS_MCP_URL", "http://localhost:3003/mcp/"
-            ),
+            "code_tools": os.getenv("CODE_TOOLS_MCP_URL", "http://localhost:3003/mcp/"),
         },
     )
 

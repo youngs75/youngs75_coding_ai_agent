@@ -162,9 +162,7 @@ class CLIRenderer:
             path = args.get("path", args.get("query", ""))
             if path:
                 args_str = f" {_truncate(str(path), 50)}"
-        self.console.print(
-            f"  [{_CLR_TOOL}]⚡[/] [{_CLR_DIM}]{tool_name}[/]{args_str}"
-        )
+        self.console.print(f"  [{_CLR_TOOL}]⚡[/] [{_CLR_DIM}]{tool_name}[/]{args_str}")
 
     def tool_result(self, tool_name: str, success: bool = True) -> None:
         """도구 실행 결과를 표시한다."""
@@ -176,15 +174,11 @@ class CLIRenderer:
     def skill_activated(self, skill_names: list[str]) -> None:
         """자동 활성화된 스킬을 표시한다."""
         names = ", ".join(skill_names)
-        self.console.print(
-            f"  [{_CLR_TOOL}]⚙[/] [{_CLR_DIM}]스킬 활성화:[/] {names}"
-        )
+        self.console.print(f"  [{_CLR_TOOL}]⚙[/] [{_CLR_DIM}]스킬 활성화:[/] {names}")
 
     def model_label(self, stage: str, model: str) -> None:
         """사용 중인 모델/단계를 표시한다."""
-        self.console.print(
-            f"  [{_CLR_DIM}]▸ {stage}:[/] {model}"
-        )
+        self.console.print(f"  [{_CLR_DIM}]▸ {stage}:[/] {model}")
 
     def subagent_delegate(self, agent_name: str) -> None:
         """서브에이전트 위임을 표시한다."""
@@ -239,8 +233,12 @@ class CLIRenderer:
 
     # ── 검증 결과 ──
 
-    def verify_result(self, passed: bool, issues: list[str] | None = None,
-                      suggestions: list[str] | None = None) -> None:
+    def verify_result(
+        self,
+        passed: bool,
+        issues: list[str] | None = None,
+        suggestions: list[str] | None = None,
+    ) -> None:
         """검증 결과를 시각적으로 표시한다."""
         if passed:
             self.console.print(f"\n  [{_CLR_SUCCESS}]✓ 검증 통과[/]")
@@ -250,9 +248,7 @@ class CLIRenderer:
                 for issue in issues[:5]:
                     self.console.print(f"    [{_CLR_DIM}]→ {issue}[/]")
         if suggestions:
-            self.console.print(
-                f"  [{_CLR_MUTED}]💡 제안 {len(suggestions)}건[/]"
-            )
+            self.console.print(f"  [{_CLR_MUTED}]💡 제안 {len(suggestions)}건[/]")
 
     # ── 턴 타이밍 ──
 
@@ -264,9 +260,7 @@ class CLIRenderer:
         """턴 종료 — 소요시간 표시."""
         if self._turn_start > 0:
             elapsed = time.monotonic() - self._turn_start
-            self.console.print(
-                f"  [{_CLR_MUTED}]⏱ {elapsed:.1f}s[/]"
-            )
+            self.console.print(f"  [{_CLR_MUTED}]⏱ {elapsed:.1f}s[/]")
             self._turn_start = 0.0
 
     # ── 레거시 호환 ──

@@ -511,7 +511,6 @@ class TestDeepResearchMemoryState:
         """HITLAgentState가 AgentState의 메모리 필드를 상속."""
         from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
 
-        annotations = HITLAgentState.__annotations__
         # 직접 또는 상속으로 보유
         all_fields = {}
         for cls in HITLAgentState.__mro__:

@@ -230,21 +230,25 @@ class TestSkillRegistry:
     def test_auto_activate_for_task_fix(self, tmp_path):
         """fix task_type → debug 스킬 자동 활성화."""
         (tmp_path / "debug.json").write_text(
-            json.dumps({
-                "name": "debug",
-                "description": "디버깅",
-                "tags": ["debug", "fix", "error"],
-                "body": "디버깅 프롬프트",
-            }),
+            json.dumps(
+                {
+                    "name": "debug",
+                    "description": "디버깅",
+                    "tags": ["debug", "fix", "error"],
+                    "body": "디버깅 프롬프트",
+                }
+            ),
             encoding="utf-8",
         )
         (tmp_path / "explain.json").write_text(
-            json.dumps({
-                "name": "explain",
-                "description": "설명",
-                "tags": ["explain", "documentation"],
-                "body": "설명 프롬프트",
-            }),
+            json.dumps(
+                {
+                    "name": "explain",
+                    "description": "설명",
+                    "tags": ["explain", "documentation"],
+                    "body": "설명 프롬프트",
+                }
+            ),
             encoding="utf-8",
         )
         loader = SkillLoader(tmp_path)
@@ -258,12 +262,14 @@ class TestSkillRegistry:
     def test_auto_activate_for_task_explain(self, tmp_path):
         """explain task_type → explain 스킬 자동 활성화."""
         (tmp_path / "explain.json").write_text(
-            json.dumps({
-                "name": "explain",
-                "description": "설명",
-                "tags": ["explain", "documentation"],
-                "body": "설명 프롬프트",
-            }),
+            json.dumps(
+                {
+                    "name": "explain",
+                    "description": "설명",
+                    "tags": ["explain", "documentation"],
+                    "body": "설명 프롬프트",
+                }
+            ),
             encoding="utf-8",
         )
         loader = SkillLoader(tmp_path)
@@ -296,12 +302,14 @@ class TestSkillRegistry:
     def test_auto_activate_updates_stats(self, tmp_path):
         """자동 활성화도 activation_stats에 반영."""
         (tmp_path / "refactor.json").write_text(
-            json.dumps({
-                "name": "refactor",
-                "description": "리팩토링",
-                "tags": ["refactor", "quality"],
-                "body": "리팩토링 프롬프트",
-            }),
+            json.dumps(
+                {
+                    "name": "refactor",
+                    "description": "리팩토링",
+                    "tags": ["refactor", "quality"],
+                    "body": "리팩토링 프롬프트",
+                }
+            ),
             encoding="utf-8",
         )
         loader = SkillLoader(tmp_path)

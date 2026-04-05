@@ -78,9 +78,7 @@ class PlannerAgent(BaseGraphAgent):
         """MCP 도구를 비동기로 로드하고 read-only 필터링."""
         all_tools = await self._mcp_loader.load()
         allowed = set(self._planner_config.allowed_tools)
-        self._tools = [
-            t for t in all_tools if getattr(t, "name", None) in allowed
-        ]
+        self._tools = [t for t in all_tools if getattr(t, "name", None) in allowed]
         logger.info(
             "Planner 도구 %d개 로드 (read-only): %s",
             len(self._tools),
@@ -104,10 +102,12 @@ class PlannerAgent(BaseGraphAgent):
                     break
 
         model = self._get_model()
-        response = await model.ainvoke([
-            SystemMessage(content=ANALYZE_SYSTEM_PROMPT),
-            HumanMessage(content=user_request),
-        ])
+        response = await model.ainvoke(
+            [
+                SystemMessage(content=ANALYZE_SYSTEM_PROMPT),
+                HumanMessage(content=user_request),
+            ]
+        )
 
         try:
             analysis = json.loads(response.content)
@@ -138,23 +138,23 @@ class PlannerAgent(BaseGraphAgent):
         if self._tools:
             model = model.bind_tools(self._tools)
 
-        response = await model.ainvoke([
-            SystemMessage(
-                content=EXPLORE_SYSTEM_PROMPT.format(
-                    tool_descriptions=tool_descriptions
-                )
-            ),
-            HumanMessage(
-                content=f"다음 작업을 위해 프로젝트를 탐색하세요:\n{user_request}"
-            ),
-        ])
+        response = await model.ainvoke(
+            [
+                SystemMessage(
+                    content=EXPLORE_SYSTEM_PROMPT.format(
+                        tool_descriptions=tool_descriptions
+                    )
+                ),
+                HumanMessage(
+                    content=f"다음 작업을 위해 프로젝트를 탐색하세요:\n{user_request}"
+                ),
+            ]
+        )
 
         # 도구 호출 실행 (최대 1 라운드)
         context_entries: list[str] = list(state.get("explored_context", []))
         tool_calls = getattr(response, "tool_calls", None) or []
-        tools_by_name = {
-            getattr(t, "name", None): t for t in self._tools
-        }
+        tools_by_name = {getattr(t, "name", None): t for t in self._tools}
 
         messages = [response]
 
@@ -171,7 +171,9 @@ class PlannerAgent(BaseGraphAgent):
                 elif name == "list_directory":
                     context_entries.append(f"[디렉토리 구조]\n{result[:1500]}")
                 elif name == "search_code":
-                    context_entries.append(f"[검색: {args.get('query', '')}]\n{result[:1500]}")
+                    context_entries.append(
+                        f"[검색: {args.get('query', '')}]\n{result[:1500]}"
+                    )
             else:
                 result = f"허용되지 않은 도구: {name}"
 
@@ -194,16 +196,20 @@ class PlannerAgent(BaseGraphAgent):
         explored_context = state.get("explored_context", [])
 
         context_str = (
-            "\n\n".join(explored_context) if explored_context else "탐색된 컨텍스트 없음"
+            "\n\n".join(explored_context)
+            if explored_context
+            else "탐색된 컨텍스트 없음"
         )
 
         model = self._get_model()
-        response = await model.ainvoke([
-            SystemMessage(
-                content=PLAN_SYSTEM_PROMPT.format(explored_context=context_str)
-            ),
-            HumanMessage(content=user_request),
-        ])
+        response = await model.ainvoke(
+            [
+                SystemMessage(
+                    content=PLAN_SYSTEM_PROMPT.format(explored_context=context_str)
+                ),
+                HumanMessage(content=user_request),
+            ]
+        )
 
         try:
             plan_data = json.loads(response.content)
@@ -271,8 +277,14 @@ class PlannerAgent(BaseGraphAgent):
         if phases:
             parts.append("### 구현 페이즈\n")
             for phase in phases:
-                deps = f" (의존: {', '.join(phase.get('depends_on', []))})" if phase.get("depends_on") else ""
-                parts.append(f"#### {phase.get('id', '?')}: {phase.get('title', '')}{deps}")
+                deps = (
+                    f" (의존: {', '.join(phase.get('depends_on', []))})"
+                    if phase.get("depends_on")
+                    else ""
+                )
+                parts.append(
+                    f"#### {phase.get('id', '?')}: {phase.get('title', '')}{deps}"
+                )
                 parts.append(f"{phase.get('description', '')}")
                 if phase.get("files"):
                     parts.append(f"파일: {', '.join(phase['files'])}")

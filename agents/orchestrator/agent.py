@@ -107,10 +107,12 @@ async def _invoke_planner(user_message: str) -> str | None:
         from youngs75_a2a.agents.planner.config import PlannerConfig
 
         planner = await PlannerAgent.create(config=PlannerConfig())
-        result = await planner.graph.ainvoke({
-            "messages": [HumanMessage(content=user_message)],
-            "user_request": user_message,
-        })
+        result = await planner.graph.ainvoke(
+            {
+                "messages": [HumanMessage(content=user_message)],
+                "user_request": user_message,
+            }
+        )
         return result.get("plan_text", "")
     except Exception as e:
         logger.warning(f"Planner 호출 실패, 계획 없이 진행: {e}")
@@ -135,12 +137,16 @@ async def _invoke_local_agent(
                 effective_message = f"{user_message}\n\n{task_plan}"
 
             agent = await CodingAssistantAgent.create(config=CodingConfig())
-            result = await agent.graph.ainvoke({
-                "messages": [HumanMessage(content=effective_message)],
-                "iteration": 0,
-                "max_iterations": 2,
-            })
-            code = result.get("generated_code") or result.get("messages", [{}])[-1].content
+            result = await agent.graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content=effective_message)],
+                    "iteration": 0,
+                    "max_iterations": 2,
+                }
+            )
+            code = (
+                result.get("generated_code") or result.get("messages", [{}])[-1].content
+            )
             # 파일 저장 결과를 응답에 포함
             written = result.get("written_files", [])
             if written:
@@ -152,9 +158,11 @@ async def _invoke_local_agent(
             from youngs75_a2a.agents.deep_research.config import ResearchConfig
 
             agent = DeepResearchAgent(config=ResearchConfig())
-            result = await agent.graph.ainvoke({
-                "messages": [HumanMessage(content=user_message)],
-            })
+            result = await agent.graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content=user_message)],
+                }
+            )
             return result.get("final_report", "")
 
         if agent_name in ("simple_react", "react"):
@@ -162,9 +170,11 @@ async def _invoke_local_agent(
             from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
 
             agent = await SimpleMCPReActAgent.create(config=SimpleReActConfig())
-            result = await agent.graph.ainvoke({
-                "messages": [HumanMessage(content=user_message)],
-            })
+            result = await agent.graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content=user_message)],
+                }
+            )
             msgs = result.get("messages", [])
             return msgs[-1].content if msgs else None
 
@@ -222,7 +232,11 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
                     for artifact in obj.artifacts:
                         for part in artifact.parts or []:
                             root = getattr(part, "root", part)
-                            if hasattr(root, "text") and root.text and len(root.text) > 5:
+                            if (
+                                hasattr(root, "text")
+                                and root.text
+                                and len(root.text) > 5
+                            ):
                                 return {"agent_response": root.text}
                 if hasattr(obj, "status"):
                     return {"agent_response": f"[에이전트 작업 상태: {obj.status}]"}

@@ -369,7 +369,13 @@ async def _run_agent_turn(
                     chunk
                     and hasattr(chunk, "content")
                     and chunk.content
-                    and node not in ("parse_request", "verify_result", "execute_code", "execute_tools")
+                    and node
+                    not in (
+                        "parse_request",
+                        "verify_result",
+                        "execute_code",
+                        "execute_tools",
+                    )
                 ):
                     if not token_streamed:
                         renderer.start_token_stream()
@@ -388,7 +394,9 @@ async def _run_agent_turn(
                 tool_name = event.get("name", "")
                 tool_input = event.get("data", {}).get("input", {})
                 if tool_name:
-                    renderer.tool_call(tool_name, tool_input if isinstance(tool_input, dict) else None)
+                    renderer.tool_call(
+                        tool_name, tool_input if isinstance(tool_input, dict) else None
+                    )
 
             # 노드 완료 시 응답 데이터 수집
             elif kind == "on_chain_end" and node:
@@ -569,7 +577,9 @@ async def _main_loop(config: CLIConfig) -> None:
 
     renderer.welcome(session.info.agent_name)
     if discovered_skills:
-        renderer.success(f"스킬 {len(discovered_skills)}개 로드: {', '.join(discovered_skills)}")
+        renderer.success(
+            f"스킬 {len(discovered_skills)}개 로드: {', '.join(discovered_skills)}"
+        )
 
     while True:
         try:

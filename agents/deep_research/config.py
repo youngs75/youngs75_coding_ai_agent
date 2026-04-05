@@ -58,9 +58,7 @@ class ResearchConfig(BaseAgentConfig):
         default_factory=lambda: os.getenv("MODEL_NAME", "qwen/qwen3-coder-next"),
     )
     compression_model: str = Field(
-        default_factory=lambda: os.getenv(
-            "COMPRESSION_MODEL", "qwen/qwen3-coder-next"
-        ),
+        default_factory=lambda: os.getenv("COMPRESSION_MODEL", "qwen/qwen3-coder-next"),
     )
     final_report_model: str = Field(
         default_factory=lambda: os.getenv(

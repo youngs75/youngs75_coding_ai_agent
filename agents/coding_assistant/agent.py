@@ -97,11 +97,13 @@ def _extract_code_blocks(text: str) -> list[dict[str, str]]:
                     break
 
         if filepath:
-            blocks.append({
-                "filepath": filepath,
-                "language": lang,
-                "code": code.rstrip("\n"),
-            })
+            blocks.append(
+                {
+                    "filepath": filepath,
+                    "language": lang,
+                    "code": code.rstrip("\n"),
+                }
+            )
 
     return blocks
 
@@ -422,7 +424,9 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
-        log.append(f"[execute] iteration={iteration}, tools_bound={len(self._tools)}, model=FAST")
+        log.append(
+            f"[execute] iteration={iteration}, tools_bound={len(self._tools)}, model=FAST"
+        )
 
         result: dict[str, Any] = {
             "generated_code": response.content or "",
@@ -516,9 +520,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         # ── 반복 도구 호출 감지 (StallDetector) ──
         for call in tool_calls:
-            action = self._stall_detector.record_and_check(
-                tc_name(call), tc_args(call)
-            )
+            action = self._stall_detector.record_and_check(tc_name(call), tc_args(call))
             if action == StallAction.FORCE_EXIT:
                 summary = self._stall_detector.get_stall_summary()
                 stall_messages = []
@@ -787,7 +789,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             resolved = os.path.realpath(full_path)
 
             # 보안: workspace 밖 쓰기 금지
-            if not resolved.startswith(workspace_resolved + os.sep) and resolved != workspace_resolved:
+            if (
+                not resolved.startswith(workspace_resolved + os.sep)
+                and resolved != workspace_resolved
+            ):
                 log.append(f"[apply] workspace 외부 경로 스킵: {filepath}")
                 continue
 

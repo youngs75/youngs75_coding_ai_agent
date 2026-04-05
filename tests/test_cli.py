@@ -1951,14 +1951,13 @@ class TestPromptRegistry:
         assert "verify" in updated
         assert registry.get_current_version("verify") == "v2"
 
-    def test_execute_prompt_contains_citation_guide(self):
+    def test_execute_prompt_contains_file_save_guide(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("execute")
-        assert "인용 형식 규칙" in prompt
-        assert "파일: path/to/file.py:42" in prompt
-        assert "출처 URL" in prompt
+        assert "파일 저장 형식" in prompt
+        assert "filepath:" in prompt
 
     def test_verify_prompt_contains_citation_quality_check(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry

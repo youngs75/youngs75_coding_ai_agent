@@ -1,7 +1,5 @@
 """AbortController 단위 테스트."""
 
-import asyncio
-
 import pytest
 
 from youngs75_a2a.core.abort_controller import (

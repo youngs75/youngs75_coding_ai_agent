@@ -98,9 +98,7 @@ class TestScenario1SimpleCodeGeneration:
             "이진 탐색 함수가 포함되어 있지 않습니다"
         )
         # 단순 코드 생성이므로 도구 호출이 3회 이하여야 함
-        assert tool_count <= 3, (
-            f"도구 호출이 너무 많습니다: {tool_count}회 (기대: ≤3)"
-        )
+        assert tool_count <= 3, f"도구 호출이 너무 많습니다: {tool_count}회 (기대: ≤3)"
 
 
 # ── 시나리오 2: MCP 도구 활용 ───────────────────────────────
@@ -316,16 +314,12 @@ class TestScenario4SemanticMemoryInjection:
 
         # 에이전트 생성 (memory_store 주입)
         config = CodingConfig()
-        agent = await CodingAssistantAgent.create(
-            config=config, memory_store=store
-        )
+        agent = await CodingAssistantAgent.create(config=config, memory_store=store)
 
         # semantic_context를 입력 상태에 포함
         semantic_items = store.list_by_type(MemoryType.SEMANTIC)
         input_state = {
-            "messages": [
-                HumanMessage(content="간단한 hello world 함수를 작성해줘")
-            ],
+            "messages": [HumanMessage(content="간단한 hello world 함수를 작성해줘")],
             "iteration": 0,
             "max_iterations": 1,
             "semantic_context": [item.content for item in semantic_items],
