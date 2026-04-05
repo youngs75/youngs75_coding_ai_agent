@@ -426,16 +426,24 @@ class CodingAssistantAgent(BaseGraphAgent):
     async def _execute_code(self, state: CodingState) -> dict[str, Any]:
         """ReAct 루프 1단계: 도구 호출을 판단하고 컨텍스트를 수집한다.
 
-        도구 호출이 필요 없으면 generate_final로 라우팅되어 STRONG 모델이 최종 생성한다.
-        Claude Code 패턴: 필요 없는 도구는 제공하지 않는다.
+        generate 작업은 LLM 호출 없이 패스스루 — generate_final(STRONG)이 직접 생성.
+        fix/refactor/analyze만 FAST 모델로 도구 호출을 판단한다.
         """
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        iteration = state.get("iteration", 0)
+        log = state.get("execution_log", [])
+
+        # generate 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
+        # generate_final(STRONG)이 직접 코드를 생성한다.
+        if task_type == "generate" and iteration == 0:
+            log.append("[execute] generate 태스크 — FAST 스킵, STRONG으로 직행")
+            return {"execution_log": log}
+
         system_prompt = self._build_execute_system_prompt(state)
         context_msg = self._build_context_message(state)
 
-        # generate 작업은 기존 파일을 읽을 필요 없음 → 도구 불필요
         # fix/refactor/analyze만 도구가 필요 (기존 파일 읽기/수정)
-        parse_result = state.get("parse_result", {})
-        task_type = parse_result.get("task_type", "generate")
         needs_tools = task_type in ("fix", "refactor", "analyze")
 
         llm_with_tools = self._get_tool_planning_model()
@@ -471,10 +479,8 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         budget_verdict = self._turn_budget.record_llm_call(output_tokens)
 
-        iteration = state.get("iteration", 0)
-        log = state.get("execution_log", [])
         log.append(
-            f"[execute] iteration={iteration}, tools_bound={len(self._tools)}, model=FAST"
+            f"[execute] iteration={iteration}, tools_bound={needs_tools}, model=FAST"
         )
 
         result: dict[str, Any] = {
