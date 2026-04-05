@@ -473,8 +473,21 @@ async def _run_agent_turn(
     if not token_streamed:
         renderer.agent_message(response)
 
-    # 소요시간 표시
+    # 소요시간 + 컨텍스트 상태 표시
     renderer.end_turn()
+    if metrics.total_prompt_tokens > 0:
+        # 에이전트의 context_manager에서 max_tokens 가져오기
+        max_ctx = 128_000
+        compact_thresh = 0.8
+        if agent and agent.context_manager:
+            max_ctx = agent.context_manager.max_tokens
+            compact_thresh = agent.context_manager.compact_threshold
+        renderer.context_status(
+            input_tokens=metrics.total_prompt_tokens,
+            output_tokens=metrics.total_completion_tokens,
+            max_tokens=max_ctx,
+            compact_threshold=compact_thresh,
+        )
 
     session.add_message("assistant", response)
 

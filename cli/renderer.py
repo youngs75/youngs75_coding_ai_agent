@@ -247,6 +247,38 @@ class CLIRenderer:
             self.console.print(f"  [{_CLR_MUTED}]⏱ {elapsed:.1f}s[/]")
             self._turn_start = 0.0
 
+    def context_status(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        max_tokens: int,
+        compact_threshold: float = 0.8,
+    ) -> None:
+        """컨텍스트 사용량 상태를 표시한다."""
+        pct = (input_tokens / max_tokens * 100) if max_tokens > 0 else 0
+        threshold_pct = compact_threshold * 100
+
+        # 프로그레스 바 (20칸)
+        filled = int(pct / 5)
+        bar = "█" * filled + "░" * (20 - filled)
+
+        # 색상: 정상(dim) / 주의(yellow, 60%+) / 위험(red, 80%+)
+        if pct >= threshold_pct:
+            color = _CLR_ERROR
+            label = "compaction 필요"
+        elif pct >= threshold_pct * 0.75:
+            color = _CLR_WARN
+            label = ""
+        else:
+            color = _CLR_MUTED
+            label = ""
+
+        suffix = f" [{_CLR_WARN}]{label}[/]" if label else ""
+        self.console.print(
+            f"  [{color}]📊 {bar} {input_tokens:,}+{output_tokens:,} tok"
+            f" ({pct:.1f}% of {max_tokens:,}){suffix}[/]"
+        )
+
     # ── 레거시 호환 ──
 
     def stream_token(self, token: str) -> None:
