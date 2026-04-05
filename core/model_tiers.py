@@ -104,6 +104,35 @@ _MODEL_COST_DB: dict[str, ModelCostInfo] = {
         latency_category="medium",
         capability_scores={"code": 0.94, "reasoning": 0.96, "speed": 0.60},
     ),
+    # ── DashScope (Qwen 공식 API) ──
+    "qwen-plus": ModelCostInfo(
+        model="qwen-plus",
+        input_cost_per_1m=0.11,
+        output_cost_per_1m=0.28,
+        latency_category="low",
+        capability_scores={"code": 0.95, "reasoning": 0.93, "speed": 0.85},
+    ),
+    "qwen-max": ModelCostInfo(
+        model="qwen-max",
+        input_cost_per_1m=0.28,
+        output_cost_per_1m=0.83,
+        latency_category="medium",
+        capability_scores={"code": 0.98, "reasoning": 0.96, "speed": 0.70},
+    ),
+    "qwen-turbo": ModelCostInfo(
+        model="qwen-turbo",
+        input_cost_per_1m=0.04,
+        output_cost_per_1m=0.08,
+        latency_category="low",
+        capability_scores={"code": 0.82, "reasoning": 0.80, "speed": 0.95},
+    ),
+    "qwen-coder-plus": ModelCostInfo(
+        model="qwen-coder-plus",
+        input_cost_per_1m=0.46,
+        output_cost_per_1m=1.38,
+        latency_category="low",
+        capability_scores={"code": 0.98, "reasoning": 0.94, "speed": 0.80},
+    ),
     # ── 기타 참조 모델 ──
     "deepseek/deepseek-v3.2": ModelCostInfo(
         model="deepseek/deepseek-v3.2",
@@ -153,26 +182,46 @@ class TierConfig(BaseModel):
 
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
 def build_default_tiers() -> dict[str, TierConfig]:
-    """환경변수에서 티어별 설정을 로드하여 기본 티어 구성을 반환한다."""
+    """환경변수에서 티어별 설정을 로드하여 기본 티어 구성을 반환한다.
+
+    LLM_PROVIDER 환경변수로 전체 프로바이더를 한 번에 전환 가능:
+        LLM_PROVIDER=dashscope  → 전 티어 DashScope 사용
+        LLM_PROVIDER=openrouter → 전 티어 OpenRouter 사용 (기본값)
+
+    티어별 오버라이드: STRONG_PROVIDER, DEFAULT_PROVIDER, FAST_PROVIDER
+    """
+    global_provider = os.getenv("LLM_PROVIDER", "openrouter")
+
+    # DashScope 기본 모델명 (OpenRouter와 다름)
+    if global_provider == "dashscope":
+        default_strong = "qwen-coder-plus"
+        default_default = "qwen-plus"
+        default_fast = "qwen-turbo"
+    else:
+        default_strong = "qwen/qwen3-coder-plus"
+        default_default = "qwen/qwen3-coder-next"
+        default_fast = "qwen/qwen3.5-flash-02-23"
+
     return {
         ModelTier.STRONG: TierConfig(
-            model=os.getenv("STRONG_MODEL", "qwen/qwen3-coder-plus"),
-            provider=os.getenv("STRONG_PROVIDER", "openrouter"),
+            model=os.getenv("STRONG_MODEL", default_strong),
+            provider=os.getenv("STRONG_PROVIDER", global_provider),
             context_window=int(os.getenv("STRONG_CONTEXT_WINDOW", "1000000")),
             request_timeout=float(os.getenv("STRONG_TIMEOUT", "180")),
         ),
         ModelTier.DEFAULT: TierConfig(
-            model=os.getenv("DEFAULT_MODEL", "qwen/qwen3-coder-next"),
-            provider=os.getenv("DEFAULT_PROVIDER", "openrouter"),
+            model=os.getenv("DEFAULT_MODEL", default_default),
+            provider=os.getenv("DEFAULT_PROVIDER", global_provider),
             context_window=int(os.getenv("DEFAULT_CONTEXT_WINDOW", "262144")),
             request_timeout=float(os.getenv("DEFAULT_TIMEOUT", "120")),
         ),
         ModelTier.FAST: TierConfig(
-            model=os.getenv("FAST_MODEL", "qwen/qwen3.5-flash-02-23"),
-            provider=os.getenv("FAST_PROVIDER", "openrouter"),
+            model=os.getenv("FAST_MODEL", default_fast),
+            provider=os.getenv("FAST_PROVIDER", global_provider),
             context_window=int(os.getenv("FAST_CONTEXT_WINDOW", "1000000")),
             request_timeout=float(os.getenv("FAST_TIMEOUT", "60")),
         ),
@@ -227,14 +276,16 @@ def create_chat_model(
 ) -> BaseChatModel:
     """TierConfig를 기반으로 LangChain ChatModel을 생성한다.
 
-    OpenRouter 프로바이더는 OpenAI 호환 API(openai_api_base)를 사용한다.
+    지원 프로바이더:
+    - openrouter: OpenRouter 경유 (다양한 모델 접근, 큐잉 지연 가능)
+    - dashscope: Qwen 공식 API 직접 호출 (낮은 레이턴시, Qwen 전용)
+    - 기타: LangChain init_chat_model()로 위임
     """
     effective_temp = (
         tier_config.temperature if tier_config.temperature is not None else temperature
     )
     provider = tier_config.provider
     model = tier_config.model
-
     timeout = tier_config.request_timeout
 
     if provider == "openrouter":
@@ -245,6 +296,17 @@ def create_chat_model(
             temperature=effective_temp,
             openai_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
             openai_api_base=OPENROUTER_BASE_URL,
+            request_timeout=timeout,
+            **kwargs,
+        )
+    elif provider == "dashscope":
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=model,
+            temperature=effective_temp,
+            openai_api_key=os.environ.get("DASHSCOPE_API_KEY", ""),
+            openai_api_base=DASHSCOPE_BASE_URL,
             request_timeout=timeout,
             **kwargs,
         )
