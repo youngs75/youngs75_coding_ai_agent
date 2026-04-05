@@ -186,39 +186,23 @@ class CLIRenderer:
             f"  [{_CLR_TOOL}]⇢[/] [{_CLR_DIM}]위임:[/] [{_CLR_AGENT}]{agent_name}[/]"
         )
 
-    # ── 토큰 스트리밍 (Live Markdown 렌더링) ──
+    # ── 토큰 스트리밍 ──
 
     def start_token_stream(self) -> None:
-        """토큰 스트리밍 시작 — 스피너 정지 + Live Markdown 프리뷰."""
+        """토큰 스트리밍 시작 — 스피너 정지 + Agent 헤더."""
         self._stop_progress()
         self._token_buffer = ""
         self.console.print(f"\n[{_CLR_AGENT}]◆ Agent[/]")
-        self._stream_live = Live(
-            Text("▍", style="dim green"),
-            console=self.console,
-            transient=True,  # 프리뷰는 종료 시 제거, 최종 Markdown으로 교체
-            refresh_per_second=8,
-        )
-        self._stream_live.start()
 
     def render_token(self, token: str) -> None:
-        """토큰 단위 Live Markdown 렌더링."""
+        """토큰 단위 실시간 출력 (raw text — 깜박임 없는 부드러운 스트리밍)."""
         self._token_buffer += token
-        if self._stream_live is not None:
-            try:
-                self._stream_live.update(Markdown(self._token_buffer + " ▍"))
-            except Exception:
-                # Markdown 파싱 실패 시 일반 텍스트로 표시
-                self._stream_live.update(Text(self._token_buffer + " ▍"))
+        self.console.print(token, end="", markup=False, highlight=False)
 
     def flush_tokens(self) -> None:
-        """토큰 스트리밍 완료 — Live 프리뷰 제거 후 최종 Markdown 렌더링."""
-        if self._stream_live is not None:
-            self._stream_live.stop()
-            self._stream_live = None
-        if self._token_buffer:
-            self.console.print(Markdown(self._token_buffer))
-            self.console.print()
+        """토큰 스트리밍 완료 — 줄바꿈."""
+        self.console.print()
+        self.console.print()
         self._token_buffer = ""
 
     # ── 파일 저장 결과 ──
