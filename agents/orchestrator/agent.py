@@ -28,6 +28,7 @@ import httpx
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, END, StateGraph
+from langgraph.types import interrupt
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.context_manager import ContextManager
@@ -51,8 +52,10 @@ CLASSIFY_SYSTEM_PROMPT = """\
 1. 사용자의 요청 의도를 파악하고, 위 목록에서 가장 적합한 에이전트 이름을 정확히 하나만 선택하세요.
 2. 에이전트 이름만 출력하세요. 다른 텍스트는 포함하지 마세요.
 3. 어떤 에이전트에도 맞지 않으면 "none"을 출력하세요.
-4. 요청이 여러 에이전트의 협업이 필요한 복합 작업이면 "coordinate"를 출력하세요.
-   복합 작업 예시: "코드를 작성하고 리뷰해줘", "조사해서 보고서를 작성해줘" 등
+4. 코드 생성/개발 요청은 항상 coding_assistant를 선택하세요.
+   프론트엔드+백엔드, 여러 파일, 풀스택 등 하나의 프로젝트를 구현하는 요청은 모두 코딩 작업입니다.
+5. "coordinate"는 서로 다른 종류의 에이전트가 순차적으로 필요한 경우에만 사용하세요.
+   예시: "기술을 조사한 뒤 그 결과로 코드를 작성해줘" (research → coding 순차 협업)
 """
 
 
@@ -317,6 +320,7 @@ async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
     """코딩 태스크에 대해 Planner Agent로 구현 계획을 수립한다.
 
     coding_assistant 위임 전에 실행되어 구조화된 계획을 생성한다.
+    계획 수립 후 interrupt()로 사용자 승인을 대기한다 (Human-in-the-loop).
     비코딩 태스크는 패스스루 (계획 없이 바로 delegate).
     """
     selected = state.get("selected_agent", "none")
@@ -336,10 +340,16 @@ async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     if plan_text:
         logger.info("계획 수립 완료 (%d chars)", len(plan_text))
-    else:
-        logger.info("계획 수립 스킵 (planner 미응답)")
+        # Human-in-the-loop: 계획을 사용자에게 보여주고 승인 대기
+        approved = interrupt(plan_text)
+        if not approved:
+            logger.info("사용자가 계획을 거부함")
+            return {"task_plan": None}
+        logger.info("사용자가 계획을 승인함")
+        return {"task_plan": plan_text}
 
-    return {"task_plan": plan_text}
+    logger.info("계획 수립 스킵 (planner 미응답)")
+    return {"task_plan": None}
 
 
 def _route_after_classify(state: OrchestratorState) -> str:

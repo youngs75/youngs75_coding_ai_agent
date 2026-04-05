@@ -49,13 +49,19 @@ cp .env.example .env
 `.env` 파일을 열고 최소한 다음 항목을 설정한다:
 
 ```env
-# 필수: OpenAI API ��
-OPENAI_API_KEY=sk-proj-...
+# 필수: DashScope (Qwen 공식 API) — 기본 프로바이더
+LLM_PROVIDER=dashscope
+DASHSCOPE_API_KEY=sk-...
+DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 
-# 선택: 멀티티어 모델 설정
-STRONG_MODEL=gpt-5.4
-DEFAULT_MODEL=gpt-5.4
-FAST_MODEL=gpt-4.1-mini
+# 4-Tier 모델 설정 (DashScope 기본값)
+REASONING_MODEL=qwen-max           # 계획/아키텍처 설계
+STRONG_MODEL=qwen-coder-plus       # 코드 생성/도구 호출
+DEFAULT_MODEL=qwen-plus            # 검증/분석
+FAST_MODEL=qwen-turbo              # 파싱/분류
+
+# 대안: OpenRouter 경유 (LLM_PROVIDER=openrouter로 전환)
+OPENROUTER_API_KEY=sk-or-...
 ```
 
 ### 1.4 MCP 서버 실행 (코딩 에이전트용)

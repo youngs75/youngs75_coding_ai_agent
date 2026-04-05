@@ -136,16 +136,32 @@ if [ -f ".env" ]; then
     # .env가 이미 있으면 필수 키만 확인
     ok ".env 파일 존재"
 
-    # OPENROUTER_API_KEY 확인
-    if grep -q '^OPENROUTER_API_KEY=sk-or-' .env 2>/dev/null; then
-        ok "OPENROUTER_API_KEY 설정됨"
-    elif grep -q '^OPENROUTER_API_KEY=$' .env 2>/dev/null || \
-         grep -q '^OPENROUTER_API_KEY=sk-or-\.\.\.' .env 2>/dev/null; then
-        warn "OPENROUTER_API_KEY가 비어있습니다"
-        echo ""
-        echo -e "  ${BOLD}필수:${NC} .env 파일에 OpenRouter API 키를 입력하세요"
-        echo -e "  발급: ${CYAN}https://openrouter.ai/keys${NC}"
-        echo ""
+    # LLM 프로바이더 확인
+    LLM_PROVIDER=$(grep '^LLM_PROVIDER=' .env 2>/dev/null | cut -d= -f2)
+    LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
+
+    if [ "$LLM_PROVIDER" = "dashscope" ]; then
+        # DashScope (기본 프로바이더) API 키 확인
+        if grep -q '^DASHSCOPE_API_KEY=sk-' .env 2>/dev/null; then
+            ok "DashScope API 키 설정됨 (LLM_PROVIDER=dashscope)"
+        else
+            warn "DASHSCOPE_API_KEY가 설정되지 않았습니다"
+            echo ""
+            echo -e "  ${BOLD}필수:${NC} .env 파일에 DashScope API 키를 입력하세요"
+            echo -e "  발급: ${CYAN}https://bailian.console.alibabacloud.com/${NC}"
+            echo ""
+        fi
+    else
+        # OpenRouter API 키 확인
+        if grep -q '^OPENROUTER_API_KEY=sk-or-' .env 2>/dev/null; then
+            ok "OpenRouter API 키 설정됨 (LLM_PROVIDER=openrouter)"
+        else
+            warn "OPENROUTER_API_KEY가 비어있습니다"
+            echo ""
+            echo -e "  ${BOLD}필수:${NC} .env 파일에 OpenRouter API 키를 입력하세요"
+            echo -e "  발급: ${CYAN}https://openrouter.ai/keys${NC}"
+            echo ""
+        fi
     fi
 else
     info ".env.example에서 .env 생성"
@@ -154,10 +170,17 @@ else
     echo ""
     echo -e "  ${BOLD}═══ 필수 설정 ═══${NC}"
     echo ""
-    echo -e "  .env 파일을 열어서 ${BOLD}OPENROUTER_API_KEY${NC}를 입력하세요."
-    echo -e "  발급: ${CYAN}https://openrouter.ai/keys${NC}"
+    echo -e "  .env 파일을 열어서 LLM 프로바이더를 설정하세요:"
     echo ""
-    echo -e "  ${YELLOW}나머지 항목은 모두 선택사항입니다.${NC}"
+    echo -e "  ${BOLD}DashScope (권장):${NC}"
+    echo -e "    LLM_PROVIDER=dashscope"
+    echo -e "    DASHSCOPE_API_KEY=sk-..."
+    echo -e "    발급: ${CYAN}https://bailian.console.alibabacloud.com/${NC}"
+    echo ""
+    echo -e "  ${BOLD}OpenRouter (대안):${NC}"
+    echo -e "    LLM_PROVIDER=openrouter"
+    echo -e "    OPENROUTER_API_KEY=sk-or-..."
+    echo -e "    발급: ${CYAN}https://openrouter.ai/keys${NC}"
     echo ""
 fi
 

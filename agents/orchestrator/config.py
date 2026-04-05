@@ -27,7 +27,7 @@ class OrchestratorConfig(BaseAgentConfig):
             AgentEndpoint(
                 name="coding_assistant",
                 url="",
-                description="코드 생성, 수정, 리팩토링, 버그 수정, 코드 리뷰",
+                description="코드 생성·수정·리팩토링·버그 수정 (풀스택, 프론트엔드+백엔드, 멀티파일 프로젝트 포함)",
             ),
             AgentEndpoint(
                 name="deep_research",

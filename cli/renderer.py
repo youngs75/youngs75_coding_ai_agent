@@ -151,6 +151,12 @@ class CLIRenderer:
         else:
             self.console.print(f"  [{_CLR_ERROR}]✗[/] [{_CLR_DIM}]{label}[/]")
 
+    def complete_node(self, label: str, summary: str = "") -> None:
+        """노드 완료를 영구 표시한다 (transient 스피너 대체)."""
+        self._stop_progress()
+        suffix = f" — {summary}" if summary else ""
+        self.console.print(f"  [{_CLR_SUCCESS}]✓[/] [{_CLR_DIM}]{label}{suffix}[/]")
+
     # ── 도구 호출 표시 ──
 
     def tool_call(self, tool_name: str, args: dict | None = None) -> None:
@@ -204,6 +210,30 @@ class CLIRenderer:
         self.console.print()
         self.console.print()
         self._token_buffer = ""
+
+    # ── 계획 표시 (Human-in-the-loop) ──
+
+    def show_plan(self, plan_text: str) -> None:
+        """Planner Agent가 생성한 계획을 사용자에게 표시한다."""
+        self.console.print()
+        self.console.print(
+            Panel(
+                Markdown(plan_text),
+                title="[bold cyan]📋 구현 계획[/]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
+    def ask_plan_approval(self) -> bool:
+        """계획 승인 여부를 사용자에게 묻는다 (blocking)."""
+        try:
+            response = self.console.input(
+                f"  [{_CLR_BRAND}]?[/] 계획을 승인하시겠습니까? (y/n, Enter=승인): "
+            )
+            return response.strip().lower() in ("y", "yes", "ㅇ", "네", "")
+        except (EOFError, KeyboardInterrupt):
+            return False
 
     # ── 파일 저장 결과 ──
 

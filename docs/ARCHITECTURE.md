@@ -15,7 +15,8 @@ graph TB
     end
 
     subgraph Agents["에이전트 계층"]
-        ORC["Orchestrator<br/>(기본 에이전트)<br/>요청 분류 + 위임"]
+        ORC["Orchestrator<br/>(기본 에이전트)<br/>요청 분류 + HITL 승인 + 위임"]
+        PL["Planner<br/>아키텍처 설계 + 태스크 분해<br/>(REASONING 티어)"]
         CA["CodingAssistant<br/>2단계 파이프라인<br/>(FAST→STRONG)"]
         DR["DeepResearch<br/>심층 연구"]
         SR["SimpleReAct<br/>MCP 도구 기반"]

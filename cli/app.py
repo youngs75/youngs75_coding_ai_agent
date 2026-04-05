@@ -9,9 +9,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.types import Command
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
@@ -72,6 +74,42 @@ _NODE_LABELS: dict[str, str] = {
 # Episodic 메모리 안전장치 상수 (Agent-as-a-Judge)
 _EPISODIC_MAX_ITEMS = 5
 _EPISODIC_MAX_CHARS = 200
+
+
+def _extract_node_summary(node: str, output: dict) -> str:
+    """노드 완료 시 간략 요약을 추출한다."""
+    if not isinstance(output, dict):
+        return ""
+    if node == "classify":
+        selected = output.get("selected_agent", "")
+        return f"→ {selected}" if selected else ""
+    if node == "plan":
+        plan = output.get("task_plan")
+        if plan:
+            return f"계획 수립 완료 ({len(plan)}자)"
+        return "계획 없이 진행"
+    if node == "generate_final":
+        code = output.get("generated_code", "")
+        if code:
+            lines = code.strip().count("\n") + 1
+            return f"{lines} lines 생성"
+        return ""
+    if node == "verify_result":
+        verify = output.get("verify_result", {})
+        if isinstance(verify, dict):
+            return "통과" if verify.get("passed", True) else "이슈 발견"
+        return ""
+    if node == "apply_code":
+        files = output.get("written_files", [])
+        if files:
+            return f"{len(files)}개 파일 저장"
+        return ""
+    if node == "delegate":
+        resp = output.get("agent_response", "")
+        if resp:
+            return f"응답 수신 ({len(resp)}자)"
+        return ""
+    return ""
 
 
 def _truncate(text: str, max_chars: int = _EPISODIC_MAX_CHARS) -> str:
@@ -251,6 +289,22 @@ def _build_input_state(
     return state
 
 
+_CODE_BLOCK_RE = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
+_FILEPATH_LINE_RE = re.compile(
+    r"^\s*(?:#\s*|<!--\s*|\*\*)?filepath:\s*\S+.*$", re.MULTILINE
+)
+_SAVED_FILES_SECTION_RE = re.compile(r"\n*📁 저장된 파일[:\s].*$", re.DOTALL)
+_CONSECUTIVE_NEWLINES_RE = re.compile(r"\n{3,}")
+
+
+def _strip_code_blocks(text: str) -> str:
+    """마크다운 코드 블록, filepath 헤더, 중복 파일 목록을 제거한다."""
+    result = _CODE_BLOCK_RE.sub("", text)
+    result = _FILEPATH_LINE_RE.sub("", result)
+    result = _SAVED_FILES_SECTION_RE.sub("", result)
+    return _CONSECUTIVE_NEWLINES_RE.sub("\n\n", result).strip()
+
+
 def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
     """에이전트별 최종 응답을 추출한다."""
     if agent_name == "coding_assistant":
@@ -278,7 +332,9 @@ def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
         agent_response = data.get("agent_response")
         if agent_response:
             selected = data.get("selected_agent", "unknown")
-            return f"[{selected}] {agent_response}"
+            # 코드 블록 제거 — 파일 저장 목록으로 대체됨
+            cleaned = _strip_code_blocks(agent_response)
+            return f"[{selected}] {cleaned}"
         return data.get("last_ai_message", "응답을 생성하지 못했습니다.")
 
     # simple_react 및 기타
@@ -327,96 +383,148 @@ async def _run_agent_turn(
 
     response_data: dict[str, Any] = {}
     last_node = ""
+    node_summaries: dict[str, str] = {}
     passed = True
     token_streamed = False
+    graph_input: Any = input_state
+    stream_config = {**run_config, "recursion_limit": 50}
     try:
-        async for event in agent.graph.astream_events(
-            input_state,
-            config={**run_config, "recursion_limit": 50},
-            version="v2",
-        ):
-            kind = event["event"]
-            node = event.get("metadata", {}).get("langgraph_node", "")
+        # Human-in-the-loop 루프: interrupt 발생 시 승인 후 resume
+        while True:
+            async for event in agent.graph.astream_events(
+                graph_input,
+                config=stream_config,
+                version="v2",
+            ):
+                kind = event["event"]
+                node = event.get("metadata", {}).get("langgraph_node", "")
 
-            # 노드 시작 시 스피너로 진행 상태 표시
-            if kind == "on_chain_start" and node in _NODE_LABELS and node != last_node:
-                if token_streamed:
-                    renderer.flush_tokens()
-                    token_streamed = False
-                renderer.start_progress(_NODE_LABELS[node])
-                metrics.record_node_start(node)
-                last_node = node
-
-            # LLM 토큰 스트리밍 및 사용량 수집
-            # 사용자에게 보여줄 노드만 허용 (inclusion list)
-            # - react_agent: simple_react 에이전트 응답
-            # - respond: orchestrator 최종 응답
-            # generate_final은 숨김 — 코드 전문 대신 apply_code에서 파일 요약 표시
-            elif kind in ("on_chat_model_stream", "on_llm_stream"):
-                chunk = event["data"].get("chunk")
+                # 노드 시작 시 이전 노드 완료 표시 + 새 스피너
                 if (
-                    chunk
-                    and hasattr(chunk, "content")
-                    and chunk.content
-                    and node in ("react_agent", "respond")
+                    kind == "on_chain_start"
+                    and node in _NODE_LABELS
+                    and node != last_node
                 ):
-                    if not token_streamed:
-                        renderer.start_token_stream()
-                        token_streamed = True
-                    renderer.render_token(chunk.content)
-                # 토큰 사용량 수집 (usage_metadata가 있는 경우)
-                if chunk and hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                    usage = chunk.usage_metadata
-                    metrics.record_llm_tokens(
-                        prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
-                        completion_tokens=getattr(usage, "output_tokens", 0) or 0,
-                    )
+                    if token_streamed:
+                        renderer.flush_tokens()
+                        token_streamed = False
+                    # 이전 노드를 영구 완료 표시
+                    if last_node and last_node in _NODE_LABELS:
+                        summary = node_summaries.get(last_node, "")
+                        renderer.complete_node(_NODE_LABELS[last_node], summary)
+                    renderer.start_progress(_NODE_LABELS[node])
+                    metrics.record_node_start(node)
+                    last_node = node
 
-            # 도구 호출 표시
-            elif kind == "on_tool_start":
-                tool_name = event.get("name", "")
-                tool_input = event.get("data", {}).get("input", {})
-                if tool_name:
-                    renderer.tool_call(
-                        tool_name, tool_input if isinstance(tool_input, dict) else None
-                    )
-
-            # 노드 완료 시 응답 데이터 수집
-            elif kind == "on_chain_end" and node:
-                metrics.record_node_end(node)
-                output = event["data"].get("output")
-                if isinstance(output, dict):
-                    for key in (
-                        "generated_code",
-                        "verify_result",
-                        "final_report",
-                        "selected_agent",
-                        "agent_response",
-                        "exit_reason",
-                        "written_files",
+                # LLM 토큰 스트리밍 및 사용량 수집
+                # 사용자에게 보여줄 노드만 허용 (inclusion list)
+                # - react_agent: simple_react 에이전트 응답
+                # - respond: orchestrator 최종 응답
+                # generate_final은 숨김 — 코드 전문 대신 파일 요약 표시
+                elif kind in ("on_chat_model_stream", "on_llm_stream"):
+                    chunk = event["data"].get("chunk")
+                    if (
+                        chunk
+                        and hasattr(chunk, "content")
+                        and chunk.content
+                        and node in ("react_agent", "respond")
                     ):
-                        if key in output:
-                            response_data[key] = output[key]
-                    if "messages" in output:
-                        for msg in output["messages"]:
-                            if isinstance(msg, AIMessage) and msg.content:
-                                response_data["last_ai_message"] = msg.content
+                        if not token_streamed:
+                            renderer.start_token_stream()
+                            token_streamed = True
+                        renderer.render_token(chunk.content)
+                    # 토큰 사용량 수집 (usage_metadata가 있는 경우)
+                    if (
+                        chunk
+                        and hasattr(chunk, "usage_metadata")
+                        and chunk.usage_metadata
+                    ):
+                        usage = chunk.usage_metadata
+                        metrics.record_llm_tokens(
+                            prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
+                            completion_tokens=getattr(usage, "output_tokens", 0) or 0,
+                        )
 
-                    # 스킬 자동 활성화 표시 (parse 노드 완료 시만)
-                    if node == "parse_request":
-                        exec_log = output.get("execution_log", [])
-                        for entry in exec_log:
-                            if "[skills] 자동 활성화:" in entry:
-                                names = entry.split("자동 활성화: ", 1)[-1]
-                                renderer.skill_activated(names.split(", "))
+                # 도구 호출 표시
+                elif kind == "on_tool_start":
+                    tool_name = event.get("name", "")
+                    tool_input = event.get("data", {}).get("input", {})
+                    if tool_name:
+                        renderer.tool_call(
+                            tool_name,
+                            tool_input if isinstance(tool_input, dict) else None,
+                        )
 
-                    # 서브에이전트 위임 표시 (orchestrator)
-                    selected = output.get("selected_agent")
-                    if selected and node in ("classify", "delegate"):
-                        renderer.subagent_delegate(selected)
+                # 노드 완료 시 응답 데이터 수집 + 요약 추출
+                elif kind == "on_chain_end" and node:
+                    metrics.record_node_end(node)
+                    output = event["data"].get("output")
+                    # 노드 요약 추출
+                    if isinstance(output, dict) and node in _NODE_LABELS:
+                        summary = _extract_node_summary(node, output)
+                        if summary:
+                            node_summaries[node] = summary
+                    if isinstance(output, dict):
+                        for key in (
+                            "generated_code",
+                            "verify_result",
+                            "final_report",
+                            "selected_agent",
+                            "agent_response",
+                            "exit_reason",
+                            "written_files",
+                        ):
+                            if key in output:
+                                response_data[key] = output[key]
+                        if "messages" in output:
+                            for msg in output["messages"]:
+                                if isinstance(msg, AIMessage) and msg.content:
+                                    response_data["last_ai_message"] = msg.content
 
-        if token_streamed:
-            renderer.flush_tokens()
+                        # 스킬 자동 활성화 표시 (parse 노드 완료 시만)
+                        if node == "parse_request":
+                            exec_log = output.get("execution_log", [])
+                            for entry in exec_log:
+                                if "[skills] 자동 활성화:" in entry:
+                                    names = entry.split("자동 활성화: ", 1)[-1]
+                                    renderer.skill_activated(names.split(", "))
+
+                        # 서브에이전트 위임 표시 (orchestrator)
+                        selected = output.get("selected_agent")
+                        if selected and node in ("classify", "delegate"):
+                            renderer.subagent_delegate(selected)
+
+            # 이벤트 스트림 종료 — 마지막 노드 완료 표시
+            if token_streamed:
+                renderer.flush_tokens()
+                token_streamed = False
+            if last_node and last_node in _NODE_LABELS:
+                summary = node_summaries.get(last_node, "")
+                renderer.complete_node(_NODE_LABELS[last_node], summary)
+                last_node = ""
+
+            # Human-in-the-loop: interrupt 감지 (aget_state 기반)
+            try:
+                graph_state = await agent.graph.aget_state(stream_config)
+                if graph_state.next and graph_state.tasks:
+                    interrupt_value = None
+                    for task in graph_state.tasks:
+                        if task.interrupts:
+                            interrupt_value = task.interrupts[0].value
+                            break
+                    if interrupt_value:
+                        renderer.show_plan(str(interrupt_value))
+                        approved = await asyncio.to_thread(renderer.ask_plan_approval)
+                        if approved:
+                            renderer.success("계획 승인 — 실행을 시작합니다")
+                            graph_input = Command(resume=True)
+                            continue
+                        else:
+                            renderer.warning("계획 거부 — 작업을 취소합니다")
+                            return
+            except Exception:
+                logger.debug("그래프 상태 확인 스킵 (checkpointer 미지원)")
+            break  # 정상 완료 (interrupt 없음)
 
     except (asyncio.CancelledError, KeyboardInterrupt):
         abort_controller.abort(AbortReason.USER_INTERRUPT)

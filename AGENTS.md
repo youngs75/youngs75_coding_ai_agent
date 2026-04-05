@@ -120,11 +120,33 @@ Conventional Commits 형식을 권장합니다. 예시: `feat: add coding agent 
 - `.env` 파일, `.db` 파일, `.claude/` 디렉토리, `.deepeval/` 디렉토리는 커밋하지 않습니다.
 - PR에는 변경 목적, 검증 방법, 보류 이슈를 포함합니다.
 
+## Human-in-the-loop (HITL) 패턴
+Planner Agent가 코딩 태스크에 대한 구현 계획을 수립하면, 사용자 승인을 받은 후 실행합니다.
+
+- **구현**: LangGraph `interrupt()` + `aget_state()` 기반
+- **흐름**: `classify → plan → [interrupt: 계획 표시 + 승인 대기] → delegate → respond`
+- `astream_events`는 `GraphInterrupt`를 exception으로 전파하지 않으므로, 이벤트 스트림 종료 후 `aget_state()`로 pending interrupt를 감지합니다.
+- 승인 시 `Command(resume=True)`로 그래프를 재개하고, 거부 시 실행을 중단합니다.
+- checkpointer(MemorySaver/SqliteSaver)가 필수입니다.
+
+## 4-Tier 모델 체계
+| 티어 | 모델 (DashScope) | 용도 | 환경변수 |
+|------|-----------------|------|----------|
+| **REASONING** | qwen-max | 계획/아키텍처 설계 | `REASONING_MODEL` |
+| **STRONG** | qwen-coder-plus | 코드 생성/도구 호출 | `STRONG_MODEL` |
+| **DEFAULT** | qwen-plus | 검증/분석 | `DEFAULT_MODEL` |
+| **FAST** | qwen-turbo | 파싱/분류 | `FAST_MODEL` |
+
+- `LLM_PROVIDER=dashscope` — DashScope(Qwen 공식 API) 사용 (기본)
+- `LLM_PROVIDER=openrouter` — OpenRouter 경유 사용
+- DashScope 설정: `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL`
+
 ## 주요 기술 스택
 - **A2A SDK** 0.3.25 — Agent-to-Agent 프로토콜
-- **LangGraph** — 상태 그래프 기반 에이전트 오케스트레이션
+- **LangGraph** — 상태 그래프 기반 에이전트 오케스트레이션 (interrupt/Command HITL 포함)
 - **LangChain** 1.2.13+ — LLM 추상화
 - **MCP** (langchain-mcp-adapters 0.2.2) — Model Context Protocol 도구 연동
+- **DashScope** — Qwen 공식 API (OpenAI 호환 모드)
 - **Pydantic Settings** 2.2+ — 설정/스키마 검증
 - **Langfuse** v4 — 관측성 + 실험 파이프라인
 - **DeepEval** — LLM 평가 메트릭

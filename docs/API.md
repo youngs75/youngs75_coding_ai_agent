@@ -95,13 +95,14 @@ class BaseAgentConfig(BaseModel):
 
 ```python
 class ModelTier(str, Enum):
-    STRONG = "strong"
-    DEFAULT = "default"
-    FAST = "fast"
+    REASONING = "reasoning"  # 계획/아키텍처 설계 (Planner Agent)
+    STRONG = "strong"        # 코드 생성/도구 호출
+    DEFAULT = "default"      # 검증/분석
+    FAST = "fast"            # 파싱/분류
 
 class TierConfig(BaseModel):
     model: str                     # 모델명
-    provider: str = "openai"       # 프로바이더
+    provider: str = "dashscope"    # 프로바이더 (dashscope | openrouter)
     context_window: int = 128_000  # 컨텍스트 윈도우 크기
     temperature: float | None = None
 
