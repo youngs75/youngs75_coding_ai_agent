@@ -13,9 +13,10 @@ youngs75_coding_ai_agent/
 │   ├── skills/                # 3-Level 스킬 시스템 (자동 활성화)
 │   └── subagents/             # SubAgent 동적 선택 레지스트리
 ├── agents/                    # 에이전트 구현체
-│   ├── coding_assistant/      # CodingAssistant (2단계 파이프라인: FAST→STRONG)
+│   ├── planner/               # Planner (아키텍처 설계 + 태스크 분해, REASONING 티어)
+│   ├── coding_assistant/      # CodingAssistant (코드 생성 + 자동 파일 저장)
 │   ├── deep_research/         # DeepResearch (심층 연구 워크플로우)
-│   ├── orchestrator/          # Orchestrator (기본 에이전트, 자동 라우팅)
+│   ├── orchestrator/          # Orchestrator (기본 에이전트, Planner 경유 라우팅)
 │   └── simple_react/          # SimpleReAct (MCP 도구 루프)
 ├── a2a_local/                 # A2A 프로토콜 통합 (a2a-sdk 네이밍 충돌 방지)
 ├── mcp_servers/               # MCP 서버
