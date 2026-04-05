@@ -66,20 +66,20 @@ _FENCE_RE = re.compile(r"```(\w+)?\s*\n(.*?)```", re.DOTALL)
 
 _FILEPATH_COMMENT_PATTERNS = [
     # # filepath: path/to/file.py  또는  // filepath: path/to/file.py
-    re.compile(r"^(?:#|//)\s*(?:filepath:\s*)(\S+\.\S+)\s*$"),
+    re.compile(r"^(?:#|//)\s*(?:filepath:\s*)(\S*\.\S+)\s*$"),
     # <!-- filepath: path/to/file.html -->
-    re.compile(r"^<!--\s*(?:filepath:\s*)(\S+\.\S+)\s*-->$"),
+    re.compile(r"^<!--\s*(?:filepath:\s*)(\S*\.\S+)\s*-->$"),
     # /* filepath: path/to/file.css */
-    re.compile(r"^/\*\s*(?:filepath:\s*)(\S+\.\S+)\s*\*/$"),
+    re.compile(r"^/\*\s*(?:filepath:\s*)(\S*\.\S+)\s*\*/$"),
     # 경로만 있는 주석: // app.py  또는  # app.py
-    re.compile(r"^(?:#|//)\s*(\S+\.\S+)\s*$"),
+    re.compile(r"^(?:#|//)\s*(\S*\.\S+)\s*$"),
     # <!-- templates/index.html -->
-    re.compile(r"^<!--\s*(\S+\.\S+)\s*-->$"),
+    re.compile(r"^<!--\s*(\S*\.\S+)\s*-->$"),
 ]
 
 # 코드 블록 바로 위에 있는 filepath 마크다운 헤딩 패턴
 # LLM이 `# filepath: app.py` 를 코드 블록 밖에 제목으로 생성하는 경우 대응
-_HEADING_FILEPATH_RE = re.compile(r"#+\s*(?:filepath:\s*)?(\S+\.\S+)\s*$", re.MULTILINE)
+_HEADING_FILEPATH_RE = re.compile(r"#+\s*(?:filepath:\s*)?(\S*\.\S+)\s*$", re.MULTILINE)
 # 굵은 텍스트 형태: **filepath: app.py**
 _BOLD_FILEPATH_RE = re.compile(
     r"\*{1,2}(?:filepath:\s*)?([^\s*]+\.[^\s*]+)\*{1,2}\s*$", re.MULTILINE
