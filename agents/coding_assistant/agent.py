@@ -904,8 +904,9 @@ class CodingAssistantAgent(BaseGraphAgent):
                     f.write(code)
                     if not code.endswith("\n"):
                         f.write("\n")
-                written.append(filepath)
-                log.append(f"[apply] ✓ {filepath}")
+                line_count = code.count("\n") + 1
+                written.append(f"{filepath} (+{line_count} lines)")
+                log.append(f"[apply] ✓ {filepath} (+{line_count} lines)")
             except OSError as e:
                 log.append(f"[apply] ✗ {filepath}: {e}")
 

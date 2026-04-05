@@ -512,27 +512,21 @@ class TestBuildInputState:
 
 
 class TestExtractResponse:
-    def test_coding_with_code_and_pass(self):
+    def test_coding_with_files_written(self):
         data = {
             "generated_code": "def fib(n): ...",
-            "verify_result": {"passed": True, "issues": [], "suggestions": []},
+            "written_files": ["app.py (+10 lines)", "test.py (+5 lines)"],
         }
         resp = _extract_response("coding_assistant", data)
-        assert "def fib(n)" in resp
-        assert "검증 통과" in resp
+        assert "2개 파일" in resp
 
-    def test_coding_with_code_and_fail(self):
+    def test_coding_with_code_no_files(self):
         data = {
-            "generated_code": "def fib(n): ...",
-            "verify_result": {
-                "passed": False,
-                "issues": ["타입 힌트 누락"],
-                "suggestions": [],
-            },
+            "generated_code": "line1\nline2\nline3\nline4\nline5\nline6\nline7",
         }
         resp = _extract_response("coding_assistant", data)
-        assert "검증 이슈" in resp
-        assert "타입 힌트 누락" in resp
+        assert "line1" in resp
+        assert "+2 lines" in resp  # 5줄 프리뷰 + 나머지 2줄
 
     def test_coding_fallback_to_ai_message(self):
         data = {"last_ai_message": "코드 생성 결과입니다."}
@@ -1209,19 +1203,20 @@ class TestTokenStreamingIntegration:
         fake_graph = MagicMock()
 
         async def failing_midstream(input_state, config=None, version="v2"):
-            # generate_final 노드는 스트리밍 대상 (execute_code는 제외 대상)
-            yield _make_event("on_chain_start", "generate_final", node="generate_final")
+            # react_agent 노드는 스트리밍 대상
+            yield _make_event("on_chain_start", "react_agent", node="react_agent")
             yield _make_event(
                 "on_chat_model_stream",
                 "ChatOpenAI",
                 data={"chunk": AIMessageChunk(content="partial ")},
-                node="generate_final",
+                node="react_agent",
             )
             raise RuntimeError("연결 끊김")
 
         fake_graph.astream_events = failing_midstream
+        session.switch_agent("simple_react")
         fake_agent = MagicMock(graph=fake_graph)
-        session.cache_agent("coding_assistant", fake_agent)
+        session.cache_agent("simple_react", fake_agent)
 
         await _run_agent_turn("테스트", session, renderer)
 

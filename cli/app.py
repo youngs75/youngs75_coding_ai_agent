@@ -254,29 +254,19 @@ def _build_input_state(
 def _extract_response(agent_name: str, data: dict[str, Any]) -> str:
     """에이전트별 최종 응답을 추출한다."""
     if agent_name == "coding_assistant":
-        parts: list[str] = []
+        # 코드 전문 대신 간략 요약만 반환 (파일 목록은 files_written으로 별도 표시)
+        written = data.get("written_files", [])
+        if written:
+            return f"{len(written)}개 파일이 생성되었습니다."
+        # 파일 저장 안 된 경우 generated_code의 첫 부분만 표시
         code = data.get("generated_code", "")
         if code:
-            parts.append(code)
-        verify = data.get("verify_result")
-        if isinstance(verify, dict):
-            if verify.get("passed"):
-                parts.append("\n검증 통과")
-            else:
-                issues = verify.get("issues", [])
-                parts.append(
-                    "\n검증 이슈:\n- " + "\n- ".join(issues)
-                    if issues
-                    else "\n검증 실패"
-                )
-                suggestions = verify.get("suggestions", [])
-                if suggestions:
-                    parts.append("제안:\n- " + "\n- ".join(suggestions))
-        return (
-            "\n".join(parts)
-            if parts
-            else data.get("last_ai_message", "응답을 생성하지 못했습니다.")
-        )
+            lines = code.strip().split("\n")
+            preview = "\n".join(lines[:5])
+            if len(lines) > 5:
+                preview += f"\n... (+{len(lines) - 5} lines)"
+            return preview
+        return data.get("last_ai_message", "응답을 생성하지 못했습니다.")
 
     if agent_name == "deep_research":
         return data.get("final_report") or data.get(
@@ -359,17 +349,16 @@ async def _run_agent_turn(
 
             # LLM 토큰 스트리밍 및 사용량 수집
             # 사용자에게 보여줄 노드만 허용 (inclusion list)
-            # - generate_final: STRONG 모델 최종 코드 생성
             # - react_agent: simple_react 에이전트 응답
             # - respond: orchestrator 최종 응답
-            # 나머지(parse, verify, execute, planner 내부 등)는 숨김
+            # generate_final은 숨김 — 코드 전문 대신 apply_code에서 파일 요약 표시
             elif kind in ("on_chat_model_stream", "on_llm_stream"):
                 chunk = event["data"].get("chunk")
                 if (
                     chunk
                     and hasattr(chunk, "content")
                     and chunk.content
-                    and node in ("generate_final", "react_agent", "respond")
+                    and node in ("react_agent", "respond")
                 ):
                     if not token_streamed:
                         renderer.start_token_stream()
