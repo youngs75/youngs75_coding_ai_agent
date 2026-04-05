@@ -1,0 +1,317 @@
+<svg viewBox="0 0 1200 920" xmlns="http://www.w3.org/2000/svg" style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="cliGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8f5e9"/>
+      <stop offset="100%" stop-color="#c8e6c9"/>
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e3f2fd"/>
+      <stop offset="100%" stop-color="#bbdefb"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff3e0"/>
+      <stop offset="100%" stop-color="#ffe0b2"/>
+    </linearGradient>
+    <linearGradient id="a2aGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3e5f5"/>
+      <stop offset="100%" stop-color="#e1bee7"/>
+    </linearGradient>
+    <linearGradient id="mcpGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e0f7fa"/>
+      <stop offset="100%" stop-color="#b2ebf2"/>
+    </linearGradient>
+    <linearGradient id="evalGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fce4ec"/>
+      <stop offset="100%" stop-color="#f8bbd0"/>
+    </linearGradient>
+    <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#1565c0"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#e65100"/>
+    </marker>
+    <marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#546e7a"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6a1b9a"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#00695c"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#c62828"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="920" fill="#fafafa" rx="8"/>
+
+  <!-- Title Bar -->
+  <rect x="0" y="0" width="1200" height="56" fill="url(#headerGrad)" rx="8"/>
+  <rect x="0" y="44" width="1200" height="12" fill="url(#headerGrad)"/>
+  <text x="600" y="30" text-anchor="middle" fill="#e0e0e0" font-size="12" font-weight="400" letter-spacing="2">AX ADVANCED · FINAL PROJECT</text>
+  <text x="600" y="48" text-anchor="middle" fill="white" font-size="17" font-weight="700" letter-spacing="1">youngs75-coding-ai-agent  ─  System Architecture</text>
+
+  <!-- ========== CLI Layer ========== -->
+  <rect x="420" y="72" width="360" height="54" rx="10" fill="url(#cliGrad)" stroke="#43a047" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="440" y="88" font-size="9" fill="#2e7d32" font-weight="700" letter-spacing="0.5">USER INTERFACE</text>
+  <text x="600" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#1b5e20">CLI</text>
+  <text x="600" y="118" text-anchor="middle" font-size="9" fill="#388e3c">prompt-toolkit + rich  ·  Real-time Streaming  ·  HITL Interrupt</text>
+
+  <!-- Arrow CLI → ORC -->
+  <line x1="600" y1="126" x2="600" y2="148" stroke="#1565c0" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- ========== Agent Layer ========== -->
+  <rect x="30" y="148" width="1140" height="172" rx="12" fill="url(#agentGrad)" stroke="#1565c0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="50" y="168" font-size="10" fill="#0d47a1" font-weight="700" letter-spacing="0.5">AGENT LAYER</text>
+
+  <!-- Orchestrator -->
+  <rect x="380" y="176" width="440" height="46" rx="8" fill="white" stroke="#1565c0" stroke-width="1.5"/>
+  <circle cx="400" cy="199" r="10" fill="#1565c0"/>
+  <text x="400" y="203" text-anchor="middle" font-size="9" fill="white" font-weight="700">O</text>
+  <text x="600" y="193" text-anchor="middle" font-size="13" font-weight="700" fill="#0d47a1">Orchestrator</text>
+  <text x="600" y="208" text-anchor="middle" font-size="8.5" fill="#1565c0">요청 분류 (FAST LLM) → Subagent 위임  ·  복합 작업 병렬 오케스트레이션</text>
+
+  <!-- Planner -->
+  <rect x="48" y="176" width="170" height="46" rx="8" fill="white" stroke="#42a5f5" stroke-width="1.2"/>
+  <text x="133" y="194" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1565c0">Planner</text>
+  <text x="133" y="207" text-anchor="middle" font-size="8" fill="#42a5f5">아키텍처 설계 · 태스크 분해</text>
+  <text x="133" y="218" text-anchor="middle" font-size="7" fill="#90a4ae">REASONING 티어</text>
+  <line x1="380" y1="196" x2="222" y2="196" stroke="#1565c0" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#arrowBlue)"/>
+  <text x="308" y="189" text-anchor="middle" font-size="7.5" fill="#1565c0" font-weight="600">계획 수립</text>
+
+  <!-- CodingAssistant -->
+  <rect x="48" y="245" width="300" height="62" rx="8" fill="white" stroke="#42a5f5" stroke-width="1.2"/>
+  <text x="198" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#1565c0">CodingAssistant</text>
+  <text x="198" y="276" text-anchor="middle" font-size="8" fill="#42a5f5">2-Stage Pipeline: FAST (도구호출 ReAct) → STRONG (코드생성)</text>
+  <text x="198" y="288" text-anchor="middle" font-size="7.5" fill="#7986cb">parse → execute → generate → verify  ·  Max Iteration Loop</text>
+  <text x="198" y="299" text-anchor="middle" font-size="7" fill="#9e9e9e">Skills 자동활성화 · CoALA 메모리 · ActionValidator · 비용 90% 절감</text>
+
+  <!-- DeepResearch -->
+  <rect x="370" y="245" width="250" height="62" rx="8" fill="white" stroke="#42a5f5" stroke-width="1.2"/>
+  <text x="495" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#1565c0">DeepResearch</text>
+  <text x="495" y="276" text-anchor="middle" font-size="8" fill="#42a5f5">다단계 심층 연구 워크플로우</text>
+  <text x="495" y="288" text-anchor="middle" font-size="7.5" fill="#7986cb">clarify → brief → supervisor(loop) → report</text>
+  <text x="495" y="299" text-anchor="middle" font-size="7" fill="#9e9e9e">Supervisor 서브그래프 · 병렬 연구 · Episodic 기록</text>
+
+  <!-- SimpleReAct -->
+  <rect x="642" y="245" width="220" height="62" rx="8" fill="white" stroke="#42a5f5" stroke-width="1.2"/>
+  <text x="752" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#1565c0">SimpleReAct</text>
+  <text x="752" y="276" text-anchor="middle" font-size="8" fill="#42a5f5">MCP 도구 기반 단일 에이전트</text>
+  <text x="752" y="288" text-anchor="middle" font-size="7.5" fill="#7986cb">create_react_agent · 간단한 질의 / 파일 조회</text>
+
+  <!-- Delegation arrows -->
+  <path d="M480,222 L250,243" stroke="#1565c0" stroke-width="1.5" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M580,222 L500,243" stroke="#1565c0" stroke-width="1.5" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M680,222 L740,243" stroke="#1565c0" stroke-width="1.5" fill="none" marker-end="url(#arrowBlue)"/>
+  <text x="600" y="237" text-anchor="middle" font-size="7.5" fill="#1565c0" font-weight="600">⇢ 위임</text>
+
+  <!-- ========== Core Framework ========== -->
+  <rect x="30" y="334" width="600" height="215" rx="12" fill="url(#coreGrad)" stroke="#e65100" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="50" y="354" font-size="10" fill="#bf360c" font-weight="700" letter-spacing="0.5">CORE FRAMEWORK</text>
+  <text x="220" y="354" font-size="8" fill="#e65100">core/  ─  도메인 무관 인프라</text>
+
+  <!-- Row 1 -->
+  <rect x="48" y="365" width="175" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="135" y="383" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">BaseGraphAgent</text>
+  <text x="135" y="398" text-anchor="middle" font-size="7.5" fill="#ef6c00">Template Method 패턴 · 그래프 빌더</text>
+
+  <rect x="238" y="365" width="175" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="325" y="383" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">ModelTiers</text>
+  <text x="325" y="398" text-anchor="middle" font-size="7.5" fill="#ef6c00">REASONING · STRONG · DEFAULT · FAST</text>
+
+  <rect x="428" y="365" width="188" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="522" y="383" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">BaseAgentConfig</text>
+  <text x="522" y="398" text-anchor="middle" font-size="7.5" fill="#ef6c00">모델 팩토리 · DashScope / OpenRouter</text>
+
+  <!-- Row 2 -->
+  <rect x="48" y="420" width="175" height="52" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="135" y="438" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">Memory (CoALA)</text>
+  <text x="135" y="452" text-anchor="middle" font-size="7.5" fill="#ef6c00">Working · Semantic · Episodic · Procedural</text>
+  <text x="135" y="464" text-anchor="middle" font-size="7" fill="#9e9e9e">GAM 2단계 검색 · Jaccard 중복방지</text>
+
+  <rect x="238" y="420" width="175" height="52" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="325" y="438" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">Skills</text>
+  <text x="325" y="452" text-anchor="middle" font-size="7.5" fill="#ef6c00">3-Level Progressive Loading</text>
+  <text x="325" y="464" text-anchor="middle" font-size="7" fill="#9e9e9e">L1 메타 → L2 본문 → L3 참조 · 자동활성화</text>
+
+  <rect x="428" y="420" width="188" height="52" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="522" y="438" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">ActionValidator</text>
+  <text x="522" y="452" text-anchor="middle" font-size="7.5" fill="#ef6c00">Safety Envelope</text>
+  <text x="522" y="464" text-anchor="middle" font-size="7" fill="#9e9e9e">시크릿노출 · 위험명령 · 금지경로 차단</text>
+
+  <!-- Row 3 -->
+  <rect x="48" y="484" width="175" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="135" y="502" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">MCPToolLoader</text>
+  <text x="135" y="517" text-anchor="middle" font-size="7.5" fill="#ef6c00">MCP 도구 로딩 · 캐싱</text>
+
+  <rect x="238" y="484" width="175" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="325" y="502" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">SubAgentRegistry</text>
+  <text x="325" y="517" text-anchor="middle" font-size="7.5" fill="#ef6c00">동적 선택 · Puppeteer 기반 R = r(q) − λ·C</text>
+
+  <rect x="428" y="484" width="188" height="44" rx="6" fill="white" stroke="#ef6c00" stroke-width="1"/>
+  <text x="522" y="502" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e65100">ContextManager</text>
+  <text x="522" y="517" text-anchor="middle" font-size="7.5" fill="#ef6c00">프로젝트 컨텍스트 · AGENTS.md 로딩</text>
+
+  <!-- ========== A2A Protocol ========== -->
+  <rect x="650" y="334" width="280" height="215" rx="12" fill="url(#a2aGrad)" stroke="#6a1b9a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="670" y="354" font-size="10" fill="#4a148c" font-weight="700" letter-spacing="0.5">A2A PROTOCOL</text>
+  <text x="820" y="354" font-size="8" fill="#6a1b9a">a2a_local/</text>
+
+  <rect x="665" y="368" width="250" height="38" rx="6" fill="white" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="790" y="385" text-anchor="middle" font-size="10.5" font-weight="700" fill="#6a1b9a">Executor + Server</text>
+  <text x="790" y="398" text-anchor="middle" font-size="7.5" fill="#7b1fa2">LGAgentExecutor · run_server() 1줄 조립 · Uvicorn</text>
+
+  <rect x="665" y="416" width="120" height="38" rx="6" fill="white" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="725" y="433" text-anchor="middle" font-size="10" font-weight="700" fill="#6a1b9a">Discovery</text>
+  <text x="725" y="446" text-anchor="middle" font-size="7.5" fill="#7b1fa2">AgentCard 레지스트리</text>
+
+  <rect x="795" y="416" width="120" height="38" rx="6" fill="white" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="855" y="433" text-anchor="middle" font-size="10" font-weight="700" fill="#6a1b9a">Router</text>
+  <text x="855" y="446" text-anchor="middle" font-size="7.5" fill="#7b1fa2">4-mode 라우팅</text>
+
+  <rect x="665" y="464" width="120" height="38" rx="6" fill="white" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="725" y="481" text-anchor="middle" font-size="10" font-weight="700" fill="#6a1b9a">Resilience</text>
+  <text x="725" y="494" text-anchor="middle" font-size="7.5" fill="#7b1fa2">Retry · CircuitBreaker</text>
+
+  <rect x="795" y="464" width="120" height="38" rx="6" fill="white" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="855" y="481" text-anchor="middle" font-size="10" font-weight="700" fill="#6a1b9a">Streaming</text>
+  <text x="855" y="494" text-anchor="middle" font-size="7.5" fill="#7b1fa2">청크 단위 스트리밍</text>
+
+  <text x="790" y="530" text-anchor="middle" font-size="7" fill="#9e9e9e">SKILL_BASED · ROUND_ROBIN · LEAST_LOADED · WEIGHTED</text>
+
+  <!-- ========== Docker/Infra ========== -->
+  <rect x="950" y="334" width="220" height="215" rx="12" fill="#eceff1" stroke="#546e7a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="970" y="354" font-size="10" fill="#37474f" font-weight="700" letter-spacing="0.5">INFRA</text>
+
+  <rect x="962" y="368" width="196" height="30" rx="6" fill="white" stroke="#78909c" stroke-width="1"/>
+  <text x="1060" y="388" text-anchor="middle" font-size="9.5" font-weight="700" fill="#37474f">Docker Compose (7 services)</text>
+
+  <rect x="962" y="408" width="94" height="58" rx="5" fill="#e8eaf6" stroke="#5c6bc0" stroke-width="0.8"/>
+  <text x="1009" y="424" text-anchor="middle" font-size="8" font-weight="600" fill="#283593">Agent 서버</text>
+  <text x="1009" y="436" text-anchor="middle" font-size="6.5" fill="#3949ab">simple-react :18081</text>
+  <text x="1009" y="447" text-anchor="middle" font-size="6.5" fill="#3949ab">deep-research :18082</text>
+  <text x="1009" y="458" text-anchor="middle" font-size="6.5" fill="#3949ab">deep-research-a2a :18083</text>
+
+  <rect x="1064" y="408" width="94" height="58" rx="5" fill="#e0f2f1" stroke="#009688" stroke-width="0.8"/>
+  <text x="1111" y="424" text-anchor="middle" font-size="8" font-weight="600" fill="#004d40">MCP 서버</text>
+  <text x="1111" y="436" text-anchor="middle" font-size="6.5" fill="#00695c">tavily :3001</text>
+  <text x="1111" y="447" text-anchor="middle" font-size="6.5" fill="#00695c">arxiv :3000</text>
+  <text x="1111" y="458" text-anchor="middle" font-size="6.5" fill="#00695c">serper :3002</text>
+
+  <rect x="962" y="476" width="196" height="28" rx="5" fill="#e8f5e9" stroke="#66bb6a" stroke-width="0.8"/>
+  <text x="1060" y="495" text-anchor="middle" font-size="9" font-weight="600" fill="#2e7d32">Langfuse 관측성 플랫폼</text>
+
+  <text x="1060" y="530" text-anchor="middle" font-size="7" fill="#78909c">CLI 컨테이너 (대화형 터미널)</text>
+
+  <!-- ========== MCP Servers ========== -->
+  <rect x="30" y="565" width="420" height="100" rx="12" fill="url(#mcpGrad)" stroke="#00695c" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="50" y="584" font-size="10" fill="#004d40" font-weight="700" letter-spacing="0.5">MCP SERVERS</text>
+
+  <rect x="50" y="594" width="135" height="36" rx="6" fill="white" stroke="#00897b" stroke-width="1"/>
+  <text x="117" y="611" text-anchor="middle" font-size="10" font-weight="700" fill="#00695c">code_tools</text>
+  <text x="117" y="624" text-anchor="middle" font-size="7" fill="#00897b">파일 I/O · 검색 · 실행</text>
+
+  <rect x="198" y="594" width="78" height="36" rx="6" fill="white" stroke="#00897b" stroke-width="1"/>
+  <text x="237" y="611" text-anchor="middle" font-size="10" font-weight="700" fill="#00695c">tavily</text>
+  <text x="237" y="624" text-anchor="middle" font-size="7" fill="#00897b">웹 검색</text>
+
+  <rect x="289" y="594" width="72" height="36" rx="6" fill="white" stroke="#00897b" stroke-width="1"/>
+  <text x="325" y="611" text-anchor="middle" font-size="10" font-weight="700" fill="#00695c">arxiv</text>
+  <text x="325" y="624" text-anchor="middle" font-size="7" fill="#00897b">논문 검색</text>
+
+  <rect x="374" y="594" width="66" height="36" rx="6" fill="white" stroke="#00897b" stroke-width="1"/>
+  <text x="407" y="611" text-anchor="middle" font-size="10" font-weight="700" fill="#00695c">serper</text>
+  <text x="407" y="624" text-anchor="middle" font-size="7" fill="#00897b">구글</text>
+
+  <text x="240" y="656" text-anchor="middle" font-size="7.5" fill="#546e7a">MCPToolLoader를 통한 도구 로딩 / 캐싱</text>
+
+  <!-- Arrow Core → MCP -->
+  <path d="M135,528 L135,563" stroke="#00695c" stroke-width="1.5" fill="none" marker-end="url(#arrowTeal)"/>
+
+  <!-- ========== Eval Pipeline ========== -->
+  <rect x="470" y="565" width="470" height="100" rx="12" fill="url(#evalGrad)" stroke="#c62828" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="490" y="584" font-size="10" fill="#b71c1c" font-weight="700" letter-spacing="0.5">EVALUATION PIPELINE (Closed-Loop)</text>
+
+  <rect x="488" y="596" width="120" height="40" rx="6" fill="white" stroke="#e53935" stroke-width="1"/>
+  <text x="548" y="613" text-anchor="middle" font-size="10" font-weight="700" fill="#c62828">Loop 1</text>
+  <text x="548" y="627" text-anchor="middle" font-size="7" fill="#e53935">Dataset 생성 · 합성데이터</text>
+
+  <rect x="620" y="596" width="120" height="40" rx="6" fill="white" stroke="#e53935" stroke-width="1"/>
+  <text x="680" y="613" text-anchor="middle" font-size="10" font-weight="700" fill="#c62828">Loop 2</text>
+  <text x="680" y="627" text-anchor="middle" font-size="7" fill="#e53935">메트릭 평가 · Langfuse</text>
+
+  <rect x="752" y="596" width="120" height="40" rx="6" fill="white" stroke="#e53935" stroke-width="1"/>
+  <text x="812" y="613" text-anchor="middle" font-size="10" font-weight="700" fill="#c62828">Loop 3</text>
+  <text x="812" y="627" text-anchor="middle" font-size="7" fill="#e53935">Remediation · 프롬프트 개선</text>
+
+  <!-- Loop flow arrows -->
+  <path d="M608,616 L618,616" stroke="#c62828" stroke-width="1.3" fill="none" marker-end="url(#arrowRed)"/>
+  <path d="M740,616 L750,616" stroke="#c62828" stroke-width="1.3" fill="none" marker-end="url(#arrowRed)"/>
+  <!-- Feedback loop arc -->
+  <path d="M812,636 Q812,655 680,655 Q548,655 548,636" stroke="#c62828" stroke-width="1" stroke-dasharray="4,3" fill="none" marker-end="url(#arrowRed)"/>
+  <text x="680" y="662" text-anchor="middle" font-size="7.5" fill="#c62828">Closed-Loop Feedback</text>
+
+  <!-- Langfuse connection -->
+  <path d="M870,616 Q910,600 962,495" stroke="#546e7a" stroke-width="1" stroke-dasharray="4,3" fill="none" marker-end="url(#arrowGray)"/>
+
+  <!-- ========== Dependency Arrows (Agent → Core, Agent → A2A) ========== -->
+  <path d="M250,307 Q280,322 290,334" stroke="#e65100" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M500,307 Q490,322 480,334" stroke="#e65100" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M752,307 Q770,322 780,334" stroke="#6a1b9a" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#arrowPurple)"/>
+
+  <!-- ========== Design Principles Footer ========== -->
+  <rect x="30" y="682" width="1140" height="75" rx="10" fill="#263238" filter="url(#shadow)"/>
+  <text x="600" y="702" text-anchor="middle" font-size="10" font-weight="700" fill="#b0bec5" letter-spacing="2">DESIGN PRINCIPLES  ·  7 Papers</text>
+
+  <text x="105" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">Agent-as-a-Judge</text>
+  <text x="105" y="737" text-anchor="middle" font-size="7" fill="#607d8b">parse → exec → verify 3단계</text>
+
+  <text x="265" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">RubricRewards</text>
+  <text x="265" y="737" text-anchor="middle" font-size="7" fill="#607d8b">Generator / Verifier 모델 분리</text>
+
+  <text x="410" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">CoALA + Voyager</text>
+  <text x="410" y="737" text-anchor="middle" font-size="7" fill="#607d8b">4종 메모리 시스템</text>
+
+  <text x="540" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">GAM</text>
+  <text x="540" y="737" text-anchor="middle" font-size="7" fill="#607d8b">JIT 원본 참조 (MCP)</text>
+
+  <text x="660" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">Puppeteer</text>
+  <text x="660" y="737" text-anchor="middle" font-size="7" fill="#607d8b">동적 오케스트레이션 · R=r−λC</text>
+
+  <text x="810" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">AutoHarness</text>
+  <text x="810" y="737" text-anchor="middle" font-size="7" fill="#607d8b">Safety Envelope</text>
+
+  <text x="970" y="724" text-anchor="middle" font-size="8.5" fill="#80cbc4" font-weight="600">Claude Code 패턴</text>
+  <text x="970" y="737" text-anchor="middle" font-size="7" fill="#607d8b">스킬 자동활성화</text>
+
+  <!-- ========== 3-Tier Separation ========== -->
+  <rect x="30" y="772" width="1140" height="58" rx="10" fill="white" stroke="#bdbdbd" stroke-width="1" filter="url(#shadow)"/>
+  <text x="600" y="792" text-anchor="middle" font-size="10" font-weight="700" fill="#37474f" letter-spacing="1">3-TIER SEPARATION OF CONCERNS</text>
+
+  <rect x="70" y="800" width="300" height="22" rx="5" fill="#fff3e0" stroke="#e65100" stroke-width="1"/>
+  <text x="220" y="815" text-anchor="middle" font-size="9" font-weight="600" fill="#e65100">Core (core/)  ─  도메인 무관 프레임워크  ·  의존 없음</text>
+
+  <rect x="400" y="800" width="250" height="22" rx="5" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="1"/>
+  <text x="525" y="815" text-anchor="middle" font-size="9" font-weight="600" fill="#6a1b9a">A2A (a2a_local/)  ─  프로토콜 통합  →  Core</text>
+
+  <rect x="680" y="800" width="260" height="22" rx="5" fill="#e3f2fd" stroke="#1565c0" stroke-width="1"/>
+  <text x="810" y="815" text-anchor="middle" font-size="9" font-weight="600" fill="#1565c0">Agents (agents/)  ─  도메인 구현  →  Core, A2A</text>
+
+  <!-- Dependency flow -->
+  <path d="M680,811 L655,811" stroke="#546e7a" stroke-width="1.3" fill="none" marker-end="url(#arrowGray)"/>
+  <path d="M400,811 L375,811" stroke="#546e7a" stroke-width="1.3" fill="none" marker-end="url(#arrowGray)"/>
+  <path d="M750,798 Q580,786 370,811" stroke="#546e7a" stroke-width="0.8" stroke-dasharray="3,3" fill="none" marker-end="url(#arrowGray)"/>
+
+  <!-- Bottom credits -->
+  <text x="1140" y="860" text-anchor="end" font-size="7.5" fill="#9e9e9e">v0.1.0  ·  youngs75_a2a  ·  LangGraph + A2A + MCP</text>
+  <text x="60" y="860" font-size="7.5" fill="#9e9e9e">Orchestrator-First Architecture  ·  AX Advanced 최종 산출물</text>
+</svg>
