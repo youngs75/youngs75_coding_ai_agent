@@ -62,6 +62,7 @@ _NODE_LABELS: dict[str, str] = {
     "apply_code": "파일 저장",
     # planner
     "analyze_task": "태스크 분석",
+    "research_external": "외부 API 조사",
     "explore_context": "프로젝트 탐색",
     "create_plan": "구현 계획 수립",
     # orchestrator
@@ -104,7 +105,27 @@ def _extract_node_summary(node: str, output: dict) -> str:
         if files:
             return f"{len(files)}개 파일 저장"
         return ""
+    if node == "research_external":
+        research = output.get("research_context", [])
+        if research:
+            # 검색 쿼리 키워드만 추출하여 간략 요약 ([조사 요약] 제외)
+            queries = []
+            for entry in research:
+                if entry.startswith("[웹 검색: "):
+                    q = entry.split("]")[0].replace("[웹 검색: ", "")
+                    queries.append(q[:30])
+            search_count = len(queries)
+            return f"{search_count}건 조사 ({', '.join(queries[:3])})" if queries else "조사 완료"
+        return "조사 결과 없음"
     if node == "delegate":
+        phase_results = output.get("phase_results")
+        if phase_results:
+            parts = []
+            for pr in phase_results:
+                icon = {"success": "OK", "failed": "FAIL", "skipped": "SKIP"}.get(pr.get("status", ""), "?")
+                n_files = len(pr.get("written_files", []))
+                parts.append(f"{pr.get('phase_id', '?')}: {pr.get('title', '')} [{icon}] {n_files}파일")
+            return " | ".join(parts)
         resp = output.get("agent_response", "")
         if resp:
             return f"응답 수신 ({len(resp)}자)"
@@ -473,6 +494,7 @@ async def _run_agent_turn(
                             "agent_response",
                             "exit_reason",
                             "written_files",
+                            "phase_results",
                         ):
                             if key in output:
                                 response_data[key] = output[key]

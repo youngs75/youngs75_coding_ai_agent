@@ -84,13 +84,15 @@ EXECUTE_SYSTEM_PROMPT = """\
 - 코드는 즉시 실행 가능한 상태여야 합니다
 - {language}으로 작성하세요
 
-## 파일 저장 형식
-각 코드 블록의 **첫 줄**에 파일 경로를 주석으로 반드시 명시하세요:
+## 파일 저장 형식 (필수)
+**각 파일은 반드시 별도의 코드 블록으로 분리**하고, 첫 줄에 파일 경로를 주석으로 명시하세요:
 - Python/JS/기타: `# filepath: path/to/file.py`
 - HTML/XML: `<!-- filepath: path/to/file.html -->`
 - CSS: `/* filepath: path/to/style.css */`
+- Vue: `<!-- filepath: src/App.vue -->`
 이 형식을 따르면 코드가 자동으로 파일에 저장됩니다.
 디렉토리 구조가 필요하면 경로에 포함하세요 (예: `templates/index.html`).
+**하나의 코드 블록에 여러 파일을 합치지 마세요. 파일당 1개의 코드 블록을 사용하세요.**
 
 ## 응답 형식
 - 먼저 변경 계획을 간단히 설명

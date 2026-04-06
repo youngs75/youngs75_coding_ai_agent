@@ -38,7 +38,12 @@ from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.skills.registry import SkillRegistry
 from youngs75_a2a.core.stall_detector import StallAction, StallDetector
 from youngs75_a2a.core.turn_budget import BudgetVerdict, TurnBudgetTracker
-from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
+from youngs75_a2a.core.tool_call_utils import (
+    sanitize_messages_for_llm,
+    tc_args,
+    tc_id,
+    tc_name,
+)
 from youngs75_a2a.core.tool_permissions import PermissionDecision
 
 from .config import CodingConfig
@@ -452,7 +457,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         messages = [
             SystemMessage(content=system_prompt),
-            *state["messages"],
+            *sanitize_messages_for_llm(state["messages"]),
             context_msg,
         ]
 
@@ -516,7 +521,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         messages = [
             SystemMessage(content=system_prompt),
-            *state["messages"],
+            *sanitize_messages_for_llm(state["messages"]),
             context_msg,
         ]
 

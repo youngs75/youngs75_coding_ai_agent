@@ -46,6 +46,9 @@ class PlannerState(TypedDict, total=False):
     # 탐색 컨텍스트 (기존 파일 내용 등)
     explored_context: list[str]
 
+    # 외부 API/서비스 조사 결과 (웹 검색)
+    research_context: list[str]
+
     # 최종 계획 출력
     task_plan: TaskPlan
 

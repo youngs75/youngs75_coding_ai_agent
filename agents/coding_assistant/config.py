@@ -41,7 +41,12 @@ class CodingConfig(BaseAgentConfig):
 
     # 허용 파일 확장자
     allowed_extensions: list[str] = Field(
-        default=[".py", ".js", ".ts", ".json", ".yaml", ".yml", ".md", ".toml"],
+        default=[
+            ".py", ".js", ".ts", ".jsx", ".tsx", ".vue",
+            ".html", ".css", ".scss",
+            ".json", ".yaml", ".yml", ".md", ".toml",
+            ".txt", ".cfg", ".ini", ".env",
+        ],
     )
     # 최대 삭제 허용 줄 수
     max_delete_lines: int = Field(default=100)

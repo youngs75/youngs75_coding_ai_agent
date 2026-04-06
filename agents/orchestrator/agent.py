@@ -103,8 +103,12 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {"selected_agent": selected}
 
 
-async def _invoke_planner(user_message: str) -> str | None:
-    """Planner Agent를 호출하여 구현 계획을 생성한다."""
+async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
+    """Planner Agent를 호출하여 구현 계획을 생성한다.
+
+    Returns:
+        (task_plan_structured, plan_text): 구조화된 TaskPlan dict와 마크다운 텍스트
+    """
     try:
         from youngs75_a2a.agents.planner.agent import PlannerAgent
         from youngs75_a2a.agents.planner.config import PlannerConfig
@@ -116,10 +120,10 @@ async def _invoke_planner(user_message: str) -> str | None:
                 "user_request": user_message,
             }
         )
-        return result.get("plan_text", "")
+        return result.get("task_plan"), result.get("plan_text", "")
     except Exception as e:
         logger.warning(f"Planner 호출 실패, 계획 없이 진행: {e}")
-        return None
+        return None, None
 
 
 async def _invoke_local_agent(
@@ -249,6 +253,20 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     # 로컬 에이전트 폴백 — 계획이 있으면 함께 전달
     task_plan = state.get("task_plan")
+    task_plan_structured = state.get("task_plan_structured")
+
+    # 멀티phase 순차 실행: 코딩 에이전트 + 구조화된 계획 + phase 2개 이상
+    if selected in ("coding_assistant", "coder") and task_plan_structured:
+        phases = task_plan_structured.get("phases", [])
+        if len(phases) > 1:
+            result = await _execute_phases_sequentially(
+                user_message=user_message,
+                task_plan=task_plan_structured,
+                phases=phases,
+            )
+            return result
+
+    # 단일 phase 또는 비코딩 에이전트: 기존 동작
     local_result = await _invoke_local_agent(
         selected, user_message, task_plan=task_plan
     )
@@ -258,6 +276,181 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
     return {
         "agent_response": f"에이전트 '{selected}'를 호출할 수 없습니다 (A2A 엔드포인트 미설정, 로컬 에이전트 미지원)."
     }
+
+
+async def _execute_phases_sequentially(
+    user_message: str,
+    task_plan: dict,
+    phases: list[dict],
+) -> dict:
+    """계획의 phase를 순차 실행한다. 각 phase마다 CodingAssistant를 독립 호출한다.
+
+    이전 phase 결과물은 파일 시스템에 저장되어 있고,
+    다음 phase에는 파일 경로 목록만 전달하여 필요 시 MCP로 읽도록 안내한다.
+    """
+    from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+    plan_summary = task_plan.get("summary", "")
+    architecture = task_plan.get("architecture", "")
+    all_written_files: list[str] = []
+    phase_results: list[dict] = []
+    failed_ids: set[str] = set()
+
+    for i, phase in enumerate(phases):
+        phase_id = phase.get("id", f"phase_{i + 1}")
+        title = phase.get("title", "")
+
+        # depends_on 체크: 선행 phase가 실패했으면 skip
+        deps = set(phase.get("depends_on", []))
+        if deps & failed_ids:
+            logger.warning("Phase %s 건너뜀: 선행 phase 실패 (%s)", phase_id, deps & failed_ids)
+            phase_results.append({
+                "phase_id": phase_id,
+                "title": title,
+                "status": "skipped",
+                "written_files": [],
+                "error": f"선행 phase 실패: {deps & failed_ids}",
+            })
+            continue
+
+        logger.info("Phase %d/%d 시작: %s — %s", i + 1, len(phases), phase_id, title)
+
+        phase_message = _build_phase_message(
+            user_message=user_message,
+            plan_summary=plan_summary,
+            architecture=architecture,
+            phase=phase,
+            phase_index=i,
+            total_phases=len(phases),
+            completed_phases=phase_results,
+            all_written_files=all_written_files,
+        )
+
+        try:
+            agent = await CodingAssistantAgent.create(config=CodingConfig())
+            result = await agent.graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content=phase_message)],
+                    "iteration": 0,
+                    "max_iterations": 2,
+                }
+            )
+
+            written = result.get("written_files", [])
+            all_written_files.extend(written)
+
+            phase_results.append({
+                "phase_id": phase_id,
+                "title": title,
+                "status": "success",
+                "written_files": written,
+            })
+            logger.info("Phase %s 완료: %d개 파일 생성", phase_id, len(written))
+
+        except Exception as e:
+            logger.error("Phase %s 실패: %s", phase_id, e)
+            failed_ids.add(phase_id)
+            phase_results.append({
+                "phase_id": phase_id,
+                "title": title,
+                "status": "failed",
+                "written_files": [],
+                "error": str(e),
+            })
+
+    # 집계 응답 생성
+    response = _build_phase_summary_response(phase_results, all_written_files)
+    return {
+        "agent_response": response,
+        "phase_results": phase_results,
+    }
+
+
+def _build_phase_message(
+    user_message: str,
+    plan_summary: str,
+    architecture: str,
+    phase: dict,
+    phase_index: int,
+    total_phases: int,
+    completed_phases: list[dict],
+    all_written_files: list[str],
+) -> str:
+    """phase별 CodingAssistant 프롬프트를 구성한다.
+
+    이전 phase 파일 내용은 포함하지 않고 경로만 안내하여 컨텍스트를 경량으로 유지한다.
+    CodingAssistant는 필요 시 code_tools MCP의 read_file로 이전 파일을 참조한다.
+    """
+    parts = []
+
+    # 1. 전체 프로젝트 맥락 (compact)
+    parts.append(f"## 프로젝트 개요\n{user_message}\n")
+    if plan_summary:
+        parts.append(f"**계획 요약**: {plan_summary}\n")
+    if architecture:
+        parts.append(f"**아키텍처**: {architecture}\n")
+
+    # 2. 이전 phase 결과 (파일 경로만 — 내용은 read_file로)
+    if completed_phases:
+        parts.append("## 이전 완료 Phase\n")
+        for prev in completed_phases:
+            status_icon = "✓" if prev["status"] == "success" else "✗"
+            parts.append(f"- {status_icon} {prev['phase_id']}: {prev['title']}")
+            for f in prev.get("written_files", []):
+                parts.append(f"  - {f}")
+        parts.append(
+            "\n위 파일들은 이미 디스크에 저장되어 있습니다. "
+            "이전 phase 코드를 참조해야 하면 `read_file` 도구를 사용하세요.\n"
+        )
+
+    # 3. 현재 phase 지시사항
+    parts.append(f"## 현재 작업: Phase {phase_index + 1}/{total_phases}")
+    parts.append(f"### {phase.get('title', '')}\n")
+    parts.append(phase.get("instructions", ""))
+
+    if phase.get("files"):
+        parts.append(f"\n**대상 파일**: {', '.join(phase['files'])}")
+
+    # 4. 마지막 phase일 때 통합 리마인더
+    if phase_index == total_phases - 1 and completed_phases:
+        parts.append(
+            "\n\n## 통합 체크리스트 (마지막 Phase)\n"
+            "이전 phase에서 생성된 모듈이 진입점(app.py, main.js 등)에 올바르게 등록/import되었는지 확인하세요.\n"
+            "- Blueprint, 라우터, 미들웨어가 앱에 등록되어 있는지\n"
+            "- CORS 설정이 필요한지 (프론트엔드/백엔드 분리 시)\n"
+            "- 이전 phase 파일의 import 경로가 정확한지 (read_file로 확인 가능)\n"
+            "- requirements.txt / package.json에 모든 의존성이 포함되었는지"
+        )
+
+    return "\n".join(parts)
+
+
+def _build_phase_summary_response(
+    phase_results: list[dict],
+    all_written_files: list[str],
+) -> str:
+    """phase별 실행 결과를 집계하여 응답 텍스트를 생성한다."""
+    parts = ["## Phase별 실행 결과\n"]
+    for pr in phase_results:
+        icon = {"success": "✓", "failed": "✗", "skipped": "⊘"}.get(pr["status"], "?")
+        file_count = len(pr.get("written_files", []))
+        line = f"- {icon} **{pr['phase_id']}**: {pr['title']}"
+        if file_count:
+            line += f" — {file_count}개 파일"
+        if pr.get("error"):
+            line += f" (오류: {pr['error'][:50]})"
+        parts.append(line)
+
+    success_count = sum(1 for pr in phase_results if pr["status"] == "success")
+    parts.append(f"\n**총 {success_count}/{len(phase_results)} phase 완료**, {len(all_written_files)}개 파일 생성")
+
+    if all_written_files:
+        parts.append("\n**생성된 파일:**")
+        for f in all_written_files:
+            parts.append(f"  - {f}")
+
+    return "\n".join(parts)
 
 
 async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:
@@ -336,7 +529,7 @@ async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
             break
 
     logger.info("Planner Agent 호출: '%s...'", user_message[:50])
-    plan_text = await _invoke_planner(user_message)
+    task_plan_structured, plan_text = await _invoke_planner(user_message)
 
     if plan_text:
         logger.info("계획 수립 완료 (%d chars)", len(plan_text))
@@ -344,12 +537,12 @@ async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
         approved = interrupt(plan_text)
         if not approved:
             logger.info("사용자가 계획을 거부함")
-            return {"task_plan": None}
+            return {"task_plan": None, "task_plan_structured": None}
         logger.info("사용자가 계획을 승인함")
-        return {"task_plan": plan_text}
+        return {"task_plan": plan_text, "task_plan_structured": task_plan_structured}
 
     logger.info("계획 수립 스킵 (planner 미응답)")
-    return {"task_plan": None}
+    return {"task_plan": None, "task_plan_structured": None}
 
 
 def _route_after_classify(state: OrchestratorState) -> str:

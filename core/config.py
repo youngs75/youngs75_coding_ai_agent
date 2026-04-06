@@ -34,10 +34,15 @@ class BaseAgentConfig(BaseModel):
 
     # 레거시 필드 (하위 호환 — ResearchConfig 등에서 사용)
     model_provider: str = Field(
-        default_factory=lambda: os.getenv("MODEL_PROVIDER", "openrouter"),
+        default_factory=lambda: os.getenv(
+            "MODEL_PROVIDER", os.getenv("LLM_PROVIDER", "openrouter")
+        ),
     )
     default_model: str = Field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2"),
+        default_factory=lambda: os.getenv(
+            "MODEL_NAME",
+            "qwen-plus" if os.getenv("LLM_PROVIDER") == "dashscope" else "deepseek/deepseek-v3.2",
+        ),
     )
     temperature: float = Field(
         default_factory=lambda: float(os.getenv("TEMPERATURE", "0.1")),
