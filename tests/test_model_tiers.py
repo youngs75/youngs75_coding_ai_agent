@@ -213,6 +213,26 @@ class TestCodingConfigTiers:
         assert config._get_explicit_override("generation") is None
         assert config._get_explicit_override("verification") is None
 
+    def test_budget_config_defaults(self):
+        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+        config = CodingConfig()
+        assert config.diminishing_streak_limit == 3
+        assert config.min_delta_tokens == 500
+        assert config.max_llm_calls_per_turn == 15
+
+    def test_budget_config_lenient_override(self):
+        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+        config = CodingConfig(
+            max_llm_calls_per_turn=20,
+            diminishing_streak_limit=5,
+            min_delta_tokens=300,
+        )
+        assert config.max_llm_calls_per_turn == 20
+        assert config.diminishing_streak_limit == 5
+        assert config.min_delta_tokens == 300
+
 
 # ── ResearchConfig 하위 호환 ──
 

@@ -12,8 +12,8 @@ ANALYZE_SYSTEM_PROMPT = """\
 
 복잡도 기준:
 - **simple**: 단일 파일, 단순 함수/스크립트, 설명 요청
-- **moderate**: 2-5개 파일, 단일 기능 모듈, 간단한 웹 앱
-- **complex**: 5개 이상 파일, 다중 계층 아키텍처, DB + API + 프론트엔드 등
+- **moderate**: 2-5개 파일, 단일 기능 모듈 (CLI 도구, 간단한 서버, 라이브러리 등)
+- **complex**: 5개 이상 파일, 다중 계층 아키텍처 (웹앱, 마이크로서비스, 데이터 파이프라인 등)
 
 ## 외부 API/서비스 감지
 요청이 다음을 포함하면 `needs_research: true`로 설정하세요:
@@ -107,6 +107,7 @@ PLAN_SYSTEM_PROMPT = """\
 - 코드를 직접 작성하지 마세요. 계획만 세우세요.
 - 구현을 담당할 코딩 전문 에이전트가 이 계획을 따라 코드를 작성합니다.
 - 각 페이즈는 독립적으로 실행 가능해야 합니다.
+- **요청된 프로젝트 유형에 맞게** 계획하세요. 모든 프로젝트가 웹 앱은 아닙니다.
 
 ## 탐색된 프로젝트 컨텍스트
 {explored_context}
@@ -118,15 +119,11 @@ PLAN_SYSTEM_PROMPT = """\
 반드시 JSON으로 반환하세요:
 {{
     "complexity": "simple | moderate | complex",
+    "project_type": "webapp | cli | library | data_pipeline | api_server | desktop | game | script | other",
     "summary": "전체 계획 요약 (1-2문장)",
     "architecture": "아키텍처 설명 (계층, 패턴, 데이터 흐름)",
-    "tech_stack": ["Flask", "SQLAlchemy", ...],
-    "file_structure": [
-        "app.py",
-        "templates/index.html",
-        "static/style.css",
-        "requirements.txt"
-    ],
+    "tech_stack": ["사용자가 요청한 기술 스택"],
+    "file_structure": ["프로젝트에 맞는 파일 구조 — 테스트 파일(tests/)도 반드시 포함"],
     "phases": [
         {{
             "id": "phase_1",
@@ -140,24 +137,52 @@ PLAN_SYSTEM_PROMPT = """\
     "constraints": ["보안 고려사항", "성능 요구사항", ...]
 }}
 
+### project_type별 file_structure 예시 (참고용)
+- **webapp**: app.py(또는 server.js), templates/, static/, requirements.txt(또는 package.json)
+- **cli**: main.py(또는 main.go), commands/, setup.py(또는 go.mod)
+- **library**: src/lib.rs(또는 src/__init__.py), tests/, Cargo.toml(또는 pyproject.toml)
+- **data_pipeline**: pipeline.py, transformers/, config.yaml, requirements.txt
+- **api_server**: main.py(또는 main.go), routes/, models/, Dockerfile
+- 실제 file_structure는 **사용자가 요청한 기술 스택에 맞게** 결정하세요.
+
 ## 핵심 원칙
-1. **페이즈 분리**: 각 페이즈는 의존성이 명확하고 독립 실행 가능해야 합니다
+1. **페이즈 분리 + 파일 분배**: 각 페이즈는 의존성이 명확하고 독립 실행 가능해야 합니다.
+   - **각 phase의 `files`에는 해당 phase에서 새로 생성할 파일만 포함**하세요. file_structure의 전체 파일을 첫 phase에 넣지 마세요.
+   - 코딩 에이전트는 `files`에 나열된 파일을 모두 완성합니다. Phase 1에 16개 파일을 넣으면 16개를 전부 만들고, Phase 2에서 할 일이 없어집니다.
+   - 예: 백엔드+프론트엔드 프로젝트라면 → Phase 1: files=[백엔드 4개], Phase 2: files=[프론트엔드 5개]
 2. **구체적 지시**: instructions에는 코딩 에이전트가 바로 구현할 수 있을 정도로 구체적인 사양을 명시
 3. **파일 구조 선행**: file_structure를 먼저 정의하고 각 페이즈에서 참조
-4. **의존성 순서**: depends_on으로 실행 순서를 명시 (DAG 구성)
-5. **정확한 외부 API 정보**: 외부 API 조사 결과가 있으면, 각 페이즈의 instructions에 조사된 **정확한 API URL, 모델명, 인증 헤더 형식, 패키지명**을 그대로 복사하여 명시하세요. 추측하거나 임의로 만든 URL/모델명을 절대 사용하지 마세요.
-6. **실행 가능한 프로젝트**: 의존성 파일(requirements.txt, package.json)에는 코드에서 사용하는 **모든 패키지**를 빠짐없이 포함하세요. 예: Pydantic을 사용하면 requirements.txt에 pydantic 추가, CORS가 필요하면 flask-cors 추가.
-7. **페이즈 수 최소화**: 페이즈를 나누는 것은 비용(LLM 호출 횟수)이 있으므로, **꼭 필요할 때만** 나누세요.
+4. **테스트 파일 필수**: 각 phase의 `files`에 해당 phase에서 생성하는 코드의 **테스트 파일도 포함**하세요. 예: Phase 1이 `backend/models.py`를 만들면 `tests/test_models.py`도 files에 포함. 테스트는 생성 후 자동 실행되므로, 실행 가능한 상태여야 합니다.
+5. **의존성 순서**: depends_on으로 실행 순서를 명시 (DAG 구성)
+6. **정확한 외부 API 정보**: 외부 API 조사 결과가 있으면, 각 페이즈의 instructions에 조사된 **정확한 API URL, 모델명, 인증 헤더 형식, 패키지명**을 그대로 복사하여 명시하세요. 추측하거나 임의로 만든 URL/모델명을 절대 사용하지 마세요.
+7. **실행 가능한 프로젝트**: 의존성 파일은 사용 언어에 맞게 포함하세요.
+   - Python: requirements.txt 또는 pyproject.toml
+   - JavaScript/TypeScript: package.json
+   - Go: go.mod
+   - Rust: Cargo.toml
+   - Java: pom.xml 또는 build.gradle
+   코드에서 사용하는 **모든 외부 패키지**를 빠짐없이 포함하세요.
+   - **클라이언트-서버 분리(프론트엔드+백엔드) 프로젝트에서는 CORS가 필수**입니다. Python 백엔드면 `flask-cors`(Flask) 또는 `fastapi`의 CORSMiddleware를 의존성에 포함하고, 백엔드 초기화 코드에 CORS 설정을 instructions에 명시하세요.
+8. **페이즈 수 최소화 (중요)**: 페이즈를 나누는 것은 비용(LLM 호출 횟수)이 있으므로, **꼭 필요할 때만** 나누세요.
    - **전체 예상 코드량 500줄 이하**: 1개 페이즈로 충분합니다. 굳이 나누지 마세요.
-   - **500~1500줄**: 백엔드/프론트엔드 등 계층별로 2-3개 페이즈가 적절합니다.
+   - **500~1500줄**: 2-3개 페이즈가 적절합니다.
    - **1500줄 이상**: 기능 단위로 4개 이상 페이즈를 나누되, 페이즈당 최대 5개 파일을 권장합니다.
+   - **1~2개 파일만 생성하는 페이즈는 인접 페이즈에 병합**하세요. 예: API 서비스 파일 1개를 위한 별도 페이즈는 불필요합니다.
    - 20줄짜리 config 파일을 위해 별도 페이즈를 만들지 마세요. 관련 파일과 함께 묶으세요.
-   - **마지막 페이즈가 빈 페이즈가 되지 않도록** 주의하세요. "테스트", "통합"만 있는 빈 페이즈를 만들지 말고, 실제 코드 생성이 있는 페이즈에 통합 작업을 포함하세요.
-8. **페이즈 독립성과 통합**: 각 페이즈는 이전 페이즈의 파일이 디스크에 저장된 상태에서 순차 실행됩니다.
-   - **import 경로**: 같은 디렉토리 내 파일은 상대 import를 사용하세요 (`from models import db`, NOT `from backend.models import db`). 패키지 구조가 아니면 디렉토리 접두사를 붙이지 마세요.
+   - **"통합", "테스트", "검증"만 있는 페이즈를 절대 만들지 마세요.** 이런 작업은 마지막 실질 페이즈의 instructions 끝에 포함하세요. 코딩 에이전트는 이전 phase 파일을 read_file로 읽고 수정할 수 있으므로, 별도 통합 페이즈가 필요 없습니다.
+   - 통합이 필요한 경우(진입점에 라우터 등록, 설정 파일에 빌드 옵션 추가 등), **마지막 실질 페이즈의 instructions 끝에 "통합 작업" 섹션**으로 추가하세요.
+9. **페이즈 독립성과 통합**: 각 페이즈는 이전 페이즈의 파일이 디스크에 저장된 상태에서 순차 실행됩니다.
+   - **import/모듈 경로 — 반드시 명시하세요**:
+     - Python 절대 import(`from backend.models import X`) 사용 시 → **file_structure에 해당 디렉토리의 `__init__.py`를 반드시 포함**하세요. `__init__.py`가 없으면 Python은 디렉토리를 패키지로 인식하지 못합니다. 예: `backend/` 디렉토리에서 절대 import를 쓰려면 `backend/__init__.py`와 `backend/api/__init__.py`가 file_structure에 있어야 합니다.
+     - Python 상대 import(`from models import X`) 사용 시 → `__init__.py` 불필요.
+     - JavaScript/TypeScript: `import {{ X }} from './module'` 형식으로 상대 경로 사용.
+     - Go: `import "project/pkg/module"` 형식.
+     - **각 페이즈의 instructions에 사용할 import 스타일을 예시와 함께 명시하세요.**
+     - 프로젝트 전체에서 **동일한 import 스타일**을 유지하세요.
    - 공유 인터페이스(타입, API 스키마 등)는 첫 페이즈에서 정의하세요.
-   - **앱 진입점 통합**: 앱의 진입점(app.py, main.js 등)이 이전 페이즈에서 생성된 경우, 마지막 페이즈의 instructions에 "app.py를 수정하여 새로 생성된 Blueprint/라우터를 등록하세요"처럼 **구체적인 통합 지시**를 반드시 포함하세요.
-   - **프론트엔드+백엔드 분리 시**: 백엔드에 CORS 설정(flask-cors 등)을 instructions에 포함하세요. 프론트엔드 dev 서버와 백엔드 서버의 포트가 다르므로 CORS는 필수입니다.
+   - **프론트엔드 상태관리**: 프론트엔드가 있는 프로젝트에서 상태관리 라이브러리(Pinia, Vuex, Redux, Zustand 등)를 사용할지 여부를 **plan에서 확정**하고 tech_stack에 포함하세요. 사용하기로 한 라이브러리는 모든 페이즈에서 동일하게 사용해야 합니다. 사용하지 않기로 했으면 어떤 페이즈에서도 import하지 마세요.
+   - **진입점 통합**: 이전 페이즈에서 생성된 모듈을 진입점 파일에 등록해야 하는 경우, 마지막 페이즈 instructions에 **구체적인 통합 지시**를 포함하세요. (예: 라우터 등록, 미들웨어 추가, CLI 서브커맨드 등록 등)
+   - **클라이언트-서버 분리 시**: CORS, 프록시 설정 등 크로스 오리진 통신에 필요한 설정을 instructions에 포함하세요.
 """
 
 EXPLORE_SYSTEM_PROMPT = """\

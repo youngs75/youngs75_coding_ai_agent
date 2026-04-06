@@ -37,6 +37,7 @@ def test_step1_graph_structure():
         "retrieve_memory",
         "execute_code",
         "verify_result",
+        "run_tests",
         "__start__",
         "__end__",
     }

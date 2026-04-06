@@ -58,8 +58,9 @@ _NODE_LABELS: dict[str, str] = {
     "record_episodic": "연구 이력 기록",
     # simple_react
     "react_agent": "처리",
-    # apply_code
+    # apply_code / run_tests
     "apply_code": "파일 저장",
+    "run_tests": "테스트 실행",
     # planner
     "analyze_task": "태스크 분석",
     "research_external": "외부 API 조사",
@@ -105,6 +106,24 @@ def _extract_node_summary(node: str, output: dict) -> str:
         if files:
             return f"{len(files)}개 파일 저장"
         return ""
+    if node == "run_tests":
+        passed = output.get("test_passed", True)
+        logs = output.get("execution_log", [])
+        # 환경 설정 로그 요약
+        env_info = []
+        for entry in logs:
+            if "[env]" in entry and "✓" in entry:
+                env_info.append("venv")
+            if "[install_deps]" in entry and "✓" in entry:
+                env_info.append("deps")
+            if "[runtime]" in entry and "✗" in entry:
+                env_info.append("런타임 미설치")
+        env_summary = f" ({'+'.join(env_info)})" if env_info else ""
+        if passed:
+            return f"통과{env_summary}"
+        test_out = output.get("test_output", "")
+        first_line = test_out.split("\n")[0][:60] if test_out else "실패"
+        return f"실패{env_summary} — {first_line}"
     if node == "research_external":
         research = output.get("research_context", [])
         if research:
@@ -542,8 +561,15 @@ async def _run_agent_turn(
                             graph_input = Command(resume=True)
                             continue
                         else:
-                            renderer.warning("계획 거부 — 작업을 취소합니다")
-                            return
+                            # 거부 시 피드백을 받아 재계획
+                            feedback = await asyncio.to_thread(renderer.ask_rejection_feedback)
+                            if feedback:
+                                renderer.info(f"재계획 요청: {feedback}")
+                                graph_input = Command(resume={"approved": False, "feedback": feedback})
+                                continue
+                            else:
+                                renderer.warning("계획 거부 — 작업을 취소합니다")
+                                return
             except Exception:
                 logger.debug("그래프 상태 확인 스킵 (checkpointer 미지원)")
             break  # 정상 완료 (interrupt 없음)

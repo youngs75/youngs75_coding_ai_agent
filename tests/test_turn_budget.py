@@ -86,6 +86,38 @@ class TestTurnBudgetReset:
         assert tracker.record_llm_call(1000) == BudgetVerdict.OK
 
 
+class TestLenientBudget:
+    """마지막 phase용 완화 설정 테스트."""
+
+    def test_lenient_config_allows_more_low_output_calls(self):
+        """streak_limit=5, min_delta=300일 때 저효율 5회까지 허용."""
+        tracker = TurnBudgetTracker(
+            max_llm_calls=20,
+            diminishing_streak_limit=5,
+            min_delta_tokens=300,
+        )
+        # 300 미만 호출 4회 — 아직 STOP 아님
+        for _ in range(4):
+            verdict = tracker.record_llm_call(200)
+        assert verdict != BudgetVerdict.STOP
+
+        # 5회째에 STOP
+        assert tracker.record_llm_call(200) == BudgetVerdict.STOP
+
+    def test_lenient_min_delta_accepts_medium_output(self):
+        """min_delta_tokens=300이면 350토큰은 유의미한 진전으로 판정."""
+        tracker = TurnBudgetTracker(
+            max_llm_calls=20,
+            diminishing_streak_limit=5,
+            min_delta_tokens=300,
+        )
+        # 350토큰은 streak 리셋
+        tracker.record_llm_call(100)  # streak=1
+        tracker.record_llm_call(100)  # streak=2
+        tracker.record_llm_call(350)  # streak=0 (>= 300)
+        assert tracker.record_llm_call(100) == BudgetVerdict.OK  # streak=1
+
+
 class TestTurnBudgetSummary:
     """get_summary 테스트."""
 

@@ -175,6 +175,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         "EXECUTE_TOOLS": "execute_tools",
         "GENERATE_FINAL": "generate_final",
         "VERIFY": "verify_result",
+        "RUN_TESTS": "run_tests",
         "APPLY_CODE": "apply_code",
     }
 
@@ -210,6 +211,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         )
         self._turn_budget = TurnBudgetTracker(
             max_llm_calls=self._coding_config.max_llm_calls_per_turn,
+            diminishing_streak_limit=self._coding_config.diminishing_streak_limit,
+            min_delta_tokens=self._coding_config.min_delta_tokens,
         )
 
         kwargs.pop("auto_build", None)
@@ -465,11 +468,24 @@ class CodingAssistantAgent(BaseGraphAgent):
             messages = await self._context_manager.compact(
                 messages, self._get_tool_planning_model()
             )
-        response = await invoke_with_max_tokens_recovery(
-            llm_with_tools,
-            messages,
-            self._context_manager,
-        )
+        try:
+            response = await invoke_with_max_tokens_recovery(
+                llm_with_tools,
+                messages,
+                self._context_manager,
+            )
+        except Exception as e:
+            # DashScope 400 (invalid JSON arguments) 등 LLM 호출 실패 방어
+            error_msg = str(e)
+            logging.getLogger(__name__).warning(
+                "[execute] LLM 호출 실패 — GENERATE_FINAL로 전환: %s", error_msg[:200]
+            )
+            log.append(f"[execute] LLM 오류 — GENERATE_FINAL로 전환: {error_msg[:100]}")
+            return {
+                "generated_code": "",
+                "execution_log": log,
+                "exit_reason": "llm_error",
+            }
 
         # 토큰 예산 추적 (감소수익 감지)
         output_tokens = 0
@@ -527,11 +543,24 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         if self._context_manager.should_compact(messages):
             messages = await self._context_manager.compact(messages, gen_model)
-        response = await invoke_with_max_tokens_recovery(
-            gen_model,
-            messages,
-            self._context_manager,
-        )
+
+        try:
+            response = await invoke_with_max_tokens_recovery(
+                gen_model,
+                messages,
+                self._context_manager,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            logging.getLogger(__name__).warning(
+                "[generate_final] LLM 호출 실패: %s", error_msg[:200]
+            )
+            log = state.get("execution_log", [])
+            log.append(f"[generate_final] LLM 오류: {error_msg[:100]}")
+            return {
+                "generated_code": state.get("generated_code", ""),
+                "execution_log": log,
+            }
 
         log = state.get("execution_log", [])
         log.append("[generate_final] model=STRONG, 최종 코드 생성 완료")
@@ -788,6 +817,340 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return result
 
+    # ── 실행 기반 검증 ─────────────────────────────────────
+
+    _RUN_TESTS_TIMEOUT_S = 60
+    _INSTALL_TIMEOUT_S = 120
+    _VENV_TIMEOUT_S = 60
+
+    # ── 런타임 감지 ──
+
+    # 언어별 런타임 확인 명령어
+    _RUNTIME_CHECKS: dict[str, list[tuple[str, str]]] = {
+        "python": [("python3", "--version"), ("python", "--version")],
+        "node": [("node", "--version")],
+        "java": [("java", "--version"), ("javac", "--version")],
+        "go": [("go", "version")],
+        "rust": [("cargo", "--version"), ("rustc", "--version")],
+    }
+
+    @staticmethod
+    async def _check_command_exists(cmd: str) -> bool:
+        """명령어가 시스템에 설치되어 있는지 확인한다."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "which", cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.communicate()
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    async def _detect_runtimes(self, languages: list[str], log: list[str]) -> dict[str, bool]:
+        """필요한 런타임이 설치되어 있는지 확인한다."""
+        results: dict[str, bool] = {}
+        for lang in languages:
+            checks = self._RUNTIME_CHECKS.get(lang, [])
+            found = False
+            for cmd, arg in checks:
+                if await self._check_command_exists(cmd):
+                    found = True
+                    break
+            results[lang] = found
+            status = "✓" if found else "✗ 미설치"
+            log.append(f"[runtime] {lang}: {status}")
+        return results
+
+    # ── 프로젝트 환경 설정 (venv 생성 + 의존성 설치) ──
+
+    async def _get_venv_python(self, workspace: str) -> str | None:
+        """workspace의 venv python 경로를 반환한다. venv가 없으면 None."""
+        venv_python = os.path.join(workspace, ".venv", "bin", "python")
+        if os.path.exists(venv_python):
+            return venv_python
+        return None
+
+    async def _setup_project_env(self, workspace: str, log: list[str]) -> str | None:
+        """workspace에 격리된 가상환경을 생성하고 의존성을 설치한다.
+
+        Returns:
+            venv의 python 경로, 또는 실패/비해당 시 None.
+        """
+        # 이미 venv가 있으면 재사용
+        existing = await self._get_venv_python(workspace)
+        if existing:
+            log.append(f"[env] 기존 venv 재사용: {existing}")
+            return existing
+
+        # requirements.txt 또는 pyproject.toml이 있을 때만 Python venv 생성
+        has_python_deps = any(
+            os.path.exists(os.path.join(workspace, f))
+            for f in ("requirements.txt", "pyproject.toml")
+        )
+        if not has_python_deps:
+            return None
+
+        # uv가 있으면 uv venv, 없으면 python -m venv
+        uv_available = await self._check_command_exists("uv")
+        venv_path = os.path.join(workspace, ".venv")
+
+        if uv_available:
+            create_cmd = ["uv", "venv", venv_path]
+        else:
+            # python3 우선, 없으면 python
+            py_cmd = "python3" if await self._check_command_exists("python3") else "python"
+            create_cmd = [py_cmd, "-m", "venv", venv_path]
+
+        log.append(f"[env] venv 생성: {' '.join(create_cmd)}")
+        try:
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *create_cmd,
+                    cwd=workspace,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                ),
+                timeout=self._VENV_TIMEOUT_S,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                log.append(f"[env] ⚠ venv 생성 실패: {stderr.decode()[:300]}")
+                return None
+        except (TimeoutError, Exception) as e:
+            log.append(f"[env] ⚠ venv 생성 오류: {e}")
+            return None
+
+        venv_python = os.path.join(venv_path, "bin", "python")
+        if not os.path.exists(venv_python):
+            log.append("[env] ⚠ venv python 바이너리를 찾을 수 없음")
+            return None
+
+        log.append(f"[env] ✓ venv 생성 완료: {venv_python}")
+        return venv_python
+
+    async def _install_dependencies(
+        self, workspace: str, venv_python: str | None, log: list[str]
+    ) -> None:
+        """workspace의 의존성 파일을 감지하여 격리된 환경에 설치한다."""
+
+        dep_files: list[tuple[str, list[str]]] = []
+
+        # Python 의존성
+        req_path = os.path.join(workspace, "requirements.txt")
+        pyproject_path = os.path.join(workspace, "pyproject.toml")
+        if venv_python and os.path.exists(req_path):
+            uv_available = await self._check_command_exists("uv")
+            if uv_available:
+                dep_files.append(("requirements.txt", [
+                    "uv", "pip", "install",
+                    "--python", venv_python,
+                    "-r", "requirements.txt",
+                ]))
+                # pytest도 함께 설치
+                dep_files.append(("pytest", [
+                    "uv", "pip", "install",
+                    "--python", venv_python,
+                    "pytest",
+                ]))
+            else:
+                dep_files.append(("requirements.txt", [
+                    venv_python, "-m", "pip", "install", "-r", "requirements.txt",
+                ]))
+                dep_files.append(("pytest", [
+                    venv_python, "-m", "pip", "install", "pytest",
+                ]))
+        elif venv_python and os.path.exists(pyproject_path):
+            dep_files.append(("pyproject.toml", [venv_python, "-m", "pip", "install", "-e", "."]))
+
+        # Node.js 의존성
+        pkg_path = os.path.join(workspace, "package.json")
+        if os.path.exists(pkg_path) and await self._check_command_exists("npm"):
+            dep_files.append(("package.json", ["npm", "install"]))
+
+        # Go 의존성
+        gomod_path = os.path.join(workspace, "go.mod")
+        if os.path.exists(gomod_path) and await self._check_command_exists("go"):
+            dep_files.append(("go.mod", ["go", "mod", "tidy"]))
+
+        # Rust 의존성
+        cargo_path = os.path.join(workspace, "Cargo.toml")
+        if os.path.exists(cargo_path) and await self._check_command_exists("cargo"):
+            dep_files.append(("Cargo.toml", ["cargo", "build"]))
+
+        for label, cmd in dep_files:
+            log.append(f"[install_deps] {' '.join(cmd)}")
+            try:
+                proc = await asyncio.wait_for(
+                    asyncio.create_subprocess_exec(
+                        *cmd,
+                        cwd=workspace,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    ),
+                    timeout=self._INSTALL_TIMEOUT_S,
+                )
+                _, stderr = await proc.communicate()
+                if proc.returncode == 0:
+                    log.append(f"[install_deps] ✓ {label} 완료")
+                else:
+                    log.append(f"[install_deps] ⚠ {label} 실패: {stderr.decode()[:300]}")
+            except TimeoutError:
+                log.append(f"[install_deps] ⚠ {label} 타임아웃")
+            except Exception as e:
+                log.append(f"[install_deps] ⚠ {label} 오류: {e}")
+
+    # ── 실행 기반 검증 ──
+
+    async def _run_tests(self, state: CodingState) -> dict[str, Any]:
+        """디스크에 저장된 코드를 격리된 프로젝트 환경에서 실제로 실행하여 검증한다.
+
+        0단계: 런타임 감지 + venv 생성 + 의존성 설치
+        1단계: syntax check (py_compile)
+        2단계: pytest 실행 (workspace venv의 python 사용)
+
+        실패 시 test_passed=False + 에러 메시지를 test_output에 저장.
+        """
+        written_files = state.get("written_files", [])
+        log = list(state.get("execution_log", []))
+
+        if not written_files:
+            log.append("[run_tests] 저장된 파일 없음 — 스킵")
+            return {
+                "test_passed": True,
+                "test_output": "",
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
+        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+
+        # 파일 경로에서 실제 경로 추출 ("app.py (+24 lines)" → "app.py")
+        real_files = []
+        for f in written_files:
+            path = f.split(" (")[0].strip()
+            real_files.append(path)
+
+        py_files = [f for f in real_files if f.endswith(".py")]
+        test_files = [f for f in real_files if "test" in f.lower() and f.endswith(".py")]
+
+        # 0단계: 런타임 감지 + venv 생성 + 의존성 설치
+        needed_langs = []
+        if py_files:
+            needed_langs.append("python")
+        js_files = [f for f in real_files if f.endswith((".js", ".ts", ".jsx", ".tsx", ".vue"))]
+        if js_files:
+            needed_langs.append("node")
+
+        runtimes = await self._detect_runtimes(needed_langs, log)
+        missing = [lang for lang, found in runtimes.items() if not found]
+        if missing:
+            log.append(f"[run_tests] 런타임 미설치: {missing} — 테스트 스킵")
+            return {
+                "test_passed": True,
+                "test_output": f"런타임 미설치로 스킵: {missing}",
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
+        # Python venv 생성 + 의존성 설치
+        venv_python = None
+        if py_files:
+            venv_python = await self._setup_project_env(workspace, log)
+            await self._install_dependencies(workspace, venv_python, log)
+
+        # Node.js / Go / Rust 의존성 설치 (venv 불필요)
+        if not py_files:
+            await self._install_dependencies(workspace, None, log)
+
+        # 실제 사용할 python 경로 결정
+        project_python = venv_python or "python3"
+
+        errors: list[str] = []
+
+        # 1단계: syntax check
+        for filepath in py_files:
+            full_path = os.path.join(workspace, filepath)
+            if not os.path.exists(full_path):
+                continue
+            try:
+                import py_compile
+                py_compile.compile(full_path, doraise=True)
+            except py_compile.PyCompileError as e:
+                errors.append(f"[syntax] {filepath}: {e}")
+
+        if errors:
+            output = "\n".join(errors)
+            log.append(f"[run_tests] syntax 오류 {len(errors)}건")
+            return {
+                "test_passed": False,
+                "test_output": output,
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
+        # 2단계: 테스트 실행 (격리된 venv의 pytest 사용)
+        if not test_files:
+            log.append("[run_tests] 테스트 파일 없음 — syntax만 통과")
+            return {
+                "test_passed": True,
+                "test_output": "syntax 검증 통과 (테스트 파일 없음)",
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
+        test_paths = [os.path.join(workspace, f) for f in test_files]
+        try:
+            # 격리된 venv의 python으로 pytest 실행
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    project_python, "-m", "pytest",
+                    "--tb=short", "-q", "--no-header",
+                    "-p", "no:cacheprovider",
+                    *test_paths,
+                    cwd=workspace,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env={
+                        **os.environ,
+                        "PYTHONPATH": workspace,
+                        "VIRTUAL_ENV": os.path.join(workspace, ".venv"),
+                    },
+                ),
+                timeout=self._RUN_TESTS_TIMEOUT_S,
+            )
+            stdout, stderr = await proc.communicate()
+            output = stdout.decode()[:2000]
+            if stderr:
+                output += "\n" + stderr.decode()[:1000]
+
+            passed = proc.returncode == 0
+            log.append(f"[run_tests] pytest {'통과' if passed else '실패'} (venv={project_python}): {test_files}")
+
+            return {
+                "test_passed": passed,
+                "test_output": output,
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+        except TimeoutError:
+            log.append(f"[run_tests] 타임아웃 ({self._RUN_TESTS_TIMEOUT_S}s) — 통과 처리")
+            return {
+                "test_passed": True,
+                "test_output": "테스트 타임아웃 — 스킵",
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+        except Exception as e:
+            log.append(f"[run_tests] 실행 오류: {e}")
+            return {
+                "test_passed": True,
+                "test_output": f"테스트 실행 실패: {e}",
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
     # ── Procedural Memory 훅 ─────────────────────────────────
 
     def _accumulate_skill_from_execution(
@@ -971,7 +1334,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         return self.get_node_name("VERIFY")
 
     def _should_retry(self, state: CodingState) -> str:
-        """검증 실패 시 재시도 여부를 판단한다."""
+        """LLM 검증 실패 시 재시도 여부를 판단한다."""
         verify_result = state.get("verify_result", {})
         iteration = state.get("iteration", 0)
         max_iterations = state.get("max_iterations", 3)
@@ -981,6 +1344,47 @@ class CodingAssistantAgent(BaseGraphAgent):
         if iteration >= max_iterations:
             return self.get_node_name("APPLY_CODE")
         return self.get_node_name("EXECUTE")
+
+    def _should_retry_tests(self, state: CodingState) -> str:
+        """실행 기반 테스트 실패 시 수정 루프를 결정한다.
+
+        테스트 통과 → END
+        테스트 실패 + iteration 남음 → GENERATE_FINAL (에러 메시지가 messages에 주입됨)
+        테스트 실패 + iteration 소진 → END (최선의 결과로 종료)
+        """
+        test_passed = state.get("test_passed", True)
+        iteration = state.get("iteration", 0)
+        max_iterations = state.get("max_iterations", 3)
+
+        if test_passed:
+            return END
+
+        if iteration >= max_iterations:
+            logging.getLogger(__name__).warning("[run_tests] 최대 반복 도달 — 테스트 실패 상태로 종료")
+            return END
+
+        # 실패 시: test_output을 HumanMessage로 주입하여 GENERATE_FINAL이 수정하게 함
+        # (messages에 에러 정보 추가는 _inject_test_failure에서 수행)
+        return self.get_node_name("GENERATE_FINAL")
+
+    async def _inject_test_failure(self, state: CodingState) -> dict[str, Any]:
+        """테스트 실패 에러를 messages에 주입하여 GENERATE_FINAL이 수정 코드를 생성하게 한다."""
+        test_output = state.get("test_output", "")
+        log = list(state.get("execution_log", []))
+        iteration = state.get("iteration", 0)
+
+        error_msg = HumanMessage(content=(
+            f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
+            f"아래 에러를 수정하여 코드를 다시 생성하세요.\n\n"
+            f"```\n{test_output[:2000]}\n```\n\n"
+            f"수정된 전체 파일을 코드 블록으로 제공하세요 (filepath 주석 포함)."
+        ))
+        log.append(f"[inject_test_failure] 에러 주입, 수정 루프 시작 (iteration={iteration})")
+
+        return {
+            "messages": [error_msg],
+            "execution_log": log,
+        }
 
     # ── 그래프 구성 ─────────────────────────────────────────
 
@@ -992,6 +1396,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("GENERATE_FINAL"), self._generate_final)
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
         graph.add_node(self.get_node_name("APPLY_CODE"), self._apply_code)
+        graph.add_node(self.get_node_name("RUN_TESTS"), self._run_tests)
 
     def init_edges(self, graph: StateGraph) -> None:
         # parse → retrieve_memory → execute
@@ -1014,15 +1419,23 @@ class CodingAssistantAgent(BaseGraphAgent):
             self.get_node_name("EXECUTE_TOOLS"),
             self.get_node_name("EXECUTE"),
         )
-        # generate_final(STRONG) → verify
+        # generate_final(STRONG) → verify(LLM)
         graph.add_edge(
             self.get_node_name("GENERATE_FINAL"),
             self.get_node_name("VERIFY"),
         )
-        # verify → (retry or apply_code)
+        # verify(LLM) → (retry or apply_code)
         graph.add_conditional_edges(
             self.get_node_name("VERIFY"),
             self._should_retry,
         )
-        # apply_code → END
-        graph.add_edge(self.get_node_name("APPLY_CODE"), END)
+        # apply_code → run_tests (파일 저장 후 실제 실행)
+        graph.add_edge(
+            self.get_node_name("APPLY_CODE"),
+            self.get_node_name("RUN_TESTS"),
+        )
+        # run_tests → (END or generate_final for fix)
+        graph.add_conditional_edges(
+            self.get_node_name("RUN_TESTS"),
+            self._should_retry_tests,
+        )

@@ -235,6 +235,16 @@ class CLIRenderer:
         except (EOFError, KeyboardInterrupt):
             return False
 
+    def ask_rejection_feedback(self) -> str:
+        """거부 시 피드백을 수집한다 (blocking). 빈 문자열이면 피드백 없음."""
+        try:
+            response = self.console.input(
+                f"  [{_CLR_BRAND}]?[/] 수정할 내용을 알려주세요 (Enter=취소): "
+            )
+            return response.strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
     # ── 파일 저장 결과 ──
 
     def files_written(self, files: list[str]) -> None:

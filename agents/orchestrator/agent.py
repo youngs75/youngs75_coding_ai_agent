@@ -328,7 +328,17 @@ async def _execute_phases_sequentially(
         )
 
         try:
-            agent = await CodingAssistantAgent.create(config=CodingConfig())
+            # 마지막 phase가 통합 성격(파일 수 적음, instructions 짧음)이면 budget 완화
+            is_final = i == len(phases) - 1 and len(phases) > 1
+            phase_files = phase.get("files", [])
+            phase_instructions_len = len(phase.get("instructions", ""))
+            is_integration = is_final and len(phase_files) <= 2 and phase_instructions_len < 500
+            config = CodingConfig(
+                max_llm_calls_per_turn=20 if is_integration else 15,
+                diminishing_streak_limit=5 if is_integration else 3,
+                min_delta_tokens=300 if is_integration else 500,
+            )
+            agent = await CodingAssistantAgent.create(config=config)
             result = await agent.graph.ainvoke(
                 {
                     "messages": [HumanMessage(content=phase_message)],
@@ -359,11 +369,33 @@ async def _execute_phases_sequentially(
                 "error": str(e),
             })
 
+    # 전체 phase 완료 후 VerificationAgent 실행
+    verification_result = None
+    if all_written_files:
+        try:
+            from youngs75_a2a.agents.verifier.agent import VerificationAgent
+            from youngs75_a2a.agents.verifier.config import VerifierConfig
+
+            # 생성된 파일 확장자에서 주요 언어 감지
+            detected_lang = _detect_language(all_written_files)
+            verifier = await VerificationAgent.create(config=VerifierConfig())
+            v_result = await verifier.graph.ainvoke({
+                "code": "",  # 파일 기반 검증이므로 코드 본문 불필요
+                "written_files": all_written_files,
+                "language": detected_lang,
+                "requirements": user_message,
+            })
+            verification_result = v_result.get("verification_result")
+            logger.info("검증 완료: %s", verification_result.get("summary", ""))
+        except Exception as e:
+            logger.warning("VerificationAgent 실행 실패 (결과에 영향 없음): %s", e)
+
     # 집계 응답 생성
     response = _build_phase_summary_response(phase_results, all_written_files)
     return {
         "agent_response": response,
         "phase_results": phase_results,
+        "verification_result": verification_result,
     }
 
 
@@ -412,18 +444,49 @@ def _build_phase_message(
     if phase.get("files"):
         parts.append(f"\n**대상 파일**: {', '.join(phase['files'])}")
 
-    # 4. 마지막 phase일 때 통합 리마인더
+    # 4. 이전 phase 파일 보호 + 마지막 phase 통합 리마인더
+    if completed_phases:
+        parts.append(
+            "\n\n## 중요: 이전 Phase 파일 보호\n"
+            "이전 phase에서 생성된 파일을 수정해야 할 때는 반드시 `read_file`로 먼저 읽고 **필요한 부분만 수정**하세요.\n"
+            "파일 전체를 처음부터 다시 작성하면 이전 phase의 코드가 유실됩니다."
+        )
+
     if phase_index == total_phases - 1 and completed_phases:
         parts.append(
             "\n\n## 통합 체크리스트 (마지막 Phase)\n"
-            "이전 phase에서 생성된 모듈이 진입점(app.py, main.js 등)에 올바르게 등록/import되었는지 확인하세요.\n"
-            "- Blueprint, 라우터, 미들웨어가 앱에 등록되어 있는지\n"
-            "- CORS 설정이 필요한지 (프론트엔드/백엔드 분리 시)\n"
-            "- 이전 phase 파일의 import 경로가 정확한지 (read_file로 확인 가능)\n"
-            "- requirements.txt / package.json에 모든 의존성이 포함되었는지"
+            "- 이전 phase에서 생성된 모듈이 진입점에 올바르게 등록/import되었는지 확인하세요\n"
+            "- **import/모듈 경로 일관성**: 이전 phase 파일을 read_file로 확인하고, 같은 import 스타일을 사용하세요\n"
+            "- 의존성 파일(requirements.txt, package.json, go.mod, Cargo.toml 등)에 모든 패키지가 포함되었는지\n"
+            "- 프로젝트 유형에 맞는 통합 확인:\n"
+            "  - 웹앱: 라우터/미들웨어 등록, CORS 설정 (클라이언트-서버 분리 시)\n"
+            "  - CLI: 서브커맨드 등록, help 메시지 정의\n"
+            "  - 라이브러리: public API export, 타입 정의\n"
+            "  - API 서버: 엔드포인트 등록, 인증 미들웨어\n"
+            "  - 데이터 파이프라인: 단계 간 데이터 흐름 연결"
         )
 
     return "\n".join(parts)
+
+
+def _detect_language(files: list[str]) -> str:
+    """파일 확장자에서 주요 프로그래밍 언어를 감지한다."""
+    ext_map = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".jsx": "javascript", ".tsx": "typescript", ".vue": "javascript",
+        ".go": "go", ".rs": "rust", ".java": "java",
+        ".c": "c", ".cpp": "cpp", ".rb": "ruby",
+        ".swift": "swift", ".kt": "kotlin", ".cs": "csharp",
+    }
+    counts: dict[str, int] = {}
+    for f in files:
+        for ext, lang in ext_map.items():
+            if f.endswith(ext):
+                counts[lang] = counts.get(lang, 0) + 1
+                break
+    if not counts:
+        return "python"
+    return max(counts, key=counts.get)
 
 
 def _build_phase_summary_response(
@@ -534,12 +597,35 @@ async def plan(state: OrchestratorState, config: RunnableConfig) -> dict:
     if plan_text:
         logger.info("계획 수립 완료 (%d chars)", len(plan_text))
         # Human-in-the-loop: 계획을 사용자에게 보여주고 승인 대기
-        approved = interrupt(plan_text)
-        if not approved:
+        max_replan = 3  # 최대 재계획 횟수
+        for attempt in range(max_replan + 1):
+            response = interrupt(plan_text)
+
+            # 승인: True 또는 truthy 단순값
+            if response is True or response == True:  # noqa: E712
+                logger.info("사용자가 계획을 승인함")
+                return {"task_plan": plan_text, "task_plan_structured": task_plan_structured}
+
+            # 거부 + 피드백: {"approved": False, "feedback": "..."}
+            if isinstance(response, dict) and not response.get("approved", True):
+                feedback = response.get("feedback", "")
+                if feedback and attempt < max_replan:
+                    logger.info("재계획 요청 (attempt %d): %s", attempt + 1, feedback)
+                    # 피드백을 반영하여 재계획
+                    replan_message = (
+                        f"{user_message}\n\n"
+                        f"## 이전 계획에 대한 사용자 피드백\n"
+                        f"사용자가 다음 사항을 수정 요청했습니다:\n{feedback}\n\n"
+                        f"위 피드백을 반영하여 계획을 다시 수립하세요."
+                    )
+                    task_plan_structured, plan_text = await _invoke_planner(replan_message)
+                    if not plan_text:
+                        break
+                    continue  # 새 계획으로 다시 interrupt
+
+            # 단순 거부 (피드백 없음) 또는 재계획 한도 초과
             logger.info("사용자가 계획을 거부함")
             return {"task_plan": None, "task_plan_structured": None}
-        logger.info("사용자가 계획을 승인함")
-        return {"task_plan": plan_text, "task_plan_structured": task_plan_structured}
 
     logger.info("계획 수립 스킵 (planner 미응답)")
     return {"task_plan": None, "task_plan_structured": None}

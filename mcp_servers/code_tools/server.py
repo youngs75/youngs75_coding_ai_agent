@@ -221,6 +221,111 @@ def run_python(code: str, timeout: int = 30) -> str:
         os.unlink(tmp_path)
 
 
+# ── Shell 실행 ─────────────────────────────────────────────
+
+# 허용된 명령어 화이트리스트 — 이 목록에 없는 명령어는 차단
+_ALLOWED_COMMANDS: set[str] = {
+    # Python 패키지 관리
+    "pip", "pip3", "uv", "python", "python3",
+    # JavaScript/TypeScript
+    "npm", "npx", "yarn", "pnpm", "node",
+    # Go
+    "go",
+    # Rust
+    "cargo", "rustc",
+    # Java
+    "mvn", "gradle", "javac", "java",
+    # 테스트 실행
+    "pytest", "jest", "vitest", "mocha",
+    # 빌드/린트
+    "make", "cmake", "tsc",
+    # 유틸리티
+    "cat", "ls", "find", "grep", "head", "tail", "wc", "diff", "sort",
+    "mkdir", "cp", "mv", "touch", "echo", "which", "env", "printenv",
+    # Git (읽기 전용)
+    "git",
+}
+
+# 절대 금지 — 화이트리스트에 있더라도 이 서브커맨드는 차단
+_BLOCKED_PATTERNS: list[str] = [
+    "rm -rf /",
+    "rm -rf /*",
+    "sudo",
+    "> /dev/",
+    "| sh",
+    "| bash",
+    "curl | ",
+    "wget | ",
+]
+
+
+@mcp.tool()
+def run_shell(command: str, timeout: int = 120) -> str:
+    """Shell 명령어를 실행하고 결과를 반환한다.
+
+    보안: 허용된 명령어만 실행 가능 (pip, npm, go, cargo, pytest, jest 등).
+    workspace 디렉토리에서 실행되며, 타임아웃이 적용된다.
+
+    Args:
+        command: 실행할 shell 명령어 (예: "pip install -r requirements.txt")
+        timeout: 실행 제한 시간(초, 기본 120, 최대 300)
+    """
+    command = command.strip()
+    if not command:
+        return "Error: 빈 명령어"
+
+    # 보안 검증 1: 금지 패턴 체크
+    for blocked in _BLOCKED_PATTERNS:
+        if blocked in command:
+            return f"Error: 보안 정책으로 차단됨 — '{blocked}' 패턴 금지"
+
+    # 보안 검증 2: 첫 번째 명령어가 화이트리스트에 있는지 확인
+    first_token = command.split()[0].split("/")[-1]  # 경로 제거
+    if first_token not in _ALLOWED_COMMANDS:
+        return (
+            f"Error: 허용되지 않은 명령어 — '{first_token}'\n"
+            f"허용 목록: {', '.join(sorted(_ALLOWED_COMMANDS))}"
+        )
+
+    # 파이프라인 명령어의 각 단계도 검증
+    if "|" in command:
+        for segment in command.split("|"):
+            seg_cmd = segment.strip().split()[0].split("/")[-1] if segment.strip() else ""
+            if seg_cmd and seg_cmd not in _ALLOWED_COMMANDS:
+                return f"Error: 파이프라인 내 허용되지 않은 명령어 — '{seg_cmd}'"
+
+    effective_timeout = min(timeout, 300)
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=effective_timeout,
+            cwd=_WORKSPACE,
+            env={**os.environ, "PYTHONPATH": _WORKSPACE},
+        )
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+
+        parts = []
+        if stdout:
+            # 출력이 너무 길면 truncate
+            if len(stdout) > 5000:
+                stdout = stdout[:5000] + f"\n... (총 {len(result.stdout)}자, 5000자까지 표시)"
+            parts.append(f"[stdout]\n{stdout}")
+        if stderr:
+            if len(stderr) > 3000:
+                stderr = stderr[:3000] + f"\n... (총 {len(result.stderr)}자, 3000자까지 표시)"
+            parts.append(f"[stderr]\n{stderr}")
+        parts.append(f"[exit_code] {result.returncode}")
+
+        return "\n".join(parts) if parts else "[출력 없음]"
+    except subprocess.TimeoutExpired:
+        return f"Error: 실행 시간 초과 ({effective_timeout}초)"
+
+
 @mcp.tool()
 def str_replace(path: str, old_str: str, new_str: str) -> str:
     """파일에서 특정 문자열을 찾아 교체한다.

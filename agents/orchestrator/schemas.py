@@ -35,6 +35,7 @@ class OrchestratorState(TypedDict):
     task_plan_structured: Optional[dict]  # Planner Agent 출력 (구조화된 TaskPlan)
     agent_response: Optional[str]
     phase_results: Optional[list[PhaseResult]]  # phase별 실행 결과
+    verification_result: Optional[dict]  # VerificationAgent 검증 결과
 
 
 # ── Coordinator Mode 스키마 ──────────────────────────────────

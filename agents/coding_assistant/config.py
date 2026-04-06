@@ -42,10 +42,37 @@ class CodingConfig(BaseAgentConfig):
     # 허용 파일 확장자
     allowed_extensions: list[str] = Field(
         default=[
-            ".py", ".js", ".ts", ".jsx", ".tsx", ".vue",
-            ".html", ".css", ".scss",
-            ".json", ".yaml", ".yml", ".md", ".toml",
-            ".txt", ".cfg", ".ini", ".env",
+            # Python
+            ".py", ".pyi",
+            # JavaScript / TypeScript
+            ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+            # Web frameworks
+            ".vue", ".svelte",
+            # Web
+            ".html", ".css", ".scss", ".less",
+            # Go
+            ".go",
+            # Rust
+            ".rs",
+            # Java / Kotlin
+            ".java", ".kt", ".kts",
+            # C / C++
+            ".c", ".h", ".cpp", ".hpp", ".cc",
+            # C# / .NET
+            ".cs",
+            # Ruby
+            ".rb",
+            # Swift
+            ".swift",
+            # Shell
+            ".sh", ".bash", ".zsh",
+            # Config / Data
+            ".json", ".yaml", ".yml", ".toml", ".xml",
+            ".md", ".txt", ".cfg", ".ini", ".env",
+            # Build / Project
+            ".gradle", ".cmake",
+            # Docker
+            ".dockerfile",
         ],
     )
     # 최대 삭제 허용 줄 수
@@ -74,6 +101,14 @@ class CodingConfig(BaseAgentConfig):
     max_llm_calls_per_turn: int = Field(
         default=15,
         description="턴당 최대 LLM 호출 횟수",
+    )
+    diminishing_streak_limit: int = Field(
+        default=3,
+        description="연속 저효율 호출 N회 시 중단",
+    )
+    min_delta_tokens: int = Field(
+        default=500,
+        description="유의미한 진전으로 판단하는 최소 토큰 수",
     )
 
     # Coding 전용 purpose → tier 매핑

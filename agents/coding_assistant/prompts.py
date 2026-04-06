@@ -55,7 +55,7 @@ PARSE_SYSTEM_PROMPT = """\
   - refactor: 기존 코드 개선/리팩토링
   - explain: 코드나 개념 설명
   - analyze: 파일/프로젝트 분석 (파일 읽기가 필요한 작업)
-- language: 요청에서 감지된 프로그래밍 언어 (명시되지 않으면 "python")
+- language: 요청에서 감지된 프로그래밍 언어 (명시되지 않으면 요청 내용에서 추론, 추론 불가 시 "python")
 - description: 작업에 대한 간결한 설명
 - target_files: 관련 파일 경로 리스트 (언급된 경우)
 - requirements: 세부 요구사항 리스트
@@ -83,20 +83,46 @@ EXECUTE_SYSTEM_PROMPT = """\
 - 요구사항에 집중하여 필요한 코드만 작성하세요
 - 코드는 즉시 실행 가능한 상태여야 합니다
 - {language}으로 작성하세요
+- **이전 Phase에서 생성된 파일이 언급된 경우**: 해당 파일을 `read_file`로 먼저 읽고, **필요한 부분만 수정**하세요. 파일 전체를 처음부터 다시 작성하지 마세요. 이전 phase의 코드가 유실됩니다.
+
+## import/모듈 경로 규칙
+- 지시사항에 명시된 import 경로가 있으면 그것을 우선 따르세요
+- 같은 프로젝트 내 모든 파일에서 **동일한 import 스타일**을 일관되게 유지하세요
+- 언어별 기본 규칙:
+  - **Python**: `__init__.py`가 있으면 패키지 → 절대 import, 없으면 상대 import
+  - **JavaScript/TypeScript**: `import {{ X }} from './module'` 상대 경로 사용
+  - **Go**: `import "project/pkg/module"` (go.mod 기준)
+  - **Rust**: `mod module;` 또는 `use crate::module;`
+  - **Java**: `import com.project.package.Class;`
 
 ## 파일 저장 형식 (필수)
 **각 파일은 반드시 별도의 코드 블록으로 분리**하고, 첫 줄에 파일 경로를 주석으로 명시하세요:
-- Python/JS/기타: `# filepath: path/to/file.py`
-- HTML/XML: `<!-- filepath: path/to/file.html -->`
-- CSS: `/* filepath: path/to/style.css */`
-- Vue: `<!-- filepath: src/App.vue -->`
+- Python/Ruby/Shell: `# filepath: path/to/file.py`
+- JavaScript/TypeScript/Go/Rust/Java/C/C++: `// filepath: path/to/file.js`
+- HTML/XML/Vue/Svelte: `<!-- filepath: path/to/file.html -->`
+- CSS/SCSS: `/* filepath: path/to/style.css */`
+- TOML: `# filepath: Cargo.toml`
+- YAML: `# filepath: config.yaml`
 이 형식을 따르면 코드가 자동으로 파일에 저장됩니다.
-디렉토리 구조가 필요하면 경로에 포함하세요 (예: `templates/index.html`).
+디렉토리 구조가 필요하면 경로에 포함하세요 (예: `src/main.rs`, `cmd/app/main.go`).
 **하나의 코드 블록에 여러 파일을 합치지 마세요. 파일당 1개의 코드 블록을 사용하세요.**
+
+## 의존성 관리
+- 의존성 파일이 프로젝트에 포함된 경우, 코드에서 사용하는 **모든 외부 패키지**를 빠짐없이 추가하세요
+- 언어별 의존성 파일: requirements.txt(Python), package.json(JS/TS), go.mod(Go), Cargo.toml(Rust), pom.xml/build.gradle(Java)
+- 표준 라이브러리는 제외하세요
+
+## 테스트 코드 필수 생성
+- 코드를 생성할 때 **반드시 해당 코드에 대한 테스트 파일도 함께 생성**하세요
+- 테스트는 핵심 로직(모델, API, 유틸 함수)에 대해 작성하세요. UI/템플릿에 대한 테스트는 선택입니다.
+- 테스트 파일 위치: `tests/` 디렉토리 또는 소스 파일 옆 (예: `test_models.py`, `models.test.js`)
+- 테스트는 **실제 실행 가능한 상태**여야 합니다. 생성 후 자동으로 실행됩니다.
+- 테스트가 실패하면 코드 수정을 요청받게 되므로, 테스트가 통과하는 코드를 작성하세요.
 
 ## 응답 형식
 - 먼저 변경 계획을 간단히 설명
 - 코드 블록으로 전체 코드를 제공 (파일 경로 주석 포함)
+- **테스트 코드 블록도 포함** (filepath 주석 포함)
 - 변경된 부분을 요약
 """
 
@@ -109,7 +135,7 @@ VERIFY_SYSTEM_PROMPT = """\
 2. 안전성: 보안 취약점이 없는가 (인젝션, XSS, 하드코딩된 시크릿 등)
 3. 스타일: 코딩 컨벤션을 따르는가
 4. 완전성: 빠진 에러 처리나 엣지 케이스가 없는가
-5. 의존성: 불필요한 의존성을 추가하지 않았는가
+5. 의존성: 불필요한 의존성을 추가하지 않았는가, 코드에서 사용하는 패키지가 requirements.txt/package.json에 **모두 포함**되었는가
 6. 프로젝트 적합성: 기존 프로젝트 구조와 패턴에 맞는가
 7. 인용 품질: 코드 참조에 파일 경로/라인 번호가 포함되어 있는가
 

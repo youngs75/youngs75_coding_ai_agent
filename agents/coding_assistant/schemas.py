@@ -56,8 +56,12 @@ class CodingState(TypedDict, total=False):
     execution_log: list[str]  # 실행 과정 로그
     project_context: list[str]  # 프로젝트 파일 읽기 결과 (JIT 원본 참조)
 
-    # verify_result 출력
+    # verify_result 출력 (LLM 기반 검증)
     verify_result: VerifyResult
+
+    # run_tests 출력 (실행 기반 검증)
+    test_output: str  # 테스트 실행 stdout/stderr
+    test_passed: bool  # 테스트 통과 여부
 
     # 반복 제어
     iteration: int  # 현재 반복 횟수
