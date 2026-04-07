@@ -8,15 +8,18 @@ GAM 2단계 검색을 제공한다.
   ("memory", <memory_type>, <session>) — 세션 스코프 (episodic 등)
 
 영속화:
-  Procedural Memory는 JSONL 파일로 영속화되어 세션 간 학습이 유지된다.
-  저장 경로: {workspace}/.ai/memory/procedural.jsonl
+  Procedural, USER_PROFILE, DOMAIN_KNOWLEDGE, SEMANTIC Memory는
+  JSONL 파일로 영속화되어 세션 간 학습이 유지된다.
+  저장 경로: {workspace}/.ai/memory/{type}.jsonl
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from langgraph.store.memory import InMemoryStore
 
@@ -33,6 +36,14 @@ def _namespace(
     if session_id:
         return (*base, session_id)
     return base
+
+
+_PERSISTENT_TYPES = {
+    MemoryType.PROCEDURAL,
+    MemoryType.USER_PROFILE,
+    MemoryType.DOMAIN_KNOWLEDGE,
+    MemoryType.SEMANTIC,
+}
 
 
 class MemoryStore:
@@ -57,14 +68,14 @@ class MemoryStore:
             self._load_persisted()
 
     def put(self, item: MemoryItem) -> None:
-        """메모리 항목 저장. Procedural은 파일에도 영속화."""
+        """메모리 항목 저장. 영속화 대상 타입은 파일에도 저장."""
         ns = _namespace(item.type, item.session_id)
         if ns not in self._index:
             self._index[ns] = {}
         self._index[ns][item.id] = item
 
-        # Procedural Memory만 파일 영속화 (세션 간 학습 유지)
-        if item.type == MemoryType.PROCEDURAL and self._persist_dir:
+        # 영속화 대상 타입은 파일에 추가
+        if item.type in _PERSISTENT_TYPES and self._persist_dir:
             self._append_to_file(item)
 
     def get(
@@ -125,6 +136,39 @@ class MemoryStore:
             del bucket[item_id]
             return True
         return False
+
+    def update(
+        self,
+        item_id: str,
+        memory_type: MemoryType,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        session_id: str | None = None,
+    ) -> MemoryItem | None:
+        """메모리 항목을 정정(correction)한다. 갱신된 항목 반환, 없으면 None."""
+        existing = self.get(item_id, memory_type, session_id)
+        if existing is None:
+            return None
+
+        updates: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+        if content is not None:
+            updates["content"] = content
+        if tags is not None:
+            updates["tags"] = tags
+        if metadata is not None:
+            updates["metadata"] = metadata
+
+        updated_item = existing.model_copy(update=updates)
+        ns = _namespace(memory_type, session_id)
+        self._index[ns][item_id] = updated_item
+
+        # 영속화 대상이면 파일 전체 재작성
+        if memory_type in _PERSISTENT_TYPES and self._persist_dir:
+            self._rewrite_file(memory_type)
+
+        logger.debug("메모리 갱신: %s (type=%s)", item_id[:8], memory_type.value)
+        return updated_item
 
     def clear(self, memory_type: MemoryType | None = None) -> int:
         """메모리 초기화. 삭제된 항목 수 반환."""
@@ -203,6 +247,86 @@ class MemoryStore:
             limit=limit,
         )
 
+    # ── Domain Knowledge ──────────────────────────────────────
+
+    def accumulate_domain_knowledge(
+        self,
+        content: str,
+        tags: list[str] | None = None,
+        source: str = "user",
+    ) -> MemoryItem:
+        """도메인 지식을 저장한다. 중복이면 기존 항목을 갱신."""
+        existing = self.list_by_type(MemoryType.DOMAIN_KNOWLEDGE)
+        new_tokens = set(_tokenize(content))
+
+        # 기존 도메인 지식과 Jaccard 유사도 0.8 이상이면 갱신
+        if new_tokens:
+            for item in existing:
+                existing_tokens = set(_tokenize(item.content))
+                if not existing_tokens:
+                    continue
+                intersection = len(new_tokens & existing_tokens)
+                union = len(new_tokens | existing_tokens)
+                similarity = intersection / union if union > 0 else 0.0
+                if similarity >= 0.8:
+                    updated = self.update(
+                        item.id,
+                        MemoryType.DOMAIN_KNOWLEDGE,
+                        content=content,
+                        tags=tags if tags is not None else None,
+                        metadata={"source": source},
+                    )
+                    if updated is not None:
+                        return updated
+
+        # 유사 항목 없으면 새로 저장
+        item = MemoryItem(
+            type=MemoryType.DOMAIN_KNOWLEDGE,
+            content=content,
+            tags=tags or [],
+            source=source,
+            metadata={"source": source},
+        )
+        self.put(item)
+        return item
+
+    # ── User Profile ─────────────────────────────────────────
+
+    def accumulate_user_profile(
+        self,
+        content: str,
+        tags: list[str] | None = None,
+        source: str = "user",
+    ) -> MemoryItem:
+        """사용자 프로필 정보를 저장한다. 동일 태그의 기존 항목은 갱신."""
+        if tags:
+            existing = self.list_by_type(MemoryType.USER_PROFILE)
+            tag_set = set(tags)
+            for item in existing:
+                if set(item.tags) == tag_set:
+                    updated = self.update(
+                        item.id,
+                        MemoryType.USER_PROFILE,
+                        content=content,
+                        tags=tags,
+                        metadata={"source": source},
+                    )
+                    if updated is not None:
+                        return updated
+
+        # 동일 태그 항목 없으면 새로 저장
+        item = MemoryItem(
+            type=MemoryType.USER_PROFILE,
+            content=content,
+            tags=tags or [],
+            source=source,
+            metadata={"source": source},
+        )
+        self.put(item)
+        return item
+
+    # ── Novelty 판단 ─────────────────────────────────────────
+
     def _is_novel(self, content: str, threshold: float) -> bool:
         """기존 procedural 메모리 대비 새로운 패턴인지 판단한다.
 
@@ -253,31 +377,55 @@ class MemoryStore:
         except OSError as e:
             logger.warning("메모리 영속화 실패: %s", e)
 
-    def _load_persisted(self) -> None:
-        """영속화된 Procedural Memory를 파일에서 로드."""
-        path = self._persist_path(MemoryType.PROCEDURAL)
-        if not path or not path.exists():
+    def _rewrite_file(self, memory_type: MemoryType) -> None:
+        """특정 memory_type의 JSONL 전체를 현재 인덱스 기반으로 재작성."""
+        path = self._persist_path(memory_type)
+        if not path:
             return
+        try:
+            items = self.list_by_type(memory_type)
+            with open(path, "w", encoding="utf-8") as f:
+                for item in items:
+                    f.write(item.model_dump_json() + "\n")
+            logger.debug(
+                "메모리 파일 재작성: %s (%d개)", path.name, len(items)
+            )
+        except OSError as e:
+            logger.warning("메모리 파일 재작성 실패: %s", e)
 
-        loaded = 0
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
+    def _load_persisted(self) -> None:
+        """영속화 대상 타입의 메모리를 파일에서 로드."""
+        total_loaded = 0
+        for mem_type in _PERSISTENT_TYPES:
+            path = self._persist_path(mem_type)
+            if not path or not path.exists():
                 continue
-            try:
-                item = MemoryItem.model_validate_json(line)
-                ns = _namespace(item.type, item.session_id)
-                if ns not in self._index:
-                    self._index[ns] = {}
-                # 중복 방지 (같은 ID가 이미 있으면 스킵)
-                if item.id not in self._index[ns]:
-                    self._index[ns][item.id] = item
-                    loaded += 1
-            except (json.JSONDecodeError, Exception) as e:
-                logger.warning("영속 메모리 파싱 실패 (무시): %s", e)
 
-        if loaded:
-            logger.info("Procedural Memory %d개 로드됨 (%s)", loaded, path)
+            loaded = 0
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = MemoryItem.model_validate_json(line)
+                    ns = _namespace(item.type, item.session_id)
+                    if ns not in self._index:
+                        self._index[ns] = {}
+                    # 중복 방지 (같은 ID가 이미 있으면 스킵)
+                    if item.id not in self._index[ns]:
+                        self._index[ns][item.id] = item
+                        loaded += 1
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning("영속 메모리 파싱 실패 (무시): %s", e)
+
+            if loaded:
+                logger.info(
+                    "%s Memory %d개 로드됨 (%s)", mem_type.value, loaded, path
+                )
+            total_loaded += loaded
+
+        if total_loaded:
+            logger.info("영속 메모리 총 %d개 로드 완료", total_loaded)
 
     def _collect_candidates(
         self,

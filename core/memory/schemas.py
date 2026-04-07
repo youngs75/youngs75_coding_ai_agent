@@ -28,6 +28,8 @@ class MemoryType(str, Enum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
     PROCEDURAL = "procedural"
+    USER_PROFILE = "user_profile"
+    DOMAIN_KNOWLEDGE = "domain_knowledge"
 
 
 class MemoryItem(BaseModel):
@@ -39,6 +41,8 @@ class MemoryItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = None
+    source: str = "system"
     session_id: str | None = None
     score: float = 0.0
 

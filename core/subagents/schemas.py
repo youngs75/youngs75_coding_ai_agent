@@ -9,17 +9,61 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 
 class SubAgentStatus(str, Enum):
-    """서브에이전트 상태."""
+    """서브에이전트 수명주기 상태."""
 
-    AVAILABLE = "available"
-    BUSY = "busy"
-    FAILED = "failed"
-    DISABLED = "disabled"
+    # ── 8단계 수명주기 ──
+    CREATED = "created"        # 인스턴스 생성됨
+    ASSIGNED = "assigned"      # 작업 할당됨
+    RUNNING = "running"        # 추론/도구 사용 수행 중
+    BLOCKED = "blocked"        # 입력 부족, 도구 실패, 의존 작업 대기
+    COMPLETED = "completed"    # 정상 완료
+    FAILED = "failed"          # 재시도 후에도 실패
+    CANCELLED = "cancelled"    # 상위 오케스트레이터가 중단
+    DESTROYED = "destroyed"    # 상태 정리 후 수명주기 종료
+
+    # ── 하위호환 별칭 (deprecated) ──
+    AVAILABLE = "available"    # → CREATED와 동일 의미로 취급
+    BUSY = "busy"              # → RUNNING과 동일 의미로 취급
+    DISABLED = "disabled"      # → CANCELLED과 동일 의미로 취급
+
+
+# ── 유효한 상태 전이 정의 ──
+VALID_TRANSITIONS: dict[SubAgentStatus, set[SubAgentStatus]] = {
+    SubAgentStatus.CREATED: {
+        SubAgentStatus.ASSIGNED,
+        SubAgentStatus.CANCELLED,
+        SubAgentStatus.DESTROYED,
+    },
+    SubAgentStatus.ASSIGNED: {
+        SubAgentStatus.RUNNING,
+        SubAgentStatus.BLOCKED,
+        SubAgentStatus.CANCELLED,
+    },
+    SubAgentStatus.RUNNING: {
+        SubAgentStatus.COMPLETED,
+        SubAgentStatus.FAILED,
+        SubAgentStatus.BLOCKED,
+        SubAgentStatus.CANCELLED,
+    },
+    SubAgentStatus.BLOCKED: {
+        SubAgentStatus.RUNNING,
+        SubAgentStatus.FAILED,
+        SubAgentStatus.CANCELLED,
+    },
+    SubAgentStatus.COMPLETED: {SubAgentStatus.DESTROYED},
+    SubAgentStatus.FAILED: {
+        SubAgentStatus.ASSIGNED,   # 재시도 가능
+        SubAgentStatus.DESTROYED,
+    },
+    SubAgentStatus.CANCELLED: {SubAgentStatus.DESTROYED},
+    SubAgentStatus.DESTROYED: set(),  # 종료 상태
+}
 
 
 class SubAgentSpec(BaseModel):
@@ -31,7 +75,34 @@ class SubAgentSpec(BaseModel):
     endpoint: str | None = None  # A2A 엔드포인트 또는 None(로컬)
     model_tier: str = "default"
     cost_weight: float = 1.0  # 비용 가중치 (높을수록 비쌈)
-    status: SubAgentStatus = SubAgentStatus.AVAILABLE
+    status: SubAgentStatus = SubAgentStatus.CREATED
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SubAgentInstance(BaseModel):
+    """런타임 서브에이전트 인스턴스 — 수명주기 추적."""
+
+    agent_id: str = Field(default_factory=lambda: uuid4().hex)
+    spec_name: str                    # SubAgentSpec.name 참조
+    role: str = ""                    # 역할/전문성 설명
+    task_summary: str = ""            # 할당된 작업 요약
+    parent_id: str | None = None      # 부모 에이전트/오케스트레이터 ID
+    state: SubAgentStatus = SubAgentStatus.CREATED
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None  # 실패 시 에러 메시지
+    result_summary: str | None = None  # 완료 시 결과 요약
+
+
+class SubAgentEvent(BaseModel):
+    """서브에이전트 상태 전이 이벤트 (로깅용)."""
+
+    agent_id: str
+    from_state: SubAgentStatus
+    to_state: SubAgentStatus
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    reason: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -32,10 +32,15 @@ from youngs75_a2a.agents.orchestrator.config import AgentEndpoint
 
 async def main():
     port = int(os.getenv("ORCH_PORT", "18080"))
-    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
+    model = os.getenv("AGENT_MODEL") or os.getenv("FAST_MODEL", "qwen3.5-flash")
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("❌ OPENAI_API_KEY가 설정되지 않았습니다.")
+    api_key = (
+        os.getenv("DASHSCOPE_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
+    if not api_key:
+        print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
         sys.exit(1)
 
     # 하위 에이전트 엔드포인트 구성

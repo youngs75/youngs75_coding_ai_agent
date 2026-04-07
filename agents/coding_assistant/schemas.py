@@ -48,6 +48,12 @@ class CodingState(TypedDict, total=False):
     # Procedural Memory — 학습된 스킬 패턴 (Voyager식 누적)
     procedural_skills: Annotated[list[str], override_reducer]
 
+    # User Profile — 사용자 선호/습관/반복 피드백
+    user_profile_context: Annotated[list[str], override_reducer]
+
+    # Domain Knowledge — 비즈니스 용어/업무 규칙/API 계약
+    domain_knowledge_context: Annotated[list[str], override_reducer]
+
     # parse_request 출력
     parse_result: ParseResult
 

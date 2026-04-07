@@ -10,18 +10,36 @@ Puppeteer 패턴:
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from youngs75_a2a.core.subagents.schemas import (
+    VALID_TRANSITIONS,
     SelectionResult,
+    SubAgentEvent,
+    SubAgentInstance,
     SubAgentSpec,
     SubAgentStatus,
     SubAgentUsageRecord,
 )
 
+logger = logging.getLogger(__name__)
+
+# "사용 가능" 상태 집합 — 하위호환을 위해 AVAILABLE + CREATED 모두 포함
+_AVAILABLE_STATES = {SubAgentStatus.AVAILABLE, SubAgentStatus.CREATED}
+
+# 활성 상태 집합
+_ACTIVE_STATES = {
+    SubAgentStatus.CREATED,
+    SubAgentStatus.ASSIGNED,
+    SubAgentStatus.RUNNING,
+    SubAgentStatus.BLOCKED,
+}
+
 
 class SubAgentRegistry:
-    """서브에이전트 등록, 동적 선택, 사용 통계 추적."""
+    """서브에이전트 등록, 동적 선택, 사용 통계 추적, 인스턴스 수명주기 관리."""
 
     def __init__(self, cost_sensitivity: float = 0.3):
         """
@@ -31,6 +49,10 @@ class SubAgentRegistry:
         self._agents: dict[str, SubAgentSpec] = {}
         self._usage: list[SubAgentUsageRecord] = []
         self._lambda = cost_sensitivity
+
+        # ── 인스턴스 수명주기 저장소 ──
+        self._instances: dict[str, SubAgentInstance] = {}
+        self._events: list[SubAgentEvent] = []
 
     def register(self, spec: SubAgentSpec) -> None:
         """서브에이전트 등록."""
@@ -46,7 +68,7 @@ class SubAgentRegistry:
     def list_available(self) -> list[SubAgentSpec]:
         """사용 가능한 에이전트 목록."""
         return [
-            a for a in self._agents.values() if a.status == SubAgentStatus.AVAILABLE
+            a for a in self._agents.values() if a.status in _AVAILABLE_STATES
         ]
 
     def select(
@@ -105,6 +127,165 @@ class SubAgentRegistry:
             else:
                 stats[u.agent_name]["fail"] += 1
         return dict(stats)
+
+    # ── 인스턴스 수명주기 관리 ──
+
+    def create_instance(
+        self,
+        spec_name: str,
+        *,
+        task_summary: str = "",
+        role: str = "",
+        parent_id: str | None = None,
+    ) -> SubAgentInstance | None:
+        """SubAgentSpec 기반으로 런타임 인스턴스를 생성한다.
+
+        spec_name이 등록되지 않았으면 None 반환.
+        """
+        if spec_name not in self._agents:
+            return None
+
+        instance = SubAgentInstance(
+            spec_name=spec_name,
+            role=role,
+            task_summary=task_summary,
+            parent_id=parent_id,
+        )
+        self._instances[instance.agent_id] = instance
+        logger.info(
+            "[SubAgent] %s CREATED (spec=%s, task=%s)",
+            instance.agent_id[:8],
+            spec_name,
+            task_summary[:50] if task_summary else "-",
+        )
+        return instance
+
+    def transition_state(
+        self,
+        agent_id: str,
+        new_state: SubAgentStatus,
+        *,
+        reason: str = "",
+        error_message: str | None = None,
+        result_summary: str | None = None,
+    ) -> SubAgentEvent | None:
+        """인스턴스 상태를 전이한다. 유효하지 않은 전이면 None 반환."""
+        instance = self._instances.get(agent_id)
+        if instance is None:
+            return None
+
+        # 유효한 전이인지 검사
+        allowed = VALID_TRANSITIONS.get(instance.state, set())
+        if new_state not in allowed:
+            logger.warning(
+                "[SubAgent] %s 잘못된 전이: %s → %s",
+                agent_id[:8],
+                instance.state.value,
+                new_state.value,
+            )
+            return None
+
+        from_state = instance.state
+
+        # 인스턴스 상태 갱신
+        instance.state = new_state
+        instance.updated_at = datetime.now(timezone.utc)
+        if error_message is not None:
+            instance.error_message = error_message
+        if result_summary is not None:
+            instance.result_summary = result_summary
+
+        # 이벤트 생성 및 기록
+        event = SubAgentEvent(
+            agent_id=agent_id,
+            from_state=from_state,
+            to_state=new_state,
+            reason=reason,
+        )
+        self._events.append(event)
+
+        logger.info(
+            "[SubAgent] %s %s → %s: %s",
+            agent_id[:8],
+            from_state.value,
+            new_state.value,
+            reason or "-",
+        )
+
+        return event
+
+    def get_instance(self, agent_id: str) -> SubAgentInstance | None:
+        """인스턴스 조회."""
+        return self._instances.get(agent_id)
+
+    def list_instances(
+        self,
+        *,
+        state: SubAgentStatus | None = None,
+        parent_id: str | None = None,
+    ) -> list[SubAgentInstance]:
+        """인스턴스 목록 (상태/부모 필터)."""
+        result = list(self._instances.values())
+        if state is not None:
+            result = [i for i in result if i.state == state]
+        if parent_id is not None:
+            result = [i for i in result if i.parent_id == parent_id]
+        return result
+
+    def destroy_instance(
+        self, agent_id: str, *, reason: str = "cleanup"
+    ) -> SubAgentEvent | None:
+        """인스턴스를 DESTROYED로 전이하고 정리한다."""
+        return self.transition_state(
+            agent_id,
+            SubAgentStatus.DESTROYED,
+            reason=reason,
+        )
+
+    def cleanup_completed(self, *, max_age_seconds: float = 300) -> int:
+        """완료/실패/취소된 인스턴스 중 max_age_seconds 지난 것을 정리.
+
+        정리 수 반환.
+        """
+        terminal_states = {
+            SubAgentStatus.COMPLETED,
+            SubAgentStatus.FAILED,
+            SubAgentStatus.CANCELLED,
+            SubAgentStatus.DESTROYED,
+        }
+        now = datetime.now(timezone.utc)
+        to_remove: list[str] = []
+
+        for agent_id, inst in self._instances.items():
+            if inst.state not in terminal_states:
+                continue
+            elapsed = (now - inst.updated_at).total_seconds()
+            if elapsed >= max_age_seconds:
+                to_remove.append(agent_id)
+
+        for agent_id in to_remove:
+            del self._instances[agent_id]
+
+        if to_remove:
+            logger.info(
+                "[SubAgent] cleanup_completed: %d개 인스턴스 정리됨",
+                len(to_remove),
+            )
+        return len(to_remove)
+
+    @property
+    def event_log(self) -> list[SubAgentEvent]:
+        """전체 상태 전이 이벤트 로그."""
+        return list(self._events)
+
+    @property
+    def active_instances(self) -> list[SubAgentInstance]:
+        """현재 활성(CREATED/ASSIGNED/RUNNING/BLOCKED) 인스턴스."""
+        return [
+            i for i in self._instances.values() if i.state in _ACTIVE_STATES
+        ]
+
+    # ── 내부 헬퍼 ──
 
     def _filter_candidates(
         self, required_capabilities: list[str] | None

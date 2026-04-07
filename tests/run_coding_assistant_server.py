@@ -58,20 +58,34 @@ class LangfuseLGAgentExecutor(LGAgentExecutor):
 
 async def main():
     port = int(os.getenv("AGENT_PORT", "18084"))
-    model = os.getenv("AGENT_MODEL", "deepseek/deepseek-v3.2")
 
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+    # 4-Tier 모델 체계 사용 (.env에서 로드)
+    # AGENT_MODEL이 설정되면 레거시 모드로 단일 모델 사용
+    legacy_model = os.getenv("AGENT_MODEL")
+
+    api_key = (
+        os.getenv("DASHSCOPE_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
     if not api_key:
-        print("❌ OPENAI_API_KEY 또는 OPENROUTER_API_KEY가 설정되지 않았습니다.")
+        print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
         sys.exit(1)
 
-    config = CodingConfig(
-        default_model=model,
-        generation_model=model,
-        verification_model=model,
-    )
-    agent = CodingAssistantAgent(config=config)
+    if legacy_model:
+        config = CodingConfig(
+            default_model=legacy_model,
+            generation_model=legacy_model,
+            verification_model=legacy_model,
+        )
+    else:
+        # 4-Tier 체계: .env의 STRONG_MODEL, DEFAULT_MODEL, FAST_MODEL 사용
+        config = CodingConfig()
+    # 비동기 팩토리: MCP 로딩 + graph 빌드
+    base_model = config.get_model("default")
+    agent = await CodingAssistantAgent.create(config=config, model=base_model)
 
+    model = legacy_model or os.getenv("STRONG_MODEL", "qwen3-coder-next")
     langfuse_active = enabled()
     ExecutorClass = LangfuseLGAgentExecutor if langfuse_active else LGAgentExecutor
     executor = ExecutorClass(

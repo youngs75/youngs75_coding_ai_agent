@@ -30,7 +30,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from youngs75_a2a.core.batch_executor import BatchExecutor
 from youngs75_a2a.core.context_manager import ContextManager
 from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+from youngs75_a2a.core.subagents.schemas import SubAgentSpec, SubAgentStatus
 
 from .schemas import CoordinatorResult, SubTask, WorkerResult
 from .task_graph import TaskGraph
@@ -289,14 +289,40 @@ class CoordinatorMode:
         if not wave:
             return []
 
+        # 각 서브태스크에 대한 인스턴스 생성
+        instances: dict[str, str] = {}  # subtask_id -> agent_id
+        for subtask in wave:
+            instance = self._registry.create_instance(
+                spec_name=subtask["agent_type"],
+                task_summary=subtask["description"][:200],
+                role=subtask["agent_type"],
+            )
+            if instance:
+                instances[subtask["id"]] = instance.agent_id
+                self._registry.transition_state(
+                    instance.agent_id, SubAgentStatus.ASSIGNED,
+                    reason=f"wave task: {subtask['id']}",
+                )
+
         # 각 태스크를 비동기 callable로 변환
         tasks = [self._make_worker_task(subtask, context) for subtask in wave]
+
+        # 실행 전 RUNNING 전이
+        for subtask in wave:
+            agent_id = instances.get(subtask["id"])
+            if agent_id:
+                self._registry.transition_state(
+                    agent_id, SubAgentStatus.RUNNING,
+                    reason="execution started",
+                )
 
         batch_result = await self._executor.execute(tasks)
 
         results: list[WorkerResult] = []
         for i, task_result in enumerate(batch_result.results):
             subtask = wave[i]
+            agent_id = instances.get(subtask["id"])
+
             if task_result.success:
                 results.append(
                     WorkerResult(
@@ -308,6 +334,13 @@ class CoordinatorMode:
                         error=None,
                     )
                 )
+                # COMPLETED 전이
+                if agent_id:
+                    self._registry.transition_state(
+                        agent_id, SubAgentStatus.COMPLETED,
+                        reason="task completed successfully",
+                        result_summary=str(task_result.value)[:200] if task_result.value else "",
+                    )
             else:
                 error_msg = (
                     str(task_result.error) if task_result.error else "알 수 없는 오류"
@@ -329,6 +362,19 @@ class CoordinatorMode:
                         error=error_msg,
                     )
                 )
+                # FAILED 전이
+                if agent_id:
+                    self._registry.transition_state(
+                        agent_id, SubAgentStatus.FAILED,
+                        reason=f"task {status}: {error_msg[:100]}",
+                        error_message=error_msg[:500],
+                    )
+
+        # 완료된 인스턴스 정리 (DESTROYED 전이)
+        for subtask_id, agent_id in instances.items():
+            inst = self._registry.get_instance(agent_id)
+            if inst and inst.state in (SubAgentStatus.COMPLETED, SubAgentStatus.FAILED):
+                self._registry.destroy_instance(agent_id, reason="wave completed")
 
         return results
 

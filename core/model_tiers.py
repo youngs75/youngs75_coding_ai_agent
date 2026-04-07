@@ -565,3 +565,51 @@ def analyze_tier_tradeoffs(
     )
 
     return results
+
+
+# ── 모델 Fallback 체인 빌더 ──
+
+
+def build_fallback_chain(
+    tiers: dict[str, TierConfig],
+    *,
+    primary_tier: str = ModelTier.STRONG,
+    temperature: float = 0.1,
+    timeout_per_model: float = 60.0,
+) -> "ModelFallbackChain":
+    """티어 설정에서 ModelFallbackChain을 구성한다.
+
+    기본 순서: primary_tier -> DEFAULT -> FAST
+
+    Args:
+        tiers: 티어별 TierConfig 딕셔너리
+        primary_tier: 최우선 시도할 티어 (기본: STRONG)
+        temperature: 모델 생성 시 temperature (기본: 0.1)
+        timeout_per_model: 모델별 타임아웃 초 (기본: 60.0)
+
+    Returns:
+        ModelFallbackChain 인스턴스
+    """
+    from youngs75_a2a.core.resilience import ModelFallbackChain
+
+    # fallback 순서 결정
+    tier_order = [ModelTier.STRONG, ModelTier.DEFAULT, ModelTier.FAST]
+    # primary_tier를 맨 앞으로
+    if primary_tier in tier_order:
+        tier_order.remove(primary_tier)
+        tier_order.insert(0, primary_tier)
+
+    models: list[BaseChatModel] = []
+    names: list[str] = []
+    for tier_name in tier_order:
+        tc = tiers.get(tier_name)
+        if tc:
+            model = create_chat_model(tc, temperature=temperature)
+            models.append(model)
+            names.append(f"{tier_name}({tc.model})")
+
+    return ModelFallbackChain(
+        models=models,
+        model_names=names,
+        timeout_per_model=timeout_per_model,
+    )

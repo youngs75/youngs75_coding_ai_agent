@@ -280,3 +280,63 @@ core/와 a2a/ 인프라를 그대로 재사용할 수 있으며,
 ---
 
 *총 29개 파일, 2,174줄 | Python 3.13 | A2A SDK 0.3.25 | LangGraph 1.1.4*
+
+---
+
+## 요구사항 ↔ 코드 위치 매핑
+
+### 3-1. 장기 메모리와 지식 저장 체계
+
+| 메모리 층 | 코드 위치 | 저장 방식 | 주입 경로 |
+|-----------|----------|----------|----------|
+| user/profile | `core/memory/schemas.py:USER_PROFILE` | JSONL (`{workspace}/.ai/memory/user_profile.jsonl`) | `agents/coding_assistant/agent.py:_build_execute_system_prompt()` |
+| project/context | `core/memory/schemas.py:SEMANTIC` | JSONL (`{workspace}/.ai/memory/semantic.jsonl`) | `agents/coding_assistant/agent.py:_build_execute_system_prompt()` |
+| domain/knowledge | `core/memory/schemas.py:DOMAIN_KNOWLEDGE` | JSONL (`{workspace}/.ai/memory/domain_knowledge.jsonl`) | `agents/coding_assistant/agent.py:_build_execute_system_prompt()` |
+
+- **저장**: `MemoryStore.accumulate_user_profile()`, `MemoryStore.accumulate_domain_knowledge()`
+- **조회**: `MemoryStore.search(memory_type=...)`
+- **정정**: `MemoryStore.update(item_id, memory_type, content=...)`
+- **영속화**: `_PERSISTENT_TYPES` 상수로 정의된 타입은 자동 JSONL 영속화
+
+### 3-2. 동적 SubAgent 수명주기 관리
+
+| 상태 | 코드 위치 | 설명 |
+|------|----------|------|
+| 8단계 상태 머신 | `core/subagents/schemas.py:SubAgentStatus` | CREATED→ASSIGNED→RUNNING→BLOCKED→COMPLETED→FAILED→CANCELLED→DESTROYED |
+| 인스턴스 추적 | `core/subagents/schemas.py:SubAgentInstance` | agent_id, parent_id, created_at, updated_at, task_summary |
+| 상태 전이 로깅 | `core/subagents/schemas.py:SubAgentEvent` | from_state, to_state, timestamp, reason |
+| 유효 전이 규칙 | `core/subagents/schemas.py:VALID_TRANSITIONS` | 상태별 허용 전이 목록 |
+| 인스턴스 관리 | `core/subagents/registry.py:SubAgentRegistry` | create_instance, transition_state, destroy_instance, cleanup_completed |
+| Puppeteer 선택 | `core/subagents/registry.py:SubAgentRegistry.select()` | R = r(quality) - λ·C(cost) |
+
+### 3-3. Agentic Loop 복원력과 안전성
+
+| 장애 유형 | 감지/대응 코드 | 상태 |
+|-----------|--------------|------|
+| 모델 무응답/지연 | `core/resilience.py:RetryWithBackoff` + `ModelFallbackChain` | ✅ |
+| 반복 무진전 루프 | `core/stall_detector.py:StallDetector` | ✅ |
+| 잘못된 tool call | `core/resilience.py:FailureMatrix(BAD_TOOL_CALL)` | ✅ |
+| SubAgent 실패 | `core/subagents/registry.py:transition_state(FAILED)` + `core/resilience.py:FailureMatrix(SUBAGENT_FAILURE)` | ✅ |
+| 외부 API 오류 | `core/resilience.py:RetryWithBackoff` (max_retries=3, exponential backoff) | ✅ |
+| 모델 fallback | `core/resilience.py:ModelFallbackChain` + `core/model_tiers.py:build_fallback_chain()` | ✅ |
+| safe stop | `core/abort_controller.py:AbortController` | ✅ |
+
+### 모델 정책
+
+| 항목 | 값 |
+|------|---|
+| 기본 프로바이더 | DashScope (Qwen 공식 API) |
+| 오픈소스 모델 | Qwen3 계열 (qwen3-max, qwen3-coder-next, qwen3.5-plus, qwen3.5-flash) |
+| OpenRouter 지원 | ✅ (`LLM_PROVIDER=openrouter`) |
+| 4-tier 체계 | REASONING/STRONG/DEFAULT/FAST |
+| 환경변수 | `REASONING_MODEL`, `STRONG_MODEL`, `DEFAULT_MODEL`, `FAST_MODEL` |
+
+### DeepAgents 기준 기능 매핑
+
+| DeepAgents 기능 | 우리 구현 | 코드 위치 |
+|----------------|----------|----------|
+| MemoryMiddleware | MemoryStore + 3계층 분리 | `core/memory/` |
+| SubAgentMiddleware / task() | SubAgentRegistry + SubAgentInstance | `core/subagents/` |
+| 미들웨어 방어 로직 | FailureMatrix + RetryWithBackoff + ModelFallbackChain | `core/resilience.py` |
+| SkillsMiddleware | 3-Level 스킬 시스템 (자동 활성화) | `core/skills/` |
+| ConfigurableModelMiddleware | 4-tier 모델 체계 | `core/model_tiers.py` |

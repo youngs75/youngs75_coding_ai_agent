@@ -367,6 +367,30 @@ class CodingAssistantAgent(BaseGraphAgent):
         except Exception:
             pass  # 검색 실패 시 무시
 
+        # ── User Profile 검색: 사용자 선호도/습관 ──
+        try:
+            profiles = self._memory_store.search(
+                query=query,
+                memory_type=MemoryType.USER_PROFILE,
+                limit=5,
+            )
+            if profiles:
+                result["user_profile_context"] = [p.content for p in profiles]
+        except Exception:
+            pass
+
+        # ── Domain Knowledge 검색: 도메인 지식 ──
+        try:
+            domain = self._memory_store.search(
+                query=query,
+                memory_type=MemoryType.DOMAIN_KNOWLEDGE,
+                limit=5,
+            )
+            if domain:
+                result["domain_knowledge_context"] = [d.content for d in domain]
+        except Exception:
+            pass
+
         return result
 
     def _build_execute_system_prompt(self, state: CodingState) -> str:
@@ -410,6 +434,18 @@ class CodingAssistantAgent(BaseGraphAgent):
         if procedural_skills:
             system_prompt += "\n\n## 학습된 코드 패턴 (Procedural Memory)\n"
             system_prompt += "\n".join(f"- {skill}" for skill in procedural_skills)
+
+        # User Profile 주입
+        user_profile_context = state.get("user_profile_context", [])
+        if user_profile_context:
+            system_prompt += "\n\n## 사용자 선호도 (User Profile)\n"
+            system_prompt += "\n".join(f"- {ctx}" for ctx in user_profile_context)
+
+        # Domain Knowledge 주입
+        domain_knowledge_context = state.get("domain_knowledge_context", [])
+        if domain_knowledge_context:
+            system_prompt += "\n\n## 도메인 지식 (Domain Knowledge)\n"
+            system_prompt += "\n".join(f"- {ctx}" for ctx in domain_knowledge_context)
 
         return system_prompt
 
