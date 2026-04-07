@@ -413,7 +413,8 @@ class TestMaxTokensRecovery:
             mock_llm, messages, ctx, max_retries=3
         )
 
-        assert result.content == "이어서 완성된 응답"
+        # partial + continuation이 병합되어야 함
+        assert result.content == "불완전한 응답...이어서 완성된 응답"
         assert mock_llm.ainvoke.call_count == 2
 
     async def test_max_retries_exhausted(self) -> None:
@@ -431,7 +432,8 @@ class TestMaxTokensRecovery:
             mock_llm, messages, ctx, max_retries=2
         )
 
-        assert result.content == "불완전..."
+        # 3회 호출 모두 "불완전..." → 축적된 전체 반환
+        assert result.content == "불완전..." * 3
         # 초기 1회 + 재시도 2회 = 3회
         assert mock_llm.ainvoke.call_count == 3
 
@@ -453,7 +455,8 @@ class TestMaxTokensRecovery:
 
         result = await invoke_with_max_tokens_recovery(mock_llm, messages, ctx)
 
-        assert result.content == "완료"
+        # partial + continuation 병합
+        assert result.content == "중단됨완료"
         assert mock_llm.ainvoke.call_count == 2
 
 

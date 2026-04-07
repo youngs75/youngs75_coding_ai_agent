@@ -130,6 +130,13 @@ EXECUTE_SYSTEM_PROMPT = """\
 - 의존성 파일이 프로젝트에 포함된 경우, 코드에서 사용하는 **모든 외부 패키지**를 빠짐없이 추가하세요
 - 언어별 의존성 파일: requirements.txt(Python), package.json(JS/TS), go.mod(Go), Cargo.toml(Rust), pom.xml/build.gradle(Java)
 - 표준 라이브러리는 제외하세요
+- **런타임에서 실제 사용하지 않는 패키지를 포함하지 마세요** — 코드에서 import/require하지 않는 패키지는 의존성 파일에 넣지 마세요
+- **버전 핀 규칙**:
+  - requirements.txt: **정확한 버전 핀(`==`)을 사용하지 마세요**. 최소 버전(`>=`)을 사용하거나 버전 없이 패키지명만 기재하세요 (예: `flask>=3.0` 또는 `flask`)
+  - package.json: 캐럿(`^`) 범위를 사용하세요. 정확한 버전 핀 금지 (예: `"react": "^18.2.0"`)
+- **DB 드라이버 규칙**: 실제 사용하는 DB 드라이버만 포함하세요
+  - SQLite 사용 시: `psycopg2`, `psycopg2-binary`, `mysqlclient` 등 외부 DB 드라이버 불필요 (Python 표준 라이브러리 `sqlite3` 사용)
+  - PostgreSQL을 명시적으로 요구한 경우에만 `psycopg2-binary` 포함
 
 ## 테스트 코드 필수 생성
 - 코드를 생성할 때 **반드시 해당 코드에 대한 테스트 파일도 함께 생성**하세요

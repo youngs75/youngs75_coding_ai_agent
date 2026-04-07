@@ -1770,11 +1770,37 @@ class CodingAssistantAgent(BaseGraphAgent):
             "2) Factory 패턴(create_app) 사용 3) import를 함수 내부로 이동",
         ),
         (
+            r"KeyError.*(?:relationship|backref|mapper|ForeignKey)|"
+            r"(?:relationship|backref|mapper).*KeyError|"
+            r"sqlalchemy.*KeyError",
+            "SQLAlchemyKeyError",
+            "참조하는 클래스가 정의되지 않았습니다. "
+            "relationship에서 참조하는 모델 클래스가 현재 코드에 존재하는지 확인하세요. "
+            "존재하지 않으면 relationship을 제거하거나 해당 클래스를 이 Phase에서 먼저 정의하세요.",
+        ),
+        (
+            r"pip install.*(?:fail|error|Could not find)|"
+            r"No matching distribution found|"
+            r"ERROR:.*pip.*install",
+            "PipInstallError",
+            "requirements.txt의 패키지 버전 호환성을 확인하세요. "
+            "==핀을 제거하고 패키지명만 기재하세요. "
+            "예: flask==2.3.1 → flask",
+        ),
+        (
+            r"AssertionError.*TypingOnly|TypingOnly.*AssertionError|"
+            r"AssertionError.*typing_extensions|typing_extensions.*AssertionError",
+            "TypingCompatError",
+            "패키지 버전이 현재 Python 버전과 비호환입니다. "
+            "requirements.txt에서 버전 핀(==)을 제거하세요.",
+        ),
+        (
             r"ModuleNotFoundError|No module named",
             "ModuleNotFoundError",
-            "모듈 미설치 또는 경로 오류. 1) 프로젝트 내 모듈이면 해당 .py 파일을 함께 생성하세요 "
+            "누락된 모듈/파일을 생성하거나 해당 import를 제거하세요. "
+            "1) 프로젝트 내 모듈이면 해당 .py 파일을 함께 생성하세요 "
             "(예: backend/config.py, backend/extensions.py 등). "
-            "2) 외부 패키지면 requirements.txt에 추가하세요. "
+            "2) 외부 패키지면 requirements.txt에 패키지명만 기재하세요 (==핀 제거). "
             "3) import 경로가 프로젝트 디렉토리 구조와 일치하는지 확인하세요.",
         ),
         (
@@ -1934,6 +1960,24 @@ class CodingAssistantAgent(BaseGraphAgent):
         error_type, guidance = self._classify_test_error(test_output)
         log.append(f"[inject_test_failure] 에러 유형: {error_type}")
 
+        # ── 재시도 횟수 기반 에스컬레이션 힌트 ──
+        escalation_hint = ""
+        if iteration >= 3:
+            escalation_hint = (
+                "\n\n### ⚠️ 반복 실패 경고 (3회 이상)\n"
+                f"이전 {iteration}회 재시도에서 같은 유형의 에러가 반복되었습니다. "
+                "이 에러는 현재 Phase 범위에서 해결 불가할 수 있습니다. "
+                "**문제가 되는 참조/import/relationship을 완전히 제거**하세요. "
+                "복잡한 의존성을 추가하지 말고, 현재 Phase에서 구현 가능한 범위로 단순화하세요.\n"
+            )
+        elif iteration >= 2:
+            escalation_hint = (
+                "\n\n### ⚠️ 반복 실패 경고\n"
+                f"이전 {iteration}회 재시도에서 같은 유형의 에러가 반복되었습니다. "
+                "근본적으로 다른 접근이 필요합니다. "
+                "같은 방식으로 수정하지 말고, 문제의 근본 원인을 제거하세요.\n"
+            )
+
         # 이전 phase 파일 목록 수집 (MCP read_file로 읽을 수 있도록 안내)
         workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
         written_files = state.get("written_files", [])
@@ -1960,6 +2004,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             f"**수정 방향**: {guidance}\n\n"
             f"### 에러 출력:\n"
             f"```\n{test_output[:2000]}\n```\n"
+            f"{escalation_hint}"
             f"{existing_hint}\n"
             f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
             f"수정된 전체 파일을 코드 블록으로 제공하세요 (filepath 주석 포함)."

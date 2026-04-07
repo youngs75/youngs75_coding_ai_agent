@@ -294,6 +294,7 @@ async def invoke_with_max_tokens_recovery(
         최종 AI 응답 메시지
     """
     current_messages = list(messages)
+    accumulated_content = ""  # partial 출력 축적
 
     for attempt in range(max_retries + 1):
         response = await llm.ainvoke(current_messages)
@@ -302,6 +303,10 @@ async def invoke_with_max_tokens_recovery(
         stop_reason = _extract_stop_reason(response)
         if stop_reason not in ("max_tokens", "length"):
             # 정상 완료
+            if accumulated_content:
+                # 이전 partial + 최종 응답 병합
+                merged = accumulated_content + _get_content(response)
+                return AIMessage(content=merged)
             return response
 
         logger.warning(
@@ -310,24 +315,27 @@ async def invoke_with_max_tokens_recovery(
             max_retries + 1,
         )
 
+        # partial 출력 축적
+        partial_content = _get_content(response)
+        accumulated_content += partial_content
+
         if attempt >= max_retries:
-            # 최대 재시도 도달 — 불완전하더라도 반환
+            # 최대 재시도 도달 — 불완전하더라도 축적된 전체 반환
             logger.error(
                 "[max_tokens 복구] 최대 재시도 횟수(%d) 도달. 불완전한 응답 반환.",
                 max_retries,
             )
-            return response
+            return AIMessage(content=accumulated_content)
 
         # 컴팩션 수행
         current_messages = await context_manager.compact(current_messages, llm)
 
         # 이전 불완전한 응답을 포함시키고 이어서 생성 요청
-        partial_content = _get_content(response)
         current_messages.append(AIMessage(content=partial_content))
         current_messages.append(HumanMessage(content=_MAX_TOKENS_RECOVERY_PROMPT))
 
     # 루프가 끝난 경우 (이론상 도달하지 않음)
-    return response  # type: ignore[possibly-undefined]
+    return AIMessage(content=accumulated_content or _get_content(response))  # type: ignore[possibly-undefined]
 
 
 # ── 내부 헬퍼 함수 ───────────────────────────────────────────

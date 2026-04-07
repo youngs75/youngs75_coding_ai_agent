@@ -297,6 +297,153 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
     }
 
 
+def _generate_prd(workspace: str, user_message: str, task_plan: dict) -> str | None:
+    """task_plan 기반으로 PRD 마크다운 문서를 생성하여 저장한다."""
+    import os
+
+    try:
+        parts = ["# PRD (Product Requirements Document)\n"]
+
+        parts.append("## 프로젝트 개요\n")
+        parts.append(user_message)
+        parts.append("")
+
+        if task_plan.get("summary"):
+            parts.append("## 요약\n")
+            parts.append(task_plan["summary"])
+            parts.append("")
+
+        if task_plan.get("architecture"):
+            parts.append("## 아키텍처\n")
+            parts.append(task_plan["architecture"])
+            parts.append("")
+
+        if task_plan.get("tech_stack"):
+            parts.append("## 기술 스택\n")
+            tech = task_plan["tech_stack"]
+            if isinstance(tech, list):
+                for item in tech:
+                    parts.append(f"- {item}")
+            elif isinstance(tech, dict):
+                for k, v in tech.items():
+                    parts.append(f"- **{k}**: {v}")
+            else:
+                parts.append(str(tech))
+            parts.append("")
+
+        if task_plan.get("constraints"):
+            parts.append("## 제약 조건\n")
+            constraints = task_plan["constraints"]
+            if isinstance(constraints, list):
+                for item in constraints:
+                    parts.append(f"- {item}")
+            else:
+                parts.append(str(constraints))
+            parts.append("")
+
+        if task_plan.get("file_structure"):
+            parts.append("## 파일 구조\n")
+            fs = task_plan["file_structure"]
+            if isinstance(fs, list):
+                for item in fs:
+                    parts.append(f"- {item}")
+            elif isinstance(fs, dict):
+                for k, v in fs.items():
+                    parts.append(f"- **{k}**: {v}")
+            else:
+                parts.append(str(fs))
+            parts.append("")
+
+        doc_dir = os.path.join(workspace, "docs")
+        os.makedirs(doc_dir, exist_ok=True)
+        prd_path = os.path.join(doc_dir, "PRD.md")
+        with open(prd_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(parts))
+
+        logger.info("PRD 문서 생성: %s", prd_path)
+        return prd_path
+    except Exception as e:
+        logger.warning("PRD 문서 생성 실패: %s", e)
+        return None
+
+
+def _generate_sdd(workspace: str, task_plan: dict) -> str | None:
+    """task_plan 기반으로 SDD(Software Design Document) 명세서를 생성하여 저장한다."""
+    import os
+
+    try:
+        parts = ["# SDD (Software Design Document)\n"]
+
+        if task_plan.get("summary"):
+            parts.append("## 개요\n")
+            parts.append(task_plan["summary"])
+            parts.append("")
+
+        if task_plan.get("tech_stack"):
+            parts.append("## 기술 스택\n")
+            tech = task_plan["tech_stack"]
+            if isinstance(tech, list):
+                for item in tech:
+                    parts.append(f"- {item}")
+            elif isinstance(tech, dict):
+                for k, v in tech.items():
+                    parts.append(f"- **{k}**: {v}")
+            else:
+                parts.append(str(tech))
+            parts.append("")
+
+        phases = task_plan.get("phases", [])
+        if phases:
+            parts.append("## Phase별 상세 명세\n")
+            for phase in phases:
+                phase_id = phase.get("id", "N/A")
+                title = phase.get("title", "")
+                parts.append(f"### {phase_id}: {title}\n")
+
+                if phase.get("description"):
+                    parts.append(f"**설명**: {phase['description']}\n")
+
+                if phase.get("files"):
+                    parts.append("**대상 파일**:")
+                    for f in phase["files"]:
+                        parts.append(f"- `{f}`")
+                    parts.append("")
+
+                if phase.get("depends_on"):
+                    deps = phase["depends_on"]
+                    parts.append(f"**의존성**: {', '.join(deps)}\n")
+
+                if phase.get("instructions"):
+                    parts.append("**구현 지시사항**:")
+                    parts.append(phase["instructions"])
+                    parts.append("")
+
+        if task_plan.get("file_structure"):
+            parts.append("## 전체 파일 구조\n")
+            fs = task_plan["file_structure"]
+            if isinstance(fs, list):
+                for item in fs:
+                    parts.append(f"- {item}")
+            elif isinstance(fs, dict):
+                for k, v in fs.items():
+                    parts.append(f"- **{k}**: {v}")
+            else:
+                parts.append(str(fs))
+            parts.append("")
+
+        doc_dir = os.path.join(workspace, "docs")
+        os.makedirs(doc_dir, exist_ok=True)
+        sdd_path = os.path.join(doc_dir, "SDD.md")
+        with open(sdd_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(parts))
+
+        logger.info("SDD 문서 생성: %s", sdd_path)
+        return sdd_path
+    except Exception as e:
+        logger.warning("SDD 문서 생성 실패: %s", e)
+        return None
+
+
 async def _execute_phases_sequentially(
     user_message: str,
     task_plan: dict,
@@ -351,6 +498,15 @@ async def _execute_phases_sequentially(
     if _framework:
         skill_registry.auto_activate_for_task("scaffold", framework_hint=_framework)
         logger.info("프레임워크 스킬 사전 활성화: %s", _framework)
+
+    # PRD/SDD 문서 자동 생성
+    workspace = _os.getenv("CODE_TOOLS_WORKSPACE", _os.getcwd())
+    prd_path = _generate_prd(workspace, user_message, task_plan)
+    sdd_path = _generate_sdd(workspace, task_plan)
+    if prd_path:
+        all_written_files.append(f"{prd_path} (PRD)")
+    if sdd_path:
+        all_written_files.append(f"{sdd_path} (SDD)")
 
     for i, phase in enumerate(phases):
         phase_id = phase.get("id", f"phase_{i + 1}")

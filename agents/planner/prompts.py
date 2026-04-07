@@ -191,6 +191,34 @@ phase 간 파일 배치는 반드시 아래 순서를 따르세요:
 각 phase의 description 또는 instructions 끝에 "이 phase 완료 후 예상 테스트 결과"를 포함하세요.
 예: "이 phase 완료 후 `pytest tests/test_models.py`가 통과해야 합니다."
 
+### 1-4. Phase 간 코드 의존성 격리 (필수)
+**각 Phase는 해당 Phase에서 생성되는 파일만으로 독립 실행 가능해야 합니다.**
+
+**[핵심 규칙]**
+- 다른 Phase에서 구현될 모델, 클래스, 함수를 relationship, import, FK, 참조하지 마세요.
+  - ❌ Phase 1에서 `User` 모델을 만들면서, Phase 2에서 구현 예정인 `Task` 모델을 `relationship("Task")`로 참조
+  - ✅ Phase 1에서 `User` 모델은 자기 완결적으로 작성. `Task`와의 관계는 Phase 2에서 `Task` 모델 생성 시 함께 추가
+- 후속 Phase에서 추가할 연관관계(relationship, FK, 참조)는 **해당 후속 Phase의 instructions에 명시**하세요.
+  - 예: Phase 2의 instructions에 "User 모델에 `tasks = relationship('Task', back_populates='owner')` 추가" 라고 명시
+  - 선행 Phase에서는 placeholder, TODO 주석, 빈 relationship을 넣지 마세요.
+- **각 Phase의 instructions에 "이 Phase에서 생성하는 엔티티 목록"을 반드시 명시하세요.**
+  - 예: "이 Phase에서 생성하는 엔티티: User, Role, Permission"
+  - 이 목록에 없는 엔티티를 해당 Phase의 코드에서 참조하면 안 됩니다.
+
+### 1-5. 프론트엔드 Phase 세분화 (필수)
+**프론트엔드/UI 구현은 컴포넌트 단위로 세분화하여 Phase를 분리하세요.**
+LLM 출력 토큰 한도를 초과하면 코드가 잘리고 파일이 0개 저장되는 문제가 발생합니다.
+
+**[핵심 규칙]**
+1. 프론트엔드/UI 구현은 **컴포넌트 단위로 별도 Phase로 분리**할 것
+2. 하나의 Phase에서 **3개 이상의 UI 컴포넌트 파일**을 동시에 생성하지 말 것 (LLM 출력 토큰 한도 초과 방지)
+3. 복잡한 UI 컴포넌트(차트, 에디터, 대시보드, 캘린더 등)는 **반드시 독립 Phase**로 분리
+4. 프론트엔드 Phase 분리 예시:
+   - Phase A: 프로젝트 설정 (빌드 도구 설정, package.json, main entry, 라우터)
+   - Phase B: 공통 레이아웃 + API 클라이언트
+   - Phase C: 페이지 컴포넌트 (목록, 상세, 폼)
+   - Phase D: 복잡 컴포넌트 (간트 차트, 대시보드 등)
+
 2. **구체적 지시**: instructions에는 코딩 에이전트가 바로 구현할 수 있을 정도로 구체적인 사양을 명시
 3. **파일 구조 선행**: file_structure를 먼저 정의하고 각 페이즈에서 참조
 4. **테스트 파일 필수**: 각 phase의 `files`에 해당 phase에서 생성하는 코드의 **테스트 파일도 포함**하세요. 예: Phase 1이 `backend/models.py`를 만들면 `tests/test_models.py`도 files에 포함. 테스트는 생성 후 자동 실행되므로, 실행 가능한 상태여야 합니다.
