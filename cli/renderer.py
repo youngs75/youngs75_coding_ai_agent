@@ -245,6 +245,38 @@ class CLIRenderer:
         except (EOFError, KeyboardInterrupt):
             return ""
 
+    # ── 환경 승인 HITL ──
+
+    def show_env_approval(self, env_info: dict) -> None:
+        """테스트 환경 설정 정보를 사용자에게 표시한다."""
+        lines = [
+            f"**Workspace**: `{env_info.get('workspace', '?')}`",
+            f"**venv 경로**: `{env_info.get('venv_path', '?')}`",
+            f"**감지된 런타임**: {', '.join(env_info.get('runtimes', {}).keys()) or '없음'}",
+            "",
+            "**설치할 의존성**:",
+            f"```\n{env_info.get('dependencies', '(없음)')}\n```",
+        ]
+        self.console.print()
+        self.console.print(
+            Panel(
+                Markdown("\n".join(lines)),
+                title="[bold yellow]🔧 테스트 환경 설정 승인 요청[/]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+
+    def ask_env_approval(self) -> bool:
+        """환경 설정 승인 여부를 사용자에게 묻는다 (blocking)."""
+        try:
+            response = self.console.input(
+                f"  [{_CLR_BRAND}]?[/] 환경 설정을 승인하시겠습니까? (y/n, Enter=승인): "
+            )
+            return response.strip().lower() in ("y", "yes", "ㅇ", "네", "")
+        except (EOFError, KeyboardInterrupt):
+            return False
+
     # ── 파일 저장 결과 ──
 
     def files_written(self, files: list[str]) -> None:

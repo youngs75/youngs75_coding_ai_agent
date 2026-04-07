@@ -8,6 +8,13 @@ Claude Code Plan Agent 패턴:
 
 from .agent import PlannerAgent
 from .config import PlannerConfig
-from .schemas import PlannerState, TaskPlan
+from .schemas import MAX_FILES_PER_PHASE, PlannerState, TaskPlan, validate_task_plan
 
-__all__ = ["PlannerAgent", "PlannerConfig", "PlannerState", "TaskPlan"]
+__all__ = [
+    "MAX_FILES_PER_PHASE",
+    "PlannerAgent",
+    "PlannerConfig",
+    "PlannerState",
+    "TaskPlan",
+    "validate_task_plan",
+]

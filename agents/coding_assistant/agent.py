@@ -26,6 +26,7 @@ from typing import Any, ClassVar
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 from youngs75_a2a.core.base_agent import BaseGraphAgent
 from youngs75_a2a.core.context_manager import (
@@ -1054,6 +1055,46 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
+        # 0.5단계: 환경 설정 승인 요청 (HITL)
+        # 이미 venv가 있으면 승인 스킵 (재사용)
+        existing_venv = await self._get_venv_python(workspace)
+        if not existing_venv and not state.get("env_approved"):
+            # 의존성 파일 내용 미리 수집
+            dep_summary = []
+            req_path = os.path.join(workspace, "requirements.txt")
+            if os.path.exists(req_path):
+                with open(req_path) as f:
+                    dep_summary.append(f"requirements.txt:\n{f.read()[:500]}")
+            pkg_path = os.path.join(workspace, "package.json")
+            if os.path.exists(pkg_path):
+                dep_summary.append("package.json 존재")
+
+            env_info = {
+                "type": "env_approval",
+                "venv_path": os.path.join(workspace, ".venv"),
+                "workspace": workspace,
+                "runtimes": {k: v for k, v in runtimes.items() if v},
+                "dependencies": "\n".join(dep_summary) if dep_summary else "(의존성 파일 없음)",
+            }
+            log.append("[run_tests] 환경 설정 승인 대기 (HITL interrupt)")
+
+            try:
+                response = interrupt(env_info)
+            except RuntimeError:
+                # 그래프 컨텍스트 밖 (테스트 등) — 자동 승인
+                response = True
+
+            if not response:
+                # 거부: 실행 기반 검증 스킵, LLM 검증만으로 진행
+                log.append("[run_tests] 환경 설정 거부 — 실행 검증 스킵")
+                return {
+                    "test_passed": True,
+                    "test_output": "환경 설정 거부 — LLM 검증만 통과",
+                    "execution_log": log,
+                    "iteration": state.get("iteration", 0) + 1,
+                }
+            log.append("[run_tests] 환경 설정 승인됨")
+
         # Python venv 생성 + 의존성 설치
         venv_python = None
         if py_files:
@@ -1090,12 +1131,70 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
+        # 1.5단계: JS/TS/Vue 문법 검증 (node --check)
+        js_check_files = [f for f in real_files if f.endswith((".js", ".mjs", ".cjs"))]
+        ts_files = [f for f in real_files if f.endswith((".ts", ".tsx"))]
+        vue_files = [f for f in real_files if f.endswith(".vue")]
+
+        if js_check_files and runtimes.get("node"):
+            for filepath in js_check_files:
+                full_path = os.path.join(workspace, filepath)
+                if not os.path.exists(full_path):
+                    continue
+                try:
+                    proc = await asyncio.wait_for(
+                        asyncio.create_subprocess_exec(
+                            "node", "--check", full_path,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        ),
+                        timeout=15,
+                    )
+                    _, stderr_out = await proc.communicate()
+                    if proc.returncode != 0:
+                        errors.append(f"[js-syntax] {filepath}: {stderr_out.decode()[:500]}")
+                except (TimeoutError, Exception) as e:
+                    log.append(f"[run_tests] node --check 실패 ({filepath}): {e}")
+
+        if ts_files and runtimes.get("node"):
+            # npx tsc --noEmit 사용 (tsconfig가 있을 때만)
+            tsconfig_path = os.path.join(workspace, "tsconfig.json")
+            if os.path.exists(tsconfig_path):
+                try:
+                    proc = await asyncio.wait_for(
+                        asyncio.create_subprocess_exec(
+                            "npx", "tsc", "--noEmit",
+                            cwd=workspace,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        ),
+                        timeout=30,
+                    )
+                    stdout_out, stderr_out = await proc.communicate()
+                    if proc.returncode != 0:
+                        output = stdout_out.decode()[:500] + stderr_out.decode()[:500]
+                        errors.append(f"[ts-check] TypeScript 오류:\n{output}")
+                except (TimeoutError, Exception) as e:
+                    log.append(f"[run_tests] tsc --noEmit 실패: {e}")
+
+        if errors:
+            output = "\n".join(errors)
+            log.append(f"[run_tests] JS/TS 문법 오류 {len(errors)}건")
+            return {
+                "test_passed": False,
+                "test_output": output,
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
         # 2단계: 테스트 실행 (격리된 venv의 pytest 사용)
+        frontend_only = not py_files and (js_check_files or ts_files or vue_files)
         if not test_files:
-            log.append("[run_tests] 테스트 파일 없음 — syntax만 통과")
+            label = "프론트엔드 문법 검증 통과" if frontend_only else "syntax 검증 통과"
+            log.append(f"[run_tests] 테스트 파일 없음 — {label}")
             return {
                 "test_passed": True,
-                "test_output": "syntax 검증 통과 (테스트 파일 없음)",
+                "test_output": f"{label} (테스트 파일 없음)",
                 "execution_log": log,
                 "iteration": state.get("iteration", 0) + 1,
             }
@@ -1367,16 +1466,72 @@ class CodingAssistantAgent(BaseGraphAgent):
         # (messages에 에러 정보 추가는 _inject_test_failure에서 수행)
         return self.get_node_name("GENERATE_FINAL")
 
+    # ── 에러 유형 분석 ─────────────────────────────────────────
+
+    _ERROR_PATTERNS: ClassVar[list[tuple[str, str, str]]] = [
+        # (정규식 패턴, 에러 유형, 수정 지시)
+        (
+            r"circular import|ImportError.*cannot import name.*most likely due to a circular",
+            "CircularImport",
+            "순환 import 감지. 해결: 1) 공유 객체를 extensions.py로 분리 "
+            "2) Factory 패턴(create_app) 사용 3) import를 함수 내부로 이동",
+        ),
+        (
+            r"ModuleNotFoundError|No module named",
+            "ModuleNotFoundError",
+            "모듈 미설치 또는 경로 오류. requirements.txt에 누락된 패키지를 추가하고, "
+            "import 경로가 프로젝트 구조와 일치하는지 확인하세요.",
+        ),
+        (
+            r"ImportError",
+            "ImportError",
+            "import 실패. __init__.py 존재 여부, 패키지 경로, 절대/상대 import 일관성을 확인하세요.",
+        ),
+        (
+            r"SyntaxError",
+            "SyntaxError",
+            "문법 오류. 괄호 짝, 들여쓰기, 콜론 누락 등을 확인하세요.",
+        ),
+        (
+            r"NameError",
+            "NameError",
+            "정의되지 않은 변수/함수. 오타, import 누락, 스코프 문제를 확인하세요.",
+        ),
+        (
+            r"AttributeError",
+            "AttributeError",
+            "존재하지 않는 속성 접근. 클래스/모듈의 실제 인터페이스를 확인하세요.",
+        ),
+        (
+            r"TypeError",
+            "TypeError",
+            "타입 불일치 또는 인자 개수 오류. 함수 시그니처와 호출부를 대조하세요.",
+        ),
+    ]
+
+    def _classify_test_error(self, test_output: str) -> tuple[str, str]:
+        """테스트 출력에서 에러 유형을 분류하고 수정 지시를 반환한다."""
+        for pattern, error_type, guidance in self._ERROR_PATTERNS:
+            if re.search(pattern, test_output, re.IGNORECASE):
+                return error_type, guidance
+        return "Unknown", "에러 메시지를 분석하여 원인을 파악하고 수정하세요."
+
     async def _inject_test_failure(self, state: CodingState) -> dict[str, Any]:
         """테스트 실패 에러를 messages에 주입하여 GENERATE_FINAL이 수정 코드를 생성하게 한다."""
         test_output = state.get("test_output", "")
         log = list(state.get("execution_log", []))
         iteration = state.get("iteration", 0)
 
+        error_type, guidance = self._classify_test_error(test_output)
+        log.append(f"[inject_test_failure] 에러 유형: {error_type}")
+
         error_msg = HumanMessage(content=(
             f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
-            f"아래 에러를 수정하여 코드를 다시 생성하세요.\n\n"
+            f"### 에러 유형: {error_type}\n"
+            f"**수정 방향**: {guidance}\n\n"
+            f"### 에러 출력:\n"
             f"```\n{test_output[:2000]}\n```\n\n"
+            f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
             f"수정된 전체 파일을 코드 블록으로 제공하세요 (filepath 주석 포함)."
         ))
         log.append(f"[inject_test_failure] 에러 주입, 수정 루프 시작 (iteration={iteration})")

@@ -554,22 +554,41 @@ async def _run_agent_turn(
                             interrupt_value = task.interrupts[0].value
                             break
                     if interrupt_value:
-                        renderer.show_plan(str(interrupt_value))
-                        approved = await asyncio.to_thread(renderer.ask_plan_approval)
-                        if approved:
-                            renderer.success("계획 승인 — 실행을 시작합니다")
-                            graph_input = Command(resume=True)
+                        # 환경 승인 interrupt vs 계획 승인 interrupt 구분
+                        is_env_approval = (
+                            isinstance(interrupt_value, dict)
+                            and interrupt_value.get("type") == "env_approval"
+                        )
+
+                        if is_env_approval:
+                            # 환경 설정 승인 요청
+                            renderer.show_env_approval(interrupt_value)
+                            approved = await asyncio.to_thread(renderer.ask_env_approval)
+                            if approved:
+                                renderer.success("환경 설정 승인 — 테스트 환경을 구성합니다")
+                                graph_input = Command(resume=True)
+                            else:
+                                renderer.warning("환경 설정 거부 — LLM 검증만 진행합니다")
+                                graph_input = Command(resume=False)
                             continue
                         else:
-                            # 거부 시 피드백을 받아 재계획
-                            feedback = await asyncio.to_thread(renderer.ask_rejection_feedback)
-                            if feedback:
-                                renderer.info(f"재계획 요청: {feedback}")
-                                graph_input = Command(resume={"approved": False, "feedback": feedback})
+                            # 기존 계획 승인 interrupt
+                            renderer.show_plan(str(interrupt_value))
+                            approved = await asyncio.to_thread(renderer.ask_plan_approval)
+                            if approved:
+                                renderer.success("계획 승인 — 실행을 시작합니다")
+                                graph_input = Command(resume=True)
                                 continue
                             else:
-                                renderer.warning("계획 거부 — 작업을 취소합니다")
-                                return
+                                # 거부 시 피드백을 받아 재계획
+                                feedback = await asyncio.to_thread(renderer.ask_rejection_feedback)
+                                if feedback:
+                                    renderer.info(f"재계획 요청: {feedback}")
+                                    graph_input = Command(resume={"approved": False, "feedback": feedback})
+                                    continue
+                                else:
+                                    renderer.warning("계획 거부 — 작업을 취소합니다")
+                                    return
             except Exception:
                 logger.debug("그래프 상태 확인 스킵 (checkpointer 미지원)")
             break  # 정상 완료 (interrupt 없음)

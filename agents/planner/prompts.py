@@ -145,11 +145,44 @@ PLAN_SYSTEM_PROMPT = """\
 - **api_server**: main.py(또는 main.go), routes/, models/, Dockerfile
 - 실제 file_structure는 **사용자가 요청한 기술 스택에 맞게** 결정하세요.
 
-## 핵심 원칙
-1. **페이즈 분리 + 파일 분배**: 각 페이즈는 의존성이 명확하고 독립 실행 가능해야 합니다.
-   - **각 phase의 `files`에는 해당 phase에서 새로 생성할 파일만 포함**하세요. file_structure의 전체 파일을 첫 phase에 넣지 마세요.
-   - 코딩 에이전트는 `files`에 나열된 파일을 모두 완성합니다. Phase 1에 16개 파일을 넣으면 16개를 전부 만들고, Phase 2에서 할 일이 없어집니다.
-   - 예: 백엔드+프론트엔드 프로젝트라면 → Phase 1: files=[백엔드 4개], Phase 2: files=[프론트엔드 5개]
+## ============================================================
+## 핵심 원칙 (반드시 준수)
+## ============================================================
+
+### 1. 페이즈 파일 수 하드 리밋: phase당 최대 5개 파일
+각 페이즈는 의존성이 명확하고 독립 실행 가능해야 합니다.
+
+**[절대 규칙] 각 phase의 `files` 개수는 테스트 파일 포함 최대 5개입니다.**
+이 규칙은 예외 없이 적용됩니다. 시스템이 5개 초과 시 자동으로 거부합니다.
+5개를 초과하면 반드시 phase를 분할하세요.
+
+  ❌ 잘못된 예 — Phase 1: 13 files
+  ✅ 올바른 예 — Phase 1: 4 files, Phase 2: 4 files, Phase 3: 5 files
+
+  ❌ 잘못된 예 — Phase 1: 8 files
+  ✅ 올바른 예 — Phase 1: 4 files, Phase 2: 4 files
+
+- **각 phase의 `files`에는 해당 phase에서 새로 생성할 파일만 포함**하세요. file_structure의 전체 파일을 첫 phase에 넣지 마세요.
+- 코딩 에이전트는 `files`에 나열된 파일을 모두 완성합니다. Phase 1에 16개 파일을 넣으면 16개를 전부 만들고, Phase 2에서 할 일이 없어집니다.
+- 예: 백엔드+프론트엔드 프로젝트 → Phase 1: files=[모델 3개 + 테스트 1개], Phase 2: files=[API 3개 + 테스트 1개], Phase 3: files=[프론트엔드 4개 + 테스트 1개]
+
+### 1-1. 의존성 순서 강제
+phase 간 파일 배치는 반드시 아래 순서를 따르세요:
+**기반 모듈(models, config, utils, types) → 비즈니스 로직(services, handlers) → API/라우트(routes, controllers) → 프론트엔드(components, pages) → 통합 테스트**
+
+- 하위 모듈을 먼저 구현하고, 상위 모듈은 다음 phase에서 import하여 사용합니다.
+- 예: Phase 1에서 `models.py`를 만들고, Phase 2에서 `services.py`가 `from models import X`를 사용합니다.
+
+### 1-2. 파일 간 의존성 그래프 고려
+- **같은 phase 내 파일들이 서로 import하지 않도록 분배하세요.** A→B 의존이 있으면 B를 먼저 만드는 phase에 배치합니다.
+- 순환 의존 가능성이 있는 파일은 반드시 다른 phase로 분리하세요.
+- 예: `routes.py`가 `services.py`를 import하고, `services.py`가 `models.py`를 import하면
+  → Phase 1: [models.py, test_models.py], Phase 2: [services.py, test_services.py], Phase 3: [routes.py, test_routes.py]
+
+### 1-3. 자동 검증 힌트 (권장)
+각 phase의 description 또는 instructions 끝에 "이 phase 완료 후 예상 테스트 결과"를 포함하세요.
+예: "이 phase 완료 후 `pytest tests/test_models.py`가 통과해야 합니다."
+
 2. **구체적 지시**: instructions에는 코딩 에이전트가 바로 구현할 수 있을 정도로 구체적인 사양을 명시
 3. **파일 구조 선행**: file_structure를 먼저 정의하고 각 페이즈에서 참조
 4. **테스트 파일 필수**: 각 phase의 `files`에 해당 phase에서 생성하는 코드의 **테스트 파일도 포함**하세요. 예: Phase 1이 `backend/models.py`를 만들면 `tests/test_models.py`도 files에 포함. 테스트는 생성 후 자동 실행되므로, 실행 가능한 상태여야 합니다.
@@ -166,7 +199,7 @@ PLAN_SYSTEM_PROMPT = """\
 8. **페이즈 수 최소화 (중요)**: 페이즈를 나누는 것은 비용(LLM 호출 횟수)이 있으므로, **꼭 필요할 때만** 나누세요.
    - **전체 예상 코드량 500줄 이하**: 1개 페이즈로 충분합니다. 굳이 나누지 마세요.
    - **500~1500줄**: 2-3개 페이즈가 적절합니다.
-   - **1500줄 이상**: 기능 단위로 4개 이상 페이즈를 나누되, 페이즈당 최대 5개 파일을 권장합니다.
+   - **1500줄 이상**: 기능 단위로 4개 이상 페이즈를 나누되, 페이즈당 최대 5개 파일을 지키세요.
    - **1~2개 파일만 생성하는 페이즈는 인접 페이즈에 병합**하세요. 예: API 서비스 파일 1개를 위한 별도 페이즈는 불필요합니다.
    - 20줄짜리 config 파일을 위해 별도 페이즈를 만들지 마세요. 관련 파일과 함께 묶으세요.
    - **"통합", "테스트", "검증"만 있는 페이즈를 절대 만들지 마세요.** 이런 작업은 마지막 실질 페이즈의 instructions 끝에 포함하세요. 코딩 에이전트는 이전 phase 파일을 read_file로 읽고 수정할 수 있으므로, 별도 통합 페이즈가 필요 없습니다.

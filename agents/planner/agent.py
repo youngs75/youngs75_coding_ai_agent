@@ -35,7 +35,7 @@ from .prompts import (
     RESEARCH_SUMMARIZE_PROMPT,
     RESEARCH_SYSTEM_PROMPT,
 )
-from .schemas import PlannerState, TaskPlan
+from .schemas import PlannerState, TaskPlan, validate_task_plan
 
 logger = logging.getLogger(__name__)
 
@@ -439,6 +439,9 @@ class PlannerAgent(BaseGraphAgent):
             "tech_stack": plan_data.get("tech_stack", []),
             "constraints": plan_data.get("constraints", []),
         }
+
+        # Phase별 파일 수 하드 리밋 검증 (5개 초과 시 자동 분할)
+        task_plan = validate_task_plan(task_plan)
 
         # 계획을 마크다운으로도 저장 (코딩 에이전트 프롬프트용)
         plan_text = self._format_plan_as_markdown(task_plan)

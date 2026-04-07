@@ -74,3 +74,6 @@ class CodingState(TypedDict, total=False):
 
     # apply_code 출력 — 디스크에 저장된 파일 경로 목록
     written_files: list[str]
+
+    # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
+    env_approved: bool

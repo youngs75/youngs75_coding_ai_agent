@@ -95,6 +95,23 @@ EXECUTE_SYSTEM_PROMPT = """\
   - **Rust**: `mod module;` 또는 `use crate::module;`
   - **Java**: `import com.project.package.Class;`
 
+## 순환 Import 방지 (필수)
+파일 간 import가 **DAG(방향 비순환 그래프)**를 형성하는지 반드시 확인하세요.
+"A imports B, B imports A" 패턴이 감지되면 즉시 중간 모듈로 분리하세요.
+
+- **Python**: 공유 객체(db, config 등)를 `extensions.py`로 분리하고, Blueprint/라우터는 app을 직접 import하지 말 것.
+  Factory 패턴(`create_app()`)으로 blueprint를 등록하세요.
+  ```
+  extensions.py: db = SQLAlchemy()
+  models.py: from extensions import db
+  blueprints/api.py: from models import User  # app을 import하지 않음
+  app.py: from extensions import db; app.register_blueprint(api_bp)
+  ```
+- **JavaScript/TypeScript**: barrel export(index.ts)에서 순환 re-export 주의. 공유 의존성은 별도 모듈로 분리.
+- **Go**: 패키지 간 순환 import은 컴파일 에러. interface를 상위 패키지에 정의하고 구현을 하위 패키지에 배치.
+
+파일 생성 전에 import 그래프를 먼저 설계하고, 순환이 없는지 검증한 후 코드를 작성하세요.
+
 ## 파일 저장 형식 (필수)
 **각 파일은 반드시 별도의 코드 블록으로 분리**하고, 첫 줄에 파일 경로를 주석으로 명시하세요:
 - Python/Ruby/Shell: `# filepath: path/to/file.py`

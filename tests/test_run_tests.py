@@ -65,6 +65,8 @@ class TestRunTestsWithPytest:
             "def test_add():\n"
             "    assert add(1, 2) == 3\n"
         )
+        # requirements.txt가 있어야 venv가 생성됨
+        (tmp_path / "requirements.txt").write_text("")
         os.environ["CODE_TOOLS_WORKSPACE"] = str(tmp_path)
 
         result = await agent._run_tests({
@@ -85,6 +87,8 @@ class TestRunTestsWithPytest:
             "def test_add():\n"
             "    assert add(1, 2) == 3\n"
         )
+        # requirements.txt가 있어야 venv가 생성됨
+        (tmp_path / "requirements.txt").write_text("")
         os.environ["CODE_TOOLS_WORKSPACE"] = str(tmp_path)
 
         result = await agent._run_tests({
