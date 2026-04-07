@@ -178,6 +178,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         "VERIFY": "verify_result",
         "RUN_TESTS": "run_tests",
         "APPLY_CODE": "apply_code",
+        "INJECT_TEST_FAILURE": "inject_test_failure",
     }
 
     def __init__(
@@ -1009,7 +1010,9 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         0단계: 런타임 감지 + venv 생성 + 의존성 설치
         1단계: syntax check (py_compile)
-        2단계: pytest 실행 (workspace venv의 python 사용)
+        1.5단계: JS/TS/Vue 문법 검증 (node --check, tsc --noEmit)
+        2단계: 프론트엔드 테스트 실행 (jest / vitest)
+        3단계: pytest 실행 (workspace venv의 python 사용)
 
         실패 시 test_passed=False + 에러 메시지를 test_output에 저장.
         """
@@ -1035,6 +1038,11 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         py_files = [f for f in real_files if f.endswith(".py")]
         test_files = [f for f in real_files if "test" in f.lower() and f.endswith(".py")]
+        # 프론트엔드 테스트 파일 감지 (.test.js, .spec.ts 등)
+        _FE_TEST_PATTERN = re.compile(
+            r"\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$", re.IGNORECASE,
+        )
+        fe_test_files = [f for f in real_files if _FE_TEST_PATTERN.search(f)]
 
         # 0단계: 런타임 감지 + venv 생성 + 의존성 설치
         needed_langs = []
@@ -1096,13 +1104,25 @@ class CodingAssistantAgent(BaseGraphAgent):
             log.append("[run_tests] 환경 설정 승인됨")
 
         # Python venv 생성 + 의존성 설치
+        # 재시도 시: 의존성 파일(requirements.txt 등)이 변경된 경우에만 재설치
+        iteration = state.get("iteration", 0)
         venv_python = None
+        should_install_deps = iteration == 0
+        if iteration > 0:
+            written = state.get("written_files", [])
+            dep_files = {"requirements.txt", "package.json", "go.mod", "Cargo.toml",
+                         "pyproject.toml", "setup.py", "setup.cfg"}
+            if any(f.split(" (")[0].strip() in dep_files for f in written):
+                should_install_deps = True
+                log.append("[run_tests] 의존성 파일 변경 감지 — 재설치")
+
         if py_files:
             venv_python = await self._setup_project_env(workspace, log)
-            await self._install_dependencies(workspace, venv_python, log)
+            if should_install_deps:
+                await self._install_dependencies(workspace, venv_python, log)
 
         # Node.js / Go / Rust 의존성 설치 (venv 불필요)
-        if not py_files:
+        if not py_files and should_install_deps:
             await self._install_dependencies(workspace, None, log)
 
         # 실제 사용할 python 경로 결정
@@ -1187,9 +1207,22 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
-        # 2단계: 테스트 실행 (격리된 venv의 pytest 사용)
+        # 2단계: 프론트엔드 테스트 실행 (jest / vitest)
         frontend_only = not py_files and (js_check_files or ts_files or vue_files)
+        fe_test_result = None
+        if fe_test_files and runtimes.get("node"):
+            fe_test_result = await self._run_frontend_tests(
+                workspace, fe_test_files, log,
+            )
+
+        # 3단계: pytest 실행 (격리된 venv의 pytest 사용)
         if not test_files:
+            # 프론트엔드 테스트 결과가 있으면 그 결과를 반환
+            if fe_test_result is not None:
+                return {
+                    **fe_test_result,
+                    "iteration": state.get("iteration", 0) + 1,
+                }
             label = "프론트엔드 문법 검증 통과" if frontend_only else "syntax 검증 통과"
             log.append(f"[run_tests] 테스트 파일 없음 — {label}")
             return {
@@ -1227,6 +1260,12 @@ class CodingAssistantAgent(BaseGraphAgent):
             passed = proc.returncode == 0
             log.append(f"[run_tests] pytest {'통과' if passed else '실패'} (venv={project_python}): {test_files}")
 
+            # 프론트엔드 테스트 결과 병합
+            if fe_test_result is not None:
+                fe_passed = fe_test_result["test_passed"]
+                passed = passed and fe_passed
+                output = output + "\n\n--- Frontend Tests ---\n" + fe_test_result["test_output"]
+
             return {
                 "test_passed": passed,
                 "test_output": output,
@@ -1248,6 +1287,125 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "test_output": f"테스트 실행 실패: {e}",
                 "execution_log": log,
                 "iteration": state.get("iteration", 0) + 1,
+            }
+
+    # ── 프론트엔드 테스트 실행 ─────────────────────────────────
+
+    _FE_TEST_TIMEOUT_S: int = 60
+
+    async def _run_frontend_tests(
+        self,
+        workspace: str,
+        fe_test_files: list[str],
+        log: list[str],
+    ) -> dict[str, Any]:
+        """jest 또는 vitest로 프론트엔드 테스트를 실행한다.
+
+        탐지 우선순위:
+        1. package.json의 scripts.test가 있으면 `npm test` 사용
+        2. vitest.config / vite.config 존재 → `npx vitest run`
+        3. jest.config 존재 → `npx jest`
+        4. 폴백: `npx jest` (가장 보편적)
+        """
+        runner_cmd: list[str] = []
+        runner_label = ""
+
+        pkg_path = os.path.join(workspace, "package.json")
+        has_test_script = False
+        if os.path.exists(pkg_path):
+            try:
+                import json
+
+                with open(pkg_path) as f:
+                    pkg = json.load(f)
+                scripts = pkg.get("scripts", {})
+                test_script = scripts.get("test", "")
+                # "echo \"Error: no test specified\" && exit 1" 같은 기본값 제외
+                if test_script and "no test specified" not in test_script:
+                    has_test_script = True
+            except Exception:
+                pass
+
+        if has_test_script:
+            runner_cmd = ["npm", "test", "--"]
+            runner_label = "npm test"
+        elif any(
+            os.path.exists(os.path.join(workspace, cfg))
+            for cfg in ("vitest.config.ts", "vitest.config.js", "vitest.config.mts")
+        ):
+            runner_cmd = ["npx", "vitest", "run"]
+            runner_label = "vitest"
+        elif any(
+            os.path.exists(os.path.join(workspace, cfg))
+            for cfg in (
+                "vite.config.ts", "vite.config.js", "vite.config.mts",
+            )
+        ):
+            # vite 프로젝트는 vitest 사용 가능성 높음
+            runner_cmd = ["npx", "vitest", "run"]
+            runner_label = "vitest (vite project)"
+        elif any(
+            os.path.exists(os.path.join(workspace, cfg))
+            for cfg in ("jest.config.js", "jest.config.ts", "jest.config.mjs", "jest.config.cjs", "jest.config.json")
+        ):
+            runner_cmd = ["npx", "jest"]
+            runner_label = "jest"
+        else:
+            # 폴백: npx jest (가장 보편적)
+            runner_cmd = ["npx", "jest"]
+            runner_label = "jest (fallback)"
+
+        # 테스트 파일 경로 추가
+        test_paths = [os.path.join(workspace, f) for f in fe_test_files]
+        cmd = [*runner_cmd, *test_paths]
+
+        log.append(f"[run_tests] 프론트엔드 테스트 실행: {runner_label} ({len(fe_test_files)}개 파일)")
+
+        try:
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=workspace,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env={**os.environ, "CI": "true"},
+                ),
+                timeout=self._FE_TEST_TIMEOUT_S,
+            )
+            stdout, stderr = await proc.communicate()
+            output = stdout.decode()[:2000]
+            if stderr:
+                output += "\n" + stderr.decode()[:1000]
+
+            passed = proc.returncode == 0
+            log.append(
+                f"[run_tests] {runner_label} {'통과' if passed else '실패'}: {fe_test_files}"
+            )
+            return {
+                "test_passed": passed,
+                "test_output": output,
+                "execution_log": log,
+            }
+        except TimeoutError:
+            log.append(f"[run_tests] {runner_label} 타임아웃 ({self._FE_TEST_TIMEOUT_S}s) — 스킵")
+            return {
+                "test_passed": True,
+                "test_output": f"{runner_label} 타임아웃 — 스킵",
+                "execution_log": log,
+            }
+        except FileNotFoundError:
+            log.append(f"[run_tests] {runner_label} 실행 불가 (npx/npm 없음) — 스킵")
+            return {
+                "test_passed": True,
+                "test_output": f"{runner_label} 실행 불가 — 스킵",
+                "execution_log": log,
+            }
+        except Exception as e:
+            log.append(f"[run_tests] {runner_label} 오류: {e}")
+            return {
+                "test_passed": True,
+                "test_output": f"{runner_label} 실행 실패: {e}",
+                "execution_log": log,
             }
 
     # ── Procedural Memory 훅 ─────────────────────────────────
@@ -1462,9 +1620,8 @@ class CodingAssistantAgent(BaseGraphAgent):
             logging.getLogger(__name__).warning("[run_tests] 최대 반복 도달 — 테스트 실패 상태로 종료")
             return END
 
-        # 실패 시: test_output을 HumanMessage로 주입하여 GENERATE_FINAL이 수정하게 함
-        # (messages에 에러 정보 추가는 _inject_test_failure에서 수행)
-        return self.get_node_name("GENERATE_FINAL")
+        # 실패 시: INJECT_TEST_FAILURE 노드에서 에러를 messages에 주입 → GENERATE_FINAL
+        return self.get_node_name("INJECT_TEST_FAILURE")
 
     # ── 에러 유형 분석 ─────────────────────────────────────────
 
@@ -1522,15 +1679,75 @@ class CodingAssistantAgent(BaseGraphAgent):
         log = list(state.get("execution_log", []))
         iteration = state.get("iteration", 0)
 
+        # 반복 감지 1: 동일 코드 반복 (유사도 비교)
+        generated_code = state.get("generated_code", "")
+        prev_code = state.get("_prev_generated_code", "")
+        if prev_code and generated_code:
+            norm_cur = re.sub(r"\s+", " ", generated_code).strip()
+            norm_prev = re.sub(r"\s+", " ", prev_code).strip()
+            if norm_cur == norm_prev or (
+                len(norm_cur) > 100
+                and abs(len(norm_cur) - len(norm_prev)) < len(norm_cur) * 0.05
+                and norm_cur[:500] == norm_prev[:500]
+            ):
+                log.append(f"[inject_test_failure] 동일 코드 반복 감지 — 재시도 중단")
+                return {
+                    "test_passed": True,
+                    "test_output": f"동일 코드 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
+                    "execution_log": log,
+                }
+
+        # 반복 감지 2: 동일 테스트 에러 반복 (연속 3회 같은 에러면 중단)
+        prev_test_output = state.get("_prev_test_output", "")
+        if prev_test_output and test_output and iteration >= 3:
+            # FAILURES 섹션만 추출하여 비교 (타임스탬프 등 무시)
+            # pytest: FAILED/ERROR/assert, Go: --- FAIL/panic, Rust: failures:/panicked, Jest: FAIL/●
+            _FAIL_KEYWORDS = ("FAILED", "ERROR", "assert", "--- FAIL", "panic",
+                              "failures:", "panicked", "FAIL ", "●", "Expected")
+
+            def _extract_failures(s: str) -> str:
+                lines = [l for l in s.split("\n") if any(kw in l for kw in _FAIL_KEYWORDS)]
+                return "\n".join(lines[:20])
+            cur_failures = _extract_failures(test_output)
+            prev_failures = _extract_failures(prev_test_output)
+            if cur_failures and cur_failures == prev_failures:
+                log.append(f"[inject_test_failure] 동일 테스트 에러 3회 이상 반복 — 재시도 중단")
+                return {
+                    "test_passed": True,
+                    "test_output": f"동일 에러 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
+                    "execution_log": log,
+                }
+
         error_type, guidance = self._classify_test_error(test_output)
         log.append(f"[inject_test_failure] 에러 유형: {error_type}")
+
+        # 이전 phase 파일 목록 수집 (MCP read_file로 읽을 수 있도록 안내)
+        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+        written_files = state.get("written_files", [])
+        existing_hint = ""
+        if written_files:
+            all_files: list[str] = []
+            for root, _dirs, files in os.walk(workspace):
+                for fname in files:
+                    rel = os.path.relpath(os.path.join(root, fname), workspace)
+                    if not rel.startswith((".venv", "__pycache__", ".git", "node_modules")):
+                        all_files.append(rel)
+            if all_files:
+                existing_hint = (
+                    "\n\n### 프로젝트 내 기존 파일 (수정 가능)\n"
+                    f"```\n{chr(10).join(sorted(all_files)[:30])}\n```\n"
+                    "**위 파일 중 에러의 원인이 되는 파일이 있다면 해당 파일도 함께 수정하세요.**\n"
+                    "예: 초기화 파일에 라우트/모듈 등록이 누락되었거나, "
+                    "설정 파일에 의존성이 빠져있다면 해당 파일도 수정 코드에 포함하세요.\n"
+                )
 
         error_msg = HumanMessage(content=(
             f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
             f"### 에러 유형: {error_type}\n"
             f"**수정 방향**: {guidance}\n\n"
             f"### 에러 출력:\n"
-            f"```\n{test_output[:2000]}\n```\n\n"
+            f"```\n{test_output[:2000]}\n```\n"
+            f"{existing_hint}\n"
             f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
             f"수정된 전체 파일을 코드 블록으로 제공하세요 (filepath 주석 포함)."
         ))
@@ -1539,6 +1756,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         return {
             "messages": [error_msg],
             "execution_log": log,
+            "_prev_generated_code": generated_code,
+            "_prev_test_output": test_output,
         }
 
     # ── 그래프 구성 ─────────────────────────────────────────
@@ -1552,6 +1771,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
         graph.add_node(self.get_node_name("APPLY_CODE"), self._apply_code)
         graph.add_node(self.get_node_name("RUN_TESTS"), self._run_tests)
+        graph.add_node(self.get_node_name("INJECT_TEST_FAILURE"), self._inject_test_failure)
 
     def init_edges(self, graph: StateGraph) -> None:
         # parse → retrieve_memory → execute
@@ -1589,8 +1809,13 @@ class CodingAssistantAgent(BaseGraphAgent):
             self.get_node_name("APPLY_CODE"),
             self.get_node_name("RUN_TESTS"),
         )
-        # run_tests → (END or generate_final for fix)
+        # run_tests → (END or inject_test_failure for fix)
         graph.add_conditional_edges(
             self.get_node_name("RUN_TESTS"),
             self._should_retry_tests,
+        )
+        # inject_test_failure → generate_final (에러 메시지 주입 후 재생성)
+        graph.add_edge(
+            self.get_node_name("INJECT_TEST_FAILURE"),
+            self.get_node_name("GENERATE_FINAL"),
         )

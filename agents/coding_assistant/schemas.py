@@ -77,3 +77,7 @@ class CodingState(TypedDict, total=False):
 
     # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
     env_approved: bool
+
+    # 반복 감지용 — 이전 생성 코드 및 테스트 에러 캐시
+    _prev_generated_code: str
+    _prev_test_output: str

@@ -307,6 +307,22 @@ def create_chat_model(
     model = tier_config.model
     timeout = tier_config.request_timeout
 
+    # 호출자가 max_tokens를 지정하지 않으면 모델별 최대값 설정
+    if "max_tokens" not in kwargs:
+        _MAX_OUTPUT_TOKENS: dict[str, int] = {
+            "qwen-turbo": 8192,
+            "qwen-plus": 8192,
+            "qwen-max": 8192,
+            "qwen-coder-plus": 16384,
+        }
+        # 모델명에서 매칭 (openrouter의 "qwen/qwen3-max" 등 대응)
+        resolved = 16384  # OpenRouter/기타 프로바이더 기본값
+        for key, limit in _MAX_OUTPUT_TOKENS.items():
+            if key in model:
+                resolved = limit
+                break
+        kwargs["max_tokens"] = resolved
+
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 

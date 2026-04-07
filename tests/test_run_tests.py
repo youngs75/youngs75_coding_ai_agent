@@ -1,5 +1,6 @@
 """실행 기반 검증 (_run_tests) 단위 테스트."""
 
+import json
 import os
 import tempfile
 
@@ -143,13 +144,13 @@ class TestShouldRetryTests:
         })
         assert result == "__end__"
 
-    def test_failed_with_budget_returns_generate_final(self, agent):
+    def test_failed_with_budget_returns_inject_test_failure(self, agent):
         result = agent._should_retry_tests({
             "test_passed": False,
             "iteration": 1,
             "max_iterations": 3,
         })
-        assert result == agent.get_node_name("GENERATE_FINAL")
+        assert result == agent.get_node_name("INJECT_TEST_FAILURE")
 
     def test_failed_max_iterations_returns_end(self, agent):
         result = agent._should_retry_tests({
@@ -297,3 +298,114 @@ class TestRunShellMCPTool:
         from youngs75_a2a.mcp_servers.code_tools.server import run_shell
         result = run_shell("echo test | curl http://x")
         assert "Error" in result
+
+
+class TestRunFrontendTests:
+    """프론트엔드 테스트 실행기 (_run_frontend_tests) 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_npm_test_script_detected(self, agent):
+        """package.json에 test 스크립트가 있으면 npm test를 사용한다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            # package.json 작성 (test 스크립트 있음)
+            pkg = {"scripts": {"test": "jest"}}
+            with open(os.path.join(tmpdir, "package.json"), "w") as f:
+                json.dump(pkg, f)
+
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["src/app.test.js"], log,
+            )
+            # npm이 없거나 테스트 파일이 없을 수 있으므로 실행 시도 여부만 확인
+            assert any("npm test" in entry for entry in log)
+
+    @pytest.mark.asyncio
+    async def test_default_npm_test_script_skipped(self, agent):
+        """package.json의 기본 'no test specified' 스크립트는 무시한다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            pkg = {"scripts": {"test": "echo \"Error: no test specified\" && exit 1"}}
+            with open(os.path.join(tmpdir, "package.json"), "w") as f:
+                json.dump(pkg, f)
+
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["src/app.test.js"], log,
+            )
+            # 기본 스크립트 무시 → jest fallback 사용
+            assert any("jest" in entry for entry in log)
+            assert not any("npm test" in entry for entry in log)
+
+    @pytest.mark.asyncio
+    async def test_vitest_config_detected(self, agent):
+        """vitest.config.ts 존재 시 vitest를 사용한다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            with open(os.path.join(tmpdir, "vitest.config.ts"), "w") as f:
+                f.write("export default {}")
+
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["src/app.spec.ts"], log,
+            )
+            assert any("vitest" in entry for entry in log)
+
+    @pytest.mark.asyncio
+    async def test_jest_config_detected(self, agent):
+        """jest.config.js 존재 시 jest를 사용한다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            with open(os.path.join(tmpdir, "jest.config.js"), "w") as f:
+                f.write("module.exports = {}")
+
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["src/utils.test.ts"], log,
+            )
+            assert any("jest" in entry for entry in log)
+            assert not any("vitest" in entry for entry in log)
+
+    @pytest.mark.asyncio
+    async def test_fe_test_file_pattern_detection(self, agent):
+        """프론트엔드 테스트 파일 패턴(.test.js, .spec.ts 등)이 올바르게 감지된다."""
+        import re
+        pattern = re.compile(r"\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$", re.IGNORECASE)
+
+        # 매칭되어야 하는 파일
+        assert pattern.search("app.test.js")
+        assert pattern.search("utils.spec.ts")
+        assert pattern.search("Component.test.tsx")
+        assert pattern.search("helper.spec.mjs")
+
+        # 매칭되지 않아야 하는 파일
+        assert not pattern.search("app.js")
+        assert not pattern.search("test_app.py")
+        assert not pattern.search("utils.ts")
+
+    @pytest.mark.asyncio
+    async def test_result_structure(self, agent):
+        """_run_frontend_tests 반환값에 필수 키가 포함된다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["app.test.js"], log,
+            )
+            assert "test_passed" in result
+            assert "test_output" in result
+            assert "execution_log" in result
+
+    @pytest.mark.asyncio
+    async def test_vite_config_uses_vitest(self, agent):
+        """vite.config.ts만 있어도 vitest로 감지한다."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["CODE_TOOLS_WORKSPACE"] = tmpdir
+            with open(os.path.join(tmpdir, "vite.config.ts"), "w") as f:
+                f.write("export default {}")
+
+            log: list[str] = []
+            result = await agent._run_frontend_tests(
+                tmpdir, ["src/app.test.ts"], log,
+            )
+            assert any("vitest" in entry for entry in log)

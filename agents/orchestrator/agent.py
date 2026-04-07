@@ -148,7 +148,7 @@ async def _invoke_local_agent(
                 {
                     "messages": [HumanMessage(content=effective_message)],
                     "iteration": 0,
-                    "max_iterations": 2,
+                    "max_iterations": 11,  # 최대 10회 재시도
                 }
             )
             code = (
@@ -343,7 +343,8 @@ async def _execute_phases_sequentially(
                 {
                     "messages": [HumanMessage(content=phase_message)],
                     "iteration": 0,
-                    "max_iterations": 2,
+                    "max_iterations": 11,  # 최대 10회 재시도
+                    "env_approved": True,  # 계획 승인 시 환경 설정도 암묵적 승인
                 }
             )
 
