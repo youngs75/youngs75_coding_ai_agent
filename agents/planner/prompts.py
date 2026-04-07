@@ -149,22 +149,26 @@ PLAN_SYSTEM_PROMPT = """\
 ## 핵심 원칙 (반드시 준수)
 ## ============================================================
 
-### 1. 페이즈 파일 수 하드 리밋: phase당 최대 5개 파일
-각 페이즈는 의존성이 명확하고 독립 실행 가능해야 합니다.
+### 1. 페이즈 분할 원칙: "테스트 가능한 최소 단위"
+**Phase = 단독으로 실행하고 테스트할 수 있는 최소 기능 단위입니다.**
+파일 수가 아니라 "이 Phase만으로 pytest를 돌렸을 때 통과할 수 있는가?"가 기준입니다.
 
-**[절대 규칙] 각 phase의 `files` 개수는 테스트 파일 포함 최대 5개입니다.**
-이 규칙은 예외 없이 적용됩니다. 시스템이 5개 초과 시 자동으로 거부합니다.
-5개를 초과하면 반드시 phase를 분할하세요.
+**[핵심 규칙]**
+- 한 Phase 내에서 `from X import Y`로 참조하는 모듈 X가 같은 Phase에서 생성되거나, 이전 Phase에서 이미 생성되어 있어야 합니다.
+- 아직 존재하지 않는 모듈을 import하는 코드가 있으면 테스트가 무조건 실패합니다.
+- 초기화/설정/모델/API처럼 서로 import하는 파일들은 **반드시 같은 Phase에 배치**하세요.
 
-  ❌ 잘못된 예 — Phase 1: 13 files
-  ✅ 올바른 예 — Phase 1: 4 files, Phase 2: 4 files, Phase 3: 5 files
+**[파일 수 가이드라인] 각 phase의 `files`는 5~8개를 권장합니다.**
+테스트 가능 단위를 유지하면서 8개를 초과하면 Phase를 분할하세요.
 
-  ❌ 잘못된 예 — Phase 1: 8 files
-  ✅ 올바른 예 — Phase 1: 4 files, Phase 2: 4 files
+  ❌ 잘못된 예 — Phase 1: __init__.py만, Phase 2: models.py만 → Phase 1 테스트 불가
+  ✅ 올바른 예 — Phase 1: [__init__.py, config.py, extensions.py, models.py, routes.py, tests/conftest.py, tests/test_api.py] → 백엔드 전체가 한 Phase, 테스트 가능
 
-- **각 phase의 `files`에는 해당 phase에서 새로 생성할 파일만 포함**하세요. file_structure의 전체 파일을 첫 phase에 넣지 마세요.
-- 코딩 에이전트는 `files`에 나열된 파일을 모두 완성합니다. Phase 1에 16개 파일을 넣으면 16개를 전부 만들고, Phase 2에서 할 일이 없어집니다.
-- 예: 백엔드+프론트엔드 프로젝트 → Phase 1: files=[모델 3개 + 테스트 1개], Phase 2: files=[API 3개 + 테스트 1개], Phase 3: files=[프론트엔드 4개 + 테스트 1개]
+  ❌ 잘못된 예 — 백엔드를 3개 Phase로 잘게 분리 → 각 Phase에서 import 실패
+  ✅ 올바른 예 — Phase 1: 백엔드 전체, Phase 2: 프론트엔드 기본, Phase 3: 프론트엔드 컴포넌트
+
+- **각 phase의 `files`에는 해당 phase에서 새로 생성할 파일만 포함**하세요.
+- **풀스택 권장 분할**: 백엔드 전체(1 Phase) → 프론트엔드 기본(1 Phase) → 프론트엔드 컴포넌트(1 Phase)
 
 ### 1-1. 의존성 순서 강제
 phase 간 파일 배치는 반드시 아래 순서를 따르세요:
@@ -174,10 +178,14 @@ phase 간 파일 배치는 반드시 아래 순서를 따르세요:
 - 예: Phase 1에서 `models.py`를 만들고, Phase 2에서 `services.py`가 `from models import X`를 사용합니다.
 
 ### 1-2. 파일 간 의존성 그래프 고려
-- **같은 phase 내 파일들이 서로 import하지 않도록 분배하세요.** A→B 의존이 있으면 B를 먼저 만드는 phase에 배치합니다.
-- 순환 의존 가능성이 있는 파일은 반드시 다른 phase로 분리하세요.
-- 예: `routes.py`가 `services.py`를 import하고, `services.py`가 `models.py`를 import하면
-  → Phase 1: [models.py, test_models.py], Phase 2: [services.py, test_services.py], Phase 3: [routes.py, test_routes.py]
+- **같은 레이어(백엔드/프론트엔드)에서 서로 import하는 파일은 반드시 같은 phase에 배치하세요.**
+- 예: `__init__.py`가 `config.py`와 `extensions.py`를 import하면 → 세 파일 모두 같은 phase
+- 예: `routes.py`가 `models.py`와 `__init__.py`를 import하면 → models, __init__, routes를 같은 phase에 배치하거나, models/__init__를 먼저 생성하는 phase에 배치
+- **[핵심 규칙] 한 Phase 내에서 `from X import Y`로 참조하는 모듈 X가 같은 Phase에서 생성되거나 이전 Phase에서 이미 생성되어 있어야 합니다. 아직 존재하지 않는 모듈을 import하면 테스트가 실패합니다.**
+- 풀스택 프로젝트 권장 분할:
+  - Phase 1: 백엔드 전체 (초기화 + 설정 + 모델 + API + 테스트) — 최대 5파일
+  - Phase 2: 프론트엔드 기본 구조 (진입점 + 설정 + API 클라이언트)
+  - Phase 3: 프론트엔드 컴포넌트 (UI + 상태 관리)
 
 ### 1-3. 자동 검증 힌트 (권장)
 각 phase의 description 또는 instructions 끝에 "이 phase 완료 후 예상 테스트 결과"를 포함하세요.

@@ -11,6 +11,7 @@ Phase 10 통합:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -47,7 +48,12 @@ class CLISession:
         checkpointer: Any | None = None,
     ):
         self.info = SessionInfo(agent_name=agent_name)
-        self.memory = MemoryStore()
+        # Procedural Memory를 .ai/memory/에 영속화 (세션 간 학습 유지)
+        # 워크스페이스가 .ai 디렉토리를 포함하면 영속화 활성화
+        persist_dir = Path.cwd() / ".ai" / "memory"
+        self.memory = MemoryStore(
+            persist_dir=persist_dir if persist_dir.parent.exists() else None,
+        )
         self.skills = skill_registry or SkillRegistry()
         self.checkpointer = checkpointer
         self._history: list[dict[str, str]] = []

@@ -49,6 +49,7 @@ dependencies = [
     "tiktoken>=0.9",
     "rich>=14,<15",
     "prompt-toolkit>=3.0,<4",
+    "langchain-anthropic>=1.4.0",
 ]
 
 [project.scripts]

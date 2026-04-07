@@ -41,15 +41,34 @@ from youngs75_a2a.eval_pipeline.observability.callback_handler import (
 
 logger = logging.getLogger(__name__)
 
-# 노드 이름 → 한국어 상태 레이블
-_NODE_LABELS: dict[str, str] = {
-    # coding_assistant
-    "parse_request": "요청 분석",
-    "retrieve_memory": "메모리 검색",
-    "execute_code": "도구 호출 판단 (FAST)",
-    "execute_tools": "도구 실행",
-    "generate_final": "코드 생성 (STRONG)",
-    "verify_result": "코드 검증",
+# 노드 이름 → 한국어 상태 레이블 (모델명 동적 주입)
+def _build_node_labels() -> dict[str, str]:
+    """실제 사용 모델명을 포함한 노드 레이블을 생성한다."""
+    try:
+        from youngs75_a2a.core.model_tiers import ModelTier, build_default_tiers
+
+        tiers = build_default_tiers()
+        fast_model = tiers.get(ModelTier.FAST)
+        strong_model = tiers.get(ModelTier.STRONG)
+        default_model = tiers.get(ModelTier.DEFAULT)
+        fast_name = fast_model.model if fast_model else "FAST"
+        strong_name = strong_model.model if strong_model else "STRONG"
+        default_name = default_model.model if default_model else "DEFAULT"
+    except Exception:
+        fast_name, strong_name, default_name = "FAST", "STRONG", "DEFAULT"
+
+    return {
+        # coding_assistant — "티어 - 모델명" 형식
+        "parse_request": f"요청 분석 (FAST - {fast_name})",
+        "retrieve_memory": "메모리 검색",
+        "execute_code": f"도구 호출 판단 (FAST - {fast_name})",
+        "execute_tools": "도구 실행",
+        "generate_final": f"코드 생성 (STRONG - {strong_name})",
+        "verify_result": f"코드 검증 (DEFAULT - {default_name})",
+    }
+
+
+_STATIC_NODE_LABELS: dict[str, str] = {
     # deep_research
     "clarify_with_user": "질문 명확화",
     "write_research_brief": "연구 브리프 작성",
@@ -72,6 +91,9 @@ _NODE_LABELS: dict[str, str] = {
     "delegate": "에이전트 위임",
     "respond": "응답 생성",
 }
+
+# 동적(모델명) + 정적 노드 레이블 통합
+_NODE_LABELS: dict[str, str] = {**_build_node_labels(), **_STATIC_NODE_LABELS}
 
 # Episodic 메모리 안전장치 상수 (Agent-as-a-Judge)
 _EPISODIC_MAX_ITEMS = 5
@@ -122,8 +144,23 @@ def _extract_node_summary(node: str, output: dict) -> str:
         if passed:
             return f"통과{env_summary}"
         test_out = output.get("test_output", "")
-        first_line = test_out.split("\n")[0][:60] if test_out else "실패"
-        return f"실패{env_summary} — {first_line}"
+        if test_out:
+            # pytest의 "E   " 라인 (실제 에러)을 우선 표시, 그 다음 Error 키워드
+            error_line = ""
+            fallback_line = ""
+            for line in test_out.split("\n"):
+                stripped = line.strip()
+                # "E   실제에러메시지" 라인이 가장 유용 (pytest assertion/exception)
+                if stripped.startswith("E ") and not error_line:
+                    error_line = stripped[:60]
+                # "Error" 키워드 포함 줄은 fallback (pytest 헤더일 수 있음)
+                elif ("Error" in stripped or "error" in stripped) and not fallback_line:
+                    fallback_line = stripped[:60]
+            if not error_line:
+                error_line = fallback_line or test_out.split("\n")[0][:60]
+        else:
+            error_line = "실패"
+        return f"실패{env_summary} — {error_line}"
     if node == "research_external":
         research = output.get("research_context", [])
         if research:

@@ -1,119 +1,219 @@
 name: flask_vue
-description: "Flask + Vue.js SPA 풀스택 프로젝트 — 구조, 패턴, 베스트 프랙티스 안내"
+description: "Flask + Vue.js SPA 풀스택 프로젝트 — 구조, 패턴, 베스트 프랙티스, 체크리스트"
 tags: [scaffold, framework, flask, vue, fullstack]
-version: "1.0.0"
+version: "2.0.0"
 enabled: true
 body: |
   당신은 Flask + Vue.js 풀스택 프로젝트의 아키텍처 가이드입니다.
-  아래 규칙과 패턴을 따라 코드를 생성하세요.
+  아래 규칙과 패턴을 **반드시** 따라 코드를 생성하세요.
 
   ## 프로젝트 구조
 
   ```
   project/
   ├── backend/
-  │   ├── app/
-  │   │   ├── __init__.py          # App factory (create_app)
-  │   │   ├── config.py            # 환경별 설정 클래스
-  │   │   ├── extensions.py        # SQLAlchemy, Migrate 등 확장 초기화
-  │   │   ├── models/
-  │   │   │   └── __init__.py
-  │   │   ├── api/
-  │   │   │   ├── __init__.py      # Blueprint 등록
-  │   │   │   ├── auth.py
-  │   │   │   └── resources.py
-  │   │   ├── services/            # 비즈니스 로직 레이어
-  │   │   └── utils/
-  │   ├── tests/
-  │   ├── requirements.txt
-  │   └── wsgi.py                  # Gunicorn 엔트리포인트
+  │   ├── __init__.py          # App factory (create_app) — 필수
+  │   ├── config.py            # 환경별 설정 클래스 — 필수
+  │   ├── extensions.py        # db = SQLAlchemy() 등 확장 초기화 — 필수
+  │   ├── models.py            # SQLAlchemy ORM 모델
+  │   ├── routes.py            # API 엔드포인트 (또는 api/ 디렉토리)
+  │   └── services/            # 비즈니스 로직 레이어
+  ├── tests/
+  │   ├── conftest.py          # 테스트 fixture — 필수
+  │   ├── test_models.py
+  │   └── test_routes.py
   ├── frontend/
   │   ├── src/
   │   │   ├── App.vue
-  │   │   ├── main.js
+  │   │   ├── main.js (또는 main.ts)
   │   │   ├── router/index.js
-  │   │   ├── stores/              # Pinia 상태 관리
   │   │   ├── components/
-  │   │   ├── views/
-  │   │   ├── composables/         # Composition API 훅
-  │   │   └── api/                 # Axios 인스턴스 + API 모듈
+  │   │   ├── composables/     # Composition API 훅
+  │   │   └── api/             # Axios 인스턴스 + API 모듈
   │   ├── vite.config.js
   │   ├── index.html
   │   └── package.json
-  ├── .env.example
-  └── docker-compose.yaml
+  ├── requirements.txt
+  └── .env.example
   ```
+
+  **⚠ 필수 파일 체크리스트** (하나라도 빠지면 ImportError 발생):
+  - [ ] `backend/__init__.py` — create_app() 정의
+  - [ ] `backend/config.py` — Config/TestingConfig 클래스
+  - [ ] `backend/extensions.py` — db = SQLAlchemy() 분리 (순환 import 방지)
+  - [ ] `backend/models.py` — ORM 모델
+  - [ ] `backend/routes.py` — API 엔드포인트
+  - [ ] `tests/conftest.py` — app/client/db fixture
+  - [ ] `requirements.txt` — flask, flask-sqlalchemy, flask-cors, pytest
+
+  **⚠ import 규칙**: `from X import Y` 라고 쓰면 X 모듈 파일을 반드시 함께 생성하세요.
 
   ## 핵심 패턴
 
-  1. **App Factory 패턴**: `create_app(config_name)` 함수로 Flask 앱을 생성. 테스트 시 다른 설정을 주입 가능.
+  1. **App Factory + Extensions 분리** (순환 import 방지):
      ```python
+     # backend/extensions.py — 반드시 별도 파일로 분리
+     from flask_sqlalchemy import SQLAlchemy
+     db = SQLAlchemy()
+
+     # backend/config.py — 환경별 설정
+     import os
+     class Config:
+         SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///app.db")
+         SQLALCHEMY_TRACK_MODIFICATIONS = False
+     class TestingConfig(Config):
+         SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+         TESTING = True
+     config = {"development": Config, "testing": TestingConfig}
+
+     # backend/__init__.py — App Factory
+     from flask import Flask
+     from flask_cors import CORS
+     from backend.config import config
+     from backend.extensions import db
+
      def create_app(config_name="development"):
          app = Flask(__name__)
          app.config.from_object(config[config_name])
-         register_extensions(app)
-         register_blueprints(app)
+         db.init_app(app)
+         CORS(app)
+         from backend.routes import register_routes
+         register_routes(app)
          return app
      ```
 
-  2. **Blueprint 구조**: API 엔드포인트를 기능별 Blueprint로 분리. URL prefix로 `/api/v1/` 사용.
+  2. **Blueprint/라우트 등록** (등록 누락 방지):
      ```python
-     api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
+     # backend/routes.py
+     from flask import Blueprint, jsonify, request
+     from backend.extensions import db
+     from backend.models import Board, Column, Card
+
+     api = Blueprint("api", __name__, url_prefix="/api")
+
+     @api.route("/boards", methods=["GET"])
+     def get_boards():
+         boards = Board.query.all()
+         return jsonify([b.to_dict() for b in boards])
+
+     def register_routes(app):
+         app.register_blueprint(api)  # ← 반드시 호출
      ```
 
-  3. **Vue 3 Composition API**: `<script setup>` 문법 사용. Options API 대신 `ref`, `reactive`, `computed`, `watch` 활용.
+  3. **모델 직렬화**: 모든 모델에 `to_dict()` 메서드 정의:
+     ```python
+     class Board(db.Model):
+         id = db.Column(db.Integer, primary_key=True)
+         title = db.Column(db.String(100), nullable=False)
+         columns = db.relationship("Column", backref="board", cascade="all,delete-orphan")
+
+         def to_dict(self):
+             return {"id": self.id, "title": self.title,
+                     "columns": [c.to_dict() for c in self.columns]}
+     ```
+
+  4. **Vue 3 Composition API** (`<script setup>` 사용):
      ```vue
      <script setup>
      import { ref, onMounted } from 'vue'
+     import axios from 'axios'
+
      const items = ref([])
-     onMounted(async () => { items.value = await fetchItems() })
+     const loading = ref(false)
+     const error = ref(null)
+
+     const fetchItems = async () => {
+       loading.value = true
+       try {
+         const { data } = await axios.get('/api/items')
+         items.value = data
+       } catch (e) {
+         error.value = e.message
+       } finally {
+         loading.value = false
+       }
+     }
+     onMounted(fetchItems)
      </script>
      ```
 
-  4. **Vite 프록시 설정**: 개발 시 CORS 우회를 위해 Vite 프록시로 Flask 백엔드에 요청 전달.
+  5. **Vite 프록시** + **Axios 인스턴스**:
      ```js
      // vite.config.js
      export default defineConfig({
-       server: {
-         proxy: { '/api': 'http://localhost:5000' }
-       }
+       server: { proxy: { '/api': 'http://localhost:5000' } }
      })
+
+     // src/api/index.js
+     import axios from 'axios'
+     const api = axios.create({ baseURL: '/api' })
+     export default api
      ```
 
-  5. **CORS 설정**: 프로덕션에서는 `flask-cors`로 허용 도메인 명시. 와일드카드(`*`) 사용 금지.
-     ```python
-     CORS(app, origins=["https://yourdomain.com"])
-     ```
+  ## 테스트 패턴
+
+  **conftest.py** (반드시 생성):
+  ```python
+  import pytest
+  from backend import create_app
+  from backend.extensions import db as _db
+
+  @pytest.fixture
+  def app():
+      app = create_app("testing")
+      with app.app_context():
+          _db.create_all()
+          yield app
+          _db.session.remove()
+          _db.drop_all()
+
+  @pytest.fixture
+  def client(app):
+      return app.test_client()
+
+  @pytest.fixture
+  def db(app):
+      return _db
+  ```
+
+  **테스트 작성 규칙**:
+  - `db.create_all()` → **반드시** `app.app_context()` 내에서 호출
+  - 각 테스트 후 `db.drop_all()`로 테이블 정리
+  - API 테스트: `client.get("/api/...")` 사용, 상태 코드 + JSON 응답 검증
+  - 모델 테스트: fixture로 받은 `db`를 사용, `db.session.add()` → `db.session.commit()`
 
   ## 의존성
 
-  **백엔드 (Python 3.11+)**:
-  - Flask >= 3.0
-  - flask-cors >= 4.0
-  - Flask-SQLAlchemy >= 3.1
-  - Flask-Migrate >= 4.0
-  - gunicorn >= 21.2
-  - python-dotenv >= 1.0
+  **requirements.txt** (최소 필수):
+  ```
+  flask>=3.0
+  flask-sqlalchemy>=3.1
+  flask-cors>=4.0
+  pytest>=8.0
+  ```
 
-  **프론트엔드 (Node 18+)**:
-  - vue >= 3.4
-  - vite >= 5.0
-  - vue-router >= 4.2
-  - pinia >= 2.1
-  - axios >= 1.6
+  **package.json** (최소 필수):
+  ```json
+  { "dependencies": { "vue": "^3.4", "axios": "^1.6" },
+    "devDependencies": { "vite": "^5.0", "@vitejs/plugin-vue": "^5.0" } }
+  ```
 
-  ## 주의사항
+  ## Common Pitfalls (빠트리면 안 되는 것)
 
-  - Flask의 `app.run(debug=True)`는 개발 전용. 프로덕션에서는 반드시 Gunicorn/uWSGI 사용.
-  - `.env` 파일을 절대 커밋하지 마세요. `.env.example`만 커밋.
-  - Vue의 `reactive()`는 원시값에 사용 불가 — 원시값은 `ref()` 사용.
-  - 프론트엔드 빌드 결과물(`dist/`)을 Flask의 `static_folder`로 서빙할 때 `send_from_directory` 사용.
-  - SQLAlchemy 세션은 요청 종료 시 자동 정리되므로 수동 `close()` 불필요.
+  - **extensions.py 미생성** → `from backend.extensions import db` 에서 ImportError
+  - **config.py 미생성** → `from backend.config import config` 에서 ImportError
+  - **Blueprint 미등록** → 모든 API가 404
+  - **to_dict() 미정의** → `jsonify(model)` 에서 TypeError
+  - **CORS 미설정** → 프론트엔드에서 API 호출 시 CORS 에러
+  - **conftest.py 미생성** → 테스트에서 app/client fixture 사용 불가
+  - **db.create_all() 누락** → `no such table` OperationalError
+  - **프론트엔드 axios 미import** → API 호출 시 ReferenceError
+  - **Vite 프록시 미설정** → 개발 시 API 호출 실패 (CORS 또는 404)
+  - **모델 필드명 불일치** → 백엔드 `title` vs 프론트 `name` → 데이터 미표시
 
   ## 코드 스타일
 
   - **Python**: snake_case (함수/변수), PascalCase (클래스), 4칸 들여쓰기
   - **Vue/JS**: camelCase (함수/변수), PascalCase (컴포넌트), 2칸 들여쓰기
-  - **파일명**: Python은 snake_case.py, Vue 컴포넌트는 PascalCase.vue
-  - **API 응답**: JSON, `{"data": ..., "error": null}` 일관된 래퍼 형식 사용
-  - **HTTP 메서드**: RESTful 규칙 준수 (GET 조회, POST 생성, PUT 전체 수정, PATCH 부분 수정, DELETE 삭제)
+  - **API 응답**: JSON, RESTful 규칙 (GET 조회, POST 생성, PUT 수정, DELETE 삭제)
+  - **에러 처리**: 함수 시작부에서 에러 조건 체크 + early return, 핵심 로직은 마지막에 배치

@@ -16,7 +16,7 @@ from typing_extensions import TypedDict
 logger = logging.getLogger(__name__)
 
 # Phase당 최대 파일 수 하드 리밋
-MAX_FILES_PER_PHASE = 5
+MAX_FILES_PER_PHASE = 8
 
 
 class Phase(TypedDict, total=False):

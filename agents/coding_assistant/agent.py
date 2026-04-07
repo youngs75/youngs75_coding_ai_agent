@@ -300,7 +300,10 @@ class CodingAssistantAgent(BaseGraphAgent):
         # task_type 기반 스킬 자동 활성화
         if self._skill_registry:
             task_type = parse_result.get("task_type", "generate")
-            activated = self._skill_registry.auto_activate_for_task(task_type)
+            framework_hint = parse_result.get("framework", "")
+            activated = self._skill_registry.auto_activate_for_task(
+                task_type, framework_hint=framework_hint
+            )
             if activated:
                 # L2 본문이 로드된 스킬의 컨텍스트 주입
                 skill_bodies = self._skill_registry.get_active_skill_bodies()
@@ -444,10 +447,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
 
-        # generate 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
+        # generate/scaffold 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
         # generate_final(STRONG)이 직접 코드를 생성한다.
-        if task_type == "generate" and iteration == 0:
-            log.append("[execute] generate 태스크 — FAST 스킵, STRONG으로 직행")
+        # scaffold도 FAST 모델이 도구를 호출하지 않고 저품질 코드를 생성하므로 STRONG 직행.
+        if task_type in ("generate", "scaffold") and iteration == 0:
+            log.append(f"[execute] {task_type} 태스크 — FAST 스킵, STRONG으로 직행")
             return {"execution_log": log}
 
         system_prompt = self._build_execute_system_prompt(state)
@@ -1253,7 +1257,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 timeout=self._RUN_TESTS_TIMEOUT_S,
             )
             stdout, stderr = await proc.communicate()
-            output = stdout.decode()[:2000]
+            output = self._smart_truncate_test_output(stdout.decode(), limit=3000)
             if stderr:
                 output += "\n" + stderr.decode()[:1000]
 
@@ -1265,6 +1269,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                 fe_passed = fe_test_result["test_passed"]
                 passed = passed and fe_passed
                 output = output + "\n\n--- Frontend Tests ---\n" + fe_test_result["test_output"]
+
+            # 테스트 통과 + 이전에 실패가 있었으면 "에러→수정" 패턴을 Procedural Memory에 저장
+            if passed and state.get("iteration", 0) > 0:
+                self._save_fix_pattern(state)
 
             return {
                 "test_passed": passed,
@@ -1373,7 +1381,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 timeout=self._FE_TEST_TIMEOUT_S,
             )
             stdout, stderr = await proc.communicate()
-            output = stdout.decode()[:2000]
+            output = self._smart_truncate_test_output(stdout.decode(), limit=3000)
             if stderr:
                 output += "\n" + stderr.decode()[:1000]
 
@@ -1563,10 +1571,10 @@ class CodingAssistantAgent(BaseGraphAgent):
         if exit_reason:
             return self.get_node_name("GENERATE_FINAL")
 
-        # generate 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
+        # generate/scaffold 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
         parse_result = state.get("parse_result", {})
         task_type = parse_result.get("task_type", "generate")
-        if task_type == "generate":
+        if task_type in ("generate", "scaffold"):
             return self.get_node_name("GENERATE_FINAL")
 
         tool_call_count = state.get("tool_call_count", 0)
@@ -1623,6 +1631,92 @@ class CodingAssistantAgent(BaseGraphAgent):
         # 실패 시: INJECT_TEST_FAILURE 노드에서 에러를 messages에 주입 → GENERATE_FINAL
         return self.get_node_name("INJECT_TEST_FAILURE")
 
+    # ── 학습 패턴 저장 (Procedural Memory) ──────────────────────
+
+    def _save_fix_pattern(self, state: CodingState) -> None:
+        """테스트 실패→성공 사이클에서 학습된 수정 패턴을 Procedural Memory에 저장한다.
+
+        이전 테스트 에러와 현재 성공한 코드를 비교하여
+        "에러 유형 → 해결 방법" 패턴을 추출한다.
+        """
+        if not self._memory_store:
+            return
+
+        prev_test_output = state.get("_prev_test_output", "")
+        if not prev_test_output:
+            return
+
+        # 이전 에러 분류
+        error_type, _ = self._classify_test_error(prev_test_output)
+        if error_type == "Unknown":
+            # 알 수 없는 에러는 저장하지 않음 (노이즈 방지)
+            return
+
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        language = parse_result.get("language", "python")
+
+        # 수정된 코드에서 핵심 변경 사항 추출
+        generated_code = state.get("generated_code", "")
+        code_snippet = generated_code[:500] if generated_code else ""
+
+        description = (
+            f"[{error_type}] {language}/{task_type} 프로젝트에서 발생. "
+            f"에러: {prev_test_output[:200]}... "
+            f"해결: 코드 재생성으로 수정 성공."
+        )
+
+        try:
+            result = self._memory_store.accumulate_skill(
+                code=code_snippet,
+                description=description,
+                tags=[error_type.lower(), language, task_type, "test_fix"],
+            )
+            if result:
+                logging.getLogger(__name__).info(
+                    "[memory] 수정 패턴 저장: %s (%s)", error_type, result.id[:8]
+                )
+        except Exception as e:
+            logging.getLogger(__name__).debug("[memory] 패턴 저장 실패 (무시): %s", e)
+
+    # ── 테스트 출력 처리 ───────────────────────────────────────
+
+    @staticmethod
+    def _smart_truncate_test_output(raw: str, limit: int = 3000) -> str:
+        """pytest 출력에서 에러 섹션을 우선 추출하여 절단한다.
+
+        단순 [:limit] 절단 시 진행 바(FFFF...)만 남고 실제 에러가 잘리는 문제를 해결.
+        FAILURES/ERRORS 섹션을 우선 포함하고, 남은 예산으로 요약 줄을 추가한다.
+        """
+        if len(raw) <= limit:
+            return raw
+
+        lines = raw.split("\n")
+        # FAILURES 또는 ERRORS 섹션 시작점 찾기
+        failure_start = -1
+        for i, line in enumerate(lines):
+            if line.startswith("=") and ("FAILURES" in line or "ERRORS" in line):
+                failure_start = i
+                break
+
+        if failure_start >= 0:
+            # 에러 섹션부터 끝까지 추출
+            error_section = "\n".join(lines[failure_start:])
+            # 첫 줄(진행 표시)과 마지막 요약 줄도 포함
+            summary_line = lines[0] if lines else ""
+            short_summary = lines[-1] if len(lines) > 1 else ""
+            result = f"{summary_line}\n...\n{error_section}\n{short_summary}"
+            return result[:limit]
+
+        # FAILURES 섹션이 없으면 마지막 부분 우선 (에러는 보통 뒤에 출력)
+        tail = raw[-limit:]
+        if not tail.startswith("\n"):
+            # 줄 중간 절단 방지
+            first_newline = tail.find("\n")
+            if first_newline > 0:
+                tail = tail[first_newline + 1:]
+        return "...\n" + tail
+
     # ── 에러 유형 분석 ─────────────────────────────────────────
 
     _ERROR_PATTERNS: ClassVar[list[tuple[str, str, str]]] = [
@@ -1636,13 +1730,23 @@ class CodingAssistantAgent(BaseGraphAgent):
         (
             r"ModuleNotFoundError|No module named",
             "ModuleNotFoundError",
-            "모듈 미설치 또는 경로 오류. requirements.txt에 누락된 패키지를 추가하고, "
-            "import 경로가 프로젝트 구조와 일치하는지 확인하세요.",
+            "모듈 미설치 또는 경로 오류. 1) 프로젝트 내 모듈이면 해당 .py 파일을 함께 생성하세요 "
+            "(예: backend/config.py, backend/extensions.py 등). "
+            "2) 외부 패키지면 requirements.txt에 추가하세요. "
+            "3) import 경로가 프로젝트 디렉토리 구조와 일치하는지 확인하세요.",
+        ),
+        (
+            r"ImportError.*cannot import name",
+            "ImportError",
+            "import 대상이 존재하지 않음. 해당 함수/클래스가 정의된 파일이 실제로 존재하는지 확인하세요. "
+            "없으면 해당 파일을 생성하세요. "
+            "예: from backend import create_app이 실패하면 backend/__init__.py에 create_app 함수를 정의하세요.",
         ),
         (
             r"ImportError",
             "ImportError",
-            "import 실패. __init__.py 존재 여부, 패키지 경로, 절대/상대 import 일관성을 확인하세요.",
+            "import 실패. __init__.py 존재 여부, 패키지 경로, 절대/상대 import 일관성을 확인하세요. "
+            "참조하는 모듈 파일이 존재하지 않으면 함께 생성하세요.",
         ),
         (
             r"SyntaxError",
@@ -1663,6 +1767,26 @@ class CodingAssistantAgent(BaseGraphAgent):
             r"TypeError",
             "TypeError",
             "타입 불일치 또는 인자 개수 오류. 함수 시그니처와 호출부를 대조하세요.",
+        ),
+        (
+            r"OperationalError|no such table|ProgrammingError.*relation.*does not exist|"
+            r"no such column|table.*already exists",
+            "DatabaseError",
+            "DB 테이블/컬럼 미생성 또는 스키마 불일치. "
+            "테스트 fixture에서 app_context 내 db.create_all()을 호출하세요. "
+            "conftest.py에 app/db fixture를 정의하고, teardown에서 db.drop_all()을 실행하세요.",
+        ),
+        (
+            r"IntegrityError|UNIQUE constraint|duplicate key|NOT NULL constraint",
+            "IntegrityError",
+            "DB 무결성 제약 위반. 테스트 간 데이터 격리를 확인하세요. "
+            "fixture에서 매 테스트마다 트랜잭션 롤백 또는 db.drop_all() + db.create_all()을 수행하세요.",
+        ),
+        (
+            r"ConnectionRefusedError|could not connect to server|Connection refused",
+            "ConnectionError",
+            "외부 서비스 연결 실패. 테스트에서는 인메모리 DB(sqlite:///:memory:)를 사용하고, "
+            "외부 API는 mock 처리하세요.",
         ),
     ]
 

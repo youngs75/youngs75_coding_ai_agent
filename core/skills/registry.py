@@ -107,11 +107,17 @@ class SkillRegistry:
             if skill.metadata.enabled and set(skill.metadata.tags) & query_set
         ]
 
-    def auto_activate_for_task(self, task_type: str) -> list[str]:
+    def auto_activate_for_task(
+        self,
+        task_type: str,
+        framework_hint: str = "",
+    ) -> list[str]:
         """task_type에 맞는 스킬을 자동 검색 후 L2 활성화한다.
 
         Args:
-            task_type: parse 결과의 task_type (generate, fix, refactor, explain, analyze)
+            task_type: parse 결과의 task_type (generate, fix, refactor, explain, analyze, scaffold)
+            framework_hint: scaffold일 때 프레임워크 힌트 (예: "flask_vue").
+                           지정하면 해당 이름의 스킬만 활성화한다.
 
         Returns:
             활성화된 스킬 이름 목록
@@ -121,6 +127,14 @@ class SkillRegistry:
             return []
 
         matched = self.search_by_tags(tags)
+
+        # framework_hint가 있으면 해당 스킬만 필터링 (4개 전부 활성화 방지)
+        if framework_hint:
+            hint_lower = framework_hint.lower().replace("-", "_")
+            filtered = [s for s in matched if s.name == hint_lower]
+            if filtered:
+                matched = filtered
+
         activated: list[str] = []
         for skill in matched:
             result = self.activate(skill.name)

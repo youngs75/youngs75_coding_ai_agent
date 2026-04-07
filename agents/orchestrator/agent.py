@@ -307,8 +307,24 @@ async def _execute_phases_sequentially(
     이전 phase 결과물은 파일 시스템에 저장되어 있고,
     다음 phase에는 파일 경로 목록만 전달하여 필요 시 MCP로 읽도록 안내한다.
     """
+    import os as _os
+    from pathlib import Path as _Path
+
     from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
     from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+    from youngs75_a2a.core.skills.loader import SkillLoader
+    from youngs75_a2a.core.skills.registry import SkillRegistry
+
+    # 스킬 레지스트리 초기화 (_invoke_local_agent와 동일)
+    skill_registry = SkillRegistry()
+    skills_dir = _os.getenv(
+        "SKILLS_DIR",
+        str(_Path(__file__).resolve().parent.parent.parent / "data" / "skills"),
+    )
+    if _Path(skills_dir).is_dir():
+        loader = SkillLoader(skills_dir)
+        skill_registry = SkillRegistry(loader=loader)
+        skill_registry.discover()
 
     plan_summary = task_plan.get("summary", "")
     architecture = task_plan.get("architecture", "")
@@ -320,10 +336,10 @@ async def _execute_phases_sequentially(
         phase_id = phase.get("id", f"phase_{i + 1}")
         title = phase.get("title", "")
 
-        # depends_on 체크: 선행 phase가 실패했으면 skip
+        # depends_on 체크: 선행 phase가 실패 또는 스킵이면 skip
         deps = set(phase.get("depends_on", []))
         if deps & failed_ids:
-            logger.warning("Phase %s 건너뜀: 선행 phase 실패 (%s)", phase_id, deps & failed_ids)
+            logger.warning("Phase %s 건너뜀: 선행 phase 실패/스킵 (%s)", phase_id, deps & failed_ids)
             phase_results.append({
                 "phase_id": phase_id,
                 "title": title,
@@ -331,6 +347,7 @@ async def _execute_phases_sequentially(
                 "written_files": [],
                 "error": f"선행 phase 실패: {deps & failed_ids}",
             })
+            failed_ids.add(phase_id)  # 스킵도 전파하여 후속 phase가 실행되지 않도록
             continue
 
         logger.info("Phase %d/%d 시작: %s — %s", i + 1, len(phases), phase_id, title)
@@ -357,7 +374,10 @@ async def _execute_phases_sequentially(
                 diminishing_streak_limit=5 if is_integration else 3,
                 min_delta_tokens=300 if is_integration else 500,
             )
-            agent = await CodingAssistantAgent.create(config=config)
+            agent = await CodingAssistantAgent.create(
+                config=config,
+                skill_registry=skill_registry,
+            )
             result = await agent.graph.ainvoke(
                 {
                     "messages": [HumanMessage(content=phase_message)],
@@ -368,15 +388,39 @@ async def _execute_phases_sequentially(
             )
 
             written = result.get("written_files", [])
-            all_written_files.extend(written)
+            # 파일 경로 기준 중복 제거 (같은 파일이 재시도로 여러 번 저장될 수 있음)
+            existing_paths = {f.split(" (")[0].strip() for f in all_written_files}
+            for f in written:
+                fpath = f.split(" (")[0].strip()
+                if fpath not in existing_paths:
+                    all_written_files.append(f)
+                    existing_paths.add(fpath)
+
+            # test_passed 상태 확인: 테스트 실패(max iterations 도달) 시 failed 처리
+            test_passed = result.get("test_passed", True)
+            phase_status = "success" if test_passed else "failed"
+
+            # phase 내에서도 재시도로 같은 파일이 여러 번 기록될 수 있으므로 중복 제거
+            seen_paths: set[str] = set()
+            unique_written: list[str] = []
+            for f in written:
+                fpath = f.split(" (")[0].strip()
+                if fpath not in seen_paths:
+                    unique_written.append(f)
+                    seen_paths.add(fpath)
 
             phase_results.append({
                 "phase_id": phase_id,
                 "title": title,
-                "status": "success",
-                "written_files": written,
+                "status": phase_status,
+                "written_files": unique_written,
             })
-            logger.info("Phase %s 완료: %d개 파일 생성", phase_id, len(written))
+
+            if not test_passed:
+                failed_ids.add(phase_id)
+                logger.warning("Phase %s 테스트 실패 상태로 완료: %d개 파일", phase_id, len(written))
+            else:
+                logger.info("Phase %s 완료: %d개 파일 생성", phase_id, len(written))
 
         except Exception as e:
             logger.error("Phase %s 실패: %s", phase_id, e)
@@ -419,6 +463,56 @@ async def _execute_phases_sequentially(
     }
 
 
+def _inject_prev_phase_files(
+    completed_phases: list[dict],
+    max_total_chars: int = 8000,
+) -> str:
+    """이전 phase의 핵심 소스 파일 내용을 읽어 문자열로 반환한다.
+
+    모델/API 파일 등 후속 phase에서 참조가 필수인 파일만 포함한다.
+    테스트 파일, 설정 파일, 프론트엔드 정적 파일은 제외하여 컨텍스트를 경량 유지.
+    """
+    import os
+
+    # 핵심 파일 확장자/패턴 (후속 phase에서 참조 필수)
+    _KEY_PATTERNS = (
+        "models", "schemas", "routes", "api", "app",
+        "__init__", "extensions", "database", "config",
+    )
+    _SKIP_PATTERNS = ("test_", "conftest", "node_modules", ".json", ".txt", ".html")
+
+    parts: list[str] = []
+    total = 0
+
+    for prev in completed_phases:
+        if prev["status"] != "success":
+            continue
+        for f_entry in prev.get("written_files", []):
+            fpath = f_entry.split(" (")[0].strip()
+            fname = os.path.basename(fpath).lower()
+
+            # 스킵 대상 필터
+            if any(skip in fname for skip in _SKIP_PATTERNS):
+                continue
+            # 핵심 파일 필터
+            if not any(key in fname for key in _KEY_PATTERNS):
+                continue
+
+            try:
+                with open(fpath, encoding="utf-8") as fh:
+                    content = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            entry = f"### {fpath}\n```python\n{content}\n```\n"
+            if total + len(entry) > max_total_chars:
+                break
+            parts.append(entry)
+            total += len(entry)
+
+    return "\n".join(parts)
+
+
 def _build_phase_message(
     user_message: str,
     plan_summary: str,
@@ -443,7 +537,7 @@ def _build_phase_message(
     if architecture:
         parts.append(f"**아키텍처**: {architecture}\n")
 
-    # 2. 이전 phase 결과 (파일 경로만 — 내용은 read_file로)
+    # 2. 이전 phase 결과 — 핵심 파일 내용 직접 포함
     if completed_phases:
         parts.append("## 이전 완료 Phase\n")
         for prev in completed_phases:
@@ -451,10 +545,20 @@ def _build_phase_message(
             parts.append(f"- {status_icon} {prev['phase_id']}: {prev['title']}")
             for f in prev.get("written_files", []):
                 parts.append(f"  - {f}")
-        parts.append(
-            "\n위 파일들은 이미 디스크에 저장되어 있습니다. "
-            "이전 phase 코드를 참조해야 하면 `read_file` 도구를 사용하세요.\n"
-        )
+
+        # 이전 phase의 핵심 소스 파일 내용을 직접 주입 (모델/API 정합성 보장)
+        _injected = _inject_prev_phase_files(completed_phases)
+        if _injected:
+            parts.append("\n## 이전 Phase 핵심 파일 내용 (참조 필수)\n")
+            parts.append(_injected)
+            parts.append(
+                "\n위 파일을 기반으로 구현하세요. 모델 필드명, import 경로를 반드시 일치시키세요.\n"
+            )
+        else:
+            parts.append(
+                "\n위 파일들은 이미 디스크에 저장되어 있습니다. "
+                "이전 phase 코드를 참조해야 하면 `read_file` 도구를 사용하세요.\n"
+            )
 
     # 3. 현재 phase 지시사항
     parts.append(f"## 현재 작업: Phase {phase_index + 1}/{total_phases}")

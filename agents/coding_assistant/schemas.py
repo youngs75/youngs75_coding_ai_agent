@@ -72,8 +72,8 @@ class CodingState(TypedDict, total=False):
     # "" (정상) | "stall_detected" | "budget_exceeded" | "turn_limit"
     exit_reason: str
 
-    # apply_code 출력 — 디스크에 저장된 파일 경로 목록
-    written_files: list[str]
+    # apply_code 출력 — 디스크에 저장된 파일 경로 목록 (재시도 시 누적)
+    written_files: Annotated[list[str], override_reducer]
 
     # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
     env_approved: bool

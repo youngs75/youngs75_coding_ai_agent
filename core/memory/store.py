@@ -6,14 +6,24 @@ GAM 2단계 검색을 제공한다.
 네임스페이스 구조:
   ("memory", <memory_type>)           — 타입별 기본 네임스페이스
   ("memory", <memory_type>, <session>) — 세션 스코프 (episodic 등)
+
+영속화:
+  Procedural Memory는 JSONL 파일로 영속화되어 세션 간 학습이 유지된다.
+  저장 경로: {workspace}/.ai/memory/procedural.jsonl
 """
 
 from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
 
 from langgraph.store.memory import InMemoryStore
 
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
 from youngs75_a2a.core.memory.search import TwoStageSearch, _tokenize
+
+logger = logging.getLogger(__name__)
 
 
 def _namespace(
@@ -26,24 +36,36 @@ def _namespace(
 
 
 class MemoryStore:
-    """메모리 저장소 — InMemoryStore 래핑 + 2단계 검색."""
+    """메모리 저장소 — InMemoryStore 래핑 + 2단계 검색 + 파일 영속화."""
 
     def __init__(
         self,
         store: InMemoryStore | None = None,
         search: TwoStageSearch | None = None,
+        persist_dir: str | Path | None = None,
     ):
         self._store = store or InMemoryStore()
         self._search = search or TwoStageSearch()
         # 타입별 메모리 인덱스 (빠른 조회용)
         self._index: dict[tuple[str, ...], dict[str, MemoryItem]] = {}
 
+        # 영속화 경로 설정
+        self._persist_dir: Path | None = None
+        if persist_dir:
+            self._persist_dir = Path(persist_dir)
+            self._persist_dir.mkdir(parents=True, exist_ok=True)
+            self._load_persisted()
+
     def put(self, item: MemoryItem) -> None:
-        """메모리 항목 저장."""
+        """메모리 항목 저장. Procedural은 파일에도 영속화."""
         ns = _namespace(item.type, item.session_id)
         if ns not in self._index:
             self._index[ns] = {}
         self._index[ns][item.id] = item
+
+        # Procedural Memory만 파일 영속화 (세션 간 학습 유지)
+        if item.type == MemoryType.PROCEDURAL and self._persist_dir:
+            self._append_to_file(item)
 
     def get(
         self, item_id: str, memory_type: MemoryType, session_id: str | None = None
@@ -210,6 +232,52 @@ class MemoryStore:
     def total_count(self) -> int:
         """저장된 전체 메모리 항목 수."""
         return sum(len(bucket) for bucket in self._index.values())
+
+    # ── 파일 영속화 ────────────────────────────────────────────
+
+    def _persist_path(self, memory_type: MemoryType) -> Path | None:
+        """영속화 파일 경로."""
+        if not self._persist_dir:
+            return None
+        return self._persist_dir / f"{memory_type.value}.jsonl"
+
+    def _append_to_file(self, item: MemoryItem) -> None:
+        """메모리 항목을 JSONL 파일에 추가."""
+        path = self._persist_path(item.type)
+        if not path:
+            return
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(item.model_dump_json() + "\n")
+            logger.debug("메모리 영속화: %s → %s", item.id[:8], path.name)
+        except OSError as e:
+            logger.warning("메모리 영속화 실패: %s", e)
+
+    def _load_persisted(self) -> None:
+        """영속화된 Procedural Memory를 파일에서 로드."""
+        path = self._persist_path(MemoryType.PROCEDURAL)
+        if not path or not path.exists():
+            return
+
+        loaded = 0
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = MemoryItem.model_validate_json(line)
+                ns = _namespace(item.type, item.session_id)
+                if ns not in self._index:
+                    self._index[ns] = {}
+                # 중복 방지 (같은 ID가 이미 있으면 스킵)
+                if item.id not in self._index[ns]:
+                    self._index[ns][item.id] = item
+                    loaded += 1
+            except (json.JSONDecodeError, Exception) as e:
+                logger.warning("영속 메모리 파싱 실패 (무시): %s", e)
+
+        if loaded:
+            logger.info("Procedural Memory %d개 로드됨 (%s)", loaded, path)
 
     def _collect_candidates(
         self,

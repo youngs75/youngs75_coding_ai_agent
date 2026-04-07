@@ -207,12 +207,17 @@ def build_default_tiers() -> dict[str, TierConfig]:
     """
     global_provider = os.getenv("LLM_PROVIDER", "openrouter")
 
-    # DashScope 기본 모델명 (OpenRouter와 다름)
+    # 프로바이더별 기본 모델명
     if global_provider == "dashscope":
-        default_reasoning = "qwen-max"
-        default_strong = "qwen-coder-plus"
-        default_default = "qwen-plus"
-        default_fast = "qwen-turbo"
+        default_reasoning = "qwen3-max"
+        default_strong = "qwen3-coder-next"
+        default_default = "qwen3.5-plus"
+        default_fast = "qwen3.5-flash"
+    elif global_provider == "anthropic":
+        default_reasoning = "claude-sonnet-4-20250514"
+        default_strong = "claude-sonnet-4-20250514"
+        default_default = "claude-haiku-4-20250414"
+        default_fast = "claude-haiku-4-20250414"
     else:
         default_reasoning = "qwen/qwen3-max"
         default_strong = "qwen/qwen3-coder-plus"
@@ -298,6 +303,7 @@ def create_chat_model(
     지원 프로바이더:
     - openrouter: OpenRouter 경유 (다양한 모델 접근, 큐잉 지연 가능)
     - dashscope: Qwen 공식 API 직접 호출 (낮은 레이턴시, Qwen 전용)
+    - anthropic: Claude 모델 직접 호출
     - 기타: LangChain init_chat_model()로 위임
     """
     effective_temp = (
@@ -310,10 +316,19 @@ def create_chat_model(
     # 호출자가 max_tokens를 지정하지 않으면 모델별 최대값 설정
     if "max_tokens" not in kwargs:
         _MAX_OUTPUT_TOKENS: dict[str, int] = {
+            # Qwen 2.5 (레거시)
             "qwen-turbo": 8192,
             "qwen-plus": 8192,
             "qwen-max": 8192,
             "qwen-coder-plus": 16384,
+            # Qwen 3/3.5/3.6
+            "qwen3-max": 16384,
+            "qwen3-coder-next": 16384,
+            "qwen3-coder-plus": 16384,
+            "qwen3-coder-flash": 16384,
+            "qwen3.5-plus": 16384,
+            "qwen3.5-flash": 8192,
+            "qwen3.6-plus": 16384,
         }
         # 모델명에서 매칭 (openrouter의 "qwen/qwen3-max" 등 대응)
         resolved = 16384  # OpenRouter/기타 프로바이더 기본값
@@ -343,6 +358,22 @@ def create_chat_model(
             openai_api_key=os.environ.get("DASHSCOPE_API_KEY", ""),
             openai_api_base=DASHSCOPE_BASE_URL,
             request_timeout=timeout,
+            **kwargs,
+        )
+    elif provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        # Anthropic은 max_tokens 필수, Claude 모델 기본값 설정
+        if "max_tokens" not in kwargs:
+            kwargs["max_tokens"] = 16384
+
+        llm = ChatAnthropic(
+            model=model,
+            temperature=effective_temp,
+            anthropic_api_key=os.environ.get(
+                "ANTHROPIC_API_KEY", os.environ.get("CLAUDE_API_KEY", "")
+            ),
+            timeout=timeout,
             **kwargs,
         )
     else:

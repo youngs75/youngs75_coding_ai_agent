@@ -56,6 +56,7 @@ PARSE_SYSTEM_PROMPT = """\
   - refactor: 기존 코드 개선/리팩토링
   - explain: 코드나 개념 설명
   - analyze: 파일/프로젝트 분석 (파일 읽기가 필요한 작업)
+- framework: scaffold일 때 사용할 프레임워크 조합 (예: "flask_vue", "react_express", "fastapi_react", "django_htmx"). 요청에서 명시된 백엔드/프론트엔드 기술을 조합하여 판단. scaffold가 아니면 빈 문자열.
 - language: 요청에서 감지된 프로그래밍 언어 (명시되지 않으면 요청 내용에서 추론, 추론 불가 시 "python")
 - description: 작업에 대한 간결한 설명
 - target_files: 관련 파일 경로 리스트 (언급된 경우)

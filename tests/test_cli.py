@@ -37,6 +37,7 @@ from youngs75_a2a.cli.eval_runner import (
 from youngs75_a2a.cli.renderer import CLIRenderer
 from youngs75_a2a.cli.session import CLISession
 from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+from youngs75_a2a.core.memory.store import MemoryStore
 from youngs75_a2a.core.skills.registry import SkillRegistry
 from youngs75_a2a.core.skills.schemas import Skill, SkillMetadata
 
@@ -121,6 +122,7 @@ class TestCLISession:
 
     def test_memory_store_available(self):
         s = CLISession()
+        s.memory = MemoryStore()  # 영속화 없는 빈 메모리로 테스트
         assert s.memory.total_count == 0
 
     def test_agent_cache(self):
@@ -432,7 +434,9 @@ class TestBuildInputState:
         assert len(state["procedural_skills"]) >= 1
 
     def test_coding_without_procedural_memory(self):
+        # 영속화된 메모리가 없는 깨끗한 MemoryStore 사용
         session = CLISession()
+        session.memory = MemoryStore()  # 영속화 없는 빈 메모리
         state = _build_input_state("coding_assistant", "함수 작성", session)
         assert "procedural_skills" not in state
 
@@ -482,6 +486,7 @@ class TestBuildInputState:
     def test_coding_procedural_roundtrip(self):
         """스킬 축적 후 다음 쿼리에서 해당 스킬이 검색되는 통합 확인."""
         session = CLISession()
+        session.memory = MemoryStore()  # 영속화 없는 빈 메모리로 테스트
         # 첫 번째 쿼리: 스킬 없음
         state1 = _build_input_state("coding_assistant", "정렬 함수 작성", session)
         assert "procedural_skills" not in state1
@@ -922,6 +927,7 @@ class TestProceduralMemoryCLI:
     async def test_procedural_memory_persists_across_agent_turns(self):
         """에이전트 턴 실행 후 축적된 스킬이 다음 턴 input에 반영되는 통합 테스트."""
         session = CLISession()
+        session.memory = MemoryStore()  # 영속화 없는 빈 메모리로 테스트
         renderer = _make_renderer()
 
         # 첫 번째 턴 전에 스킬 미리 축적 (검증 통과 시 자동 축적 시뮬레이션)
@@ -1524,6 +1530,7 @@ class TestStreamingCheckpointerE2E:
         from langchain_core.messages import AIMessageChunk
 
         session = CLISession()
+        session.memory = MemoryStore()  # 영속화 없는 빈 메모리로 테스트
         renderer = _make_renderer()
         fake_graph = MagicMock()
 
