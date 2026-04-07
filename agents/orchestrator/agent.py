@@ -135,15 +135,34 @@ async def _invoke_local_agent(
     """로컬 에이전트를 직접 호출한다 (A2A 엔드포인트 없을 때 폴백)."""
     try:
         if agent_name in ("coding_assistant", "coder"):
+            import os as _os
+            from pathlib import Path as _Path
+
             from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
             from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+            from youngs75_a2a.core.skills.loader import SkillLoader
+            from youngs75_a2a.core.skills.registry import SkillRegistry
+
+            # 스킬 레지스트리 초기화
+            skill_registry = SkillRegistry()
+            skills_dir = _os.getenv(
+                "SKILLS_DIR",
+                str(_Path(__file__).resolve().parent.parent.parent / "data" / "skills"),
+            )
+            if _Path(skills_dir).is_dir():
+                loader = SkillLoader(skills_dir)
+                skill_registry = SkillRegistry(loader=loader)
+                skill_registry.discover()
 
             # 계획이 있으면 사용자 메시지에 포함
             effective_message = user_message
             if task_plan:
                 effective_message = f"{user_message}\n\n{task_plan}"
 
-            agent = await CodingAssistantAgent.create(config=CodingConfig())
+            agent = await CodingAssistantAgent.create(
+                config=CodingConfig(),
+                skill_registry=skill_registry,
+            )
             result = await agent.graph.ainvoke(
                 {
                     "messages": [HumanMessage(content=effective_message)],

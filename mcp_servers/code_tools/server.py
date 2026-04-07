@@ -10,6 +10,7 @@ Coding Agent Harness의 핵심 도구를 제공하는 MCP 서버.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -459,6 +460,206 @@ def apply_patch(patch: str) -> str:
 
     target.write_text("".join(result_lines), encoding="utf-8")
     return f"✓ {target_path}: 패치 적용 완료 ({len(hunks)}개 헝크)"
+
+
+
+# ── 프로젝트 템플릿 도구 ─────────────────────────────────────
+
+_PROJECT_TEMPLATES: dict[str, dict] = {
+    "flask-vue": {
+        "name": "flask-vue",
+        "description": "Flask + Vue.js SPA 풀스택 프로젝트",
+        "stack": {"backend": "Flask", "frontend": "Vue 3 + Vite", "language": "Python / JavaScript"},
+        "structure": [
+            "backend/", "backend/app/__init__.py", "backend/app/routes/__init__.py",
+            "backend/app/routes/api.py", "backend/requirements.txt", "backend/run.py",
+            "frontend/", "frontend/src/App.vue", "frontend/src/main.js",
+            "frontend/index.html", "frontend/package.json", "frontend/vite.config.js",
+            "README.md",
+        ],
+        "files": {
+            "backend/app/__init__.py": '"""Flask app factory."""\nfrom flask import Flask\nfrom flask_cors import CORS\n\n\ndef create_app(config=None):\n    app = Flask(__name__)\n    CORS(app)\n\n    if config:\n        app.config.update(config)\n\n    from app.routes.api import api_bp\n    app.register_blueprint(api_bp, url_prefix="/api")\n\n    return app\n',
+            "backend/app/routes/__init__.py": "",
+            "backend/app/routes/api.py": '"""API 라우트."""\nfrom flask import Blueprint, jsonify\n\napi_bp = Blueprint("api", __name__)\n\n\n@api_bp.route("/health")\ndef health():\n    return jsonify({"status": "ok"})\n\n\n@api_bp.route("/hello")\ndef hello():\n    return jsonify({"message": "Hello from Flask!"})\n',
+            "backend/requirements.txt": "flask>=3.0\nflask-cors>=4.0\ngunicorn>=22.0\n",
+            "backend/run.py": '"""개발 서버 실행."""\nfrom app import create_app\n\napp = create_app()\n\nif __name__ == "__main__":\n    app.run(debug=True, port=5000)\n',
+            "frontend/src/App.vue": '<template>\n  <div id="app">\n    <h1>{{ msg }}</h1>\n  </div>\n</template>\n\n<script setup>\nimport { ref, onMounted } from \'vue\'\n\nconst msg = ref(\'Loading...\')\n\nonMounted(async () => {\n  const res = await fetch(\'/api/hello\')\n  const data = await res.json()\n  msg.value = data.message\n})\n</script>\n',
+            "frontend/src/main.js": "import { createApp } from 'vue'\nimport App from './App.vue'\n\ncreateApp(App).mount('#app')\n",
+            "frontend/index.html": '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>{project_name}</title>\n</head>\n<body>\n  <div id="app"></div>\n  <script type="module" src="/src/main.js"></script>\n</body>\n</html>\n',
+            "frontend/package.json": '{{\n  "name": "{project_name}-frontend",\n  "private": true,\n  "version": "0.1.0",\n  "scripts": {{\n    "dev": "vite",\n    "build": "vite build",\n    "preview": "vite preview"\n  }},\n  "dependencies": {{\n    "vue": "^3.4"\n  }},\n  "devDependencies": {{\n    "@vitejs/plugin-vue": "^5.0",\n    "vite": "^5.0"\n  }}\n}}\n',
+            "frontend/vite.config.js": "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\n\nexport default defineConfig({\n  plugins: [vue()],\n  server: {\n    proxy: {\n      '/api': 'http://localhost:5000'\n    }\n  }\n})\n",
+            "README.md": "# {project_name}\n\nFlask + Vue.js SPA 프로젝트.\n\n## 시작하기\n\n### Backend\n```bash\ncd backend\npip install -r requirements.txt\npython run.py\n```\n\n### Frontend\n```bash\ncd frontend\nnpm install\nnpm run dev\n```\n",
+        },
+    },
+    "react-express": {
+        "name": "react-express",
+        "description": "React + Express.js 풀스택 프로젝트",
+        "stack": {"backend": "Express.js", "frontend": "React + Vite", "language": "JavaScript"},
+        "structure": [
+            "client/", "client/src/App.jsx", "client/src/main.jsx",
+            "client/index.html", "client/package.json", "client/vite.config.js",
+            "server/", "server/index.js", "server/routes/api.js", "server/package.json",
+            "README.md",
+        ],
+        "files": {
+            "server/index.js": "const express = require('express');\nconst cors = require('cors');\nconst apiRouter = require('./routes/api');\n\nconst app = express();\nconst PORT = process.env.PORT || 3000;\n\napp.use(cors());\napp.use(express.json());\napp.use('/api', apiRouter);\n\napp.listen(PORT, () => {\n  console.log(`Server running on port ${PORT}`);\n});\n",
+            "server/routes/api.js": "const express = require('express');\nconst router = express.Router();\n\nrouter.get('/health', (req, res) => {\n  res.json({ status: 'ok' });\n});\n\nrouter.get('/hello', (req, res) => {\n  res.json({ message: 'Hello from Express!' });\n});\n\nmodule.exports = router;\n",
+            "server/package.json": '{{\n  "name": "{project_name}-server",\n  "version": "0.1.0",\n  "private": true,\n  "scripts": {{\n    "start": "node index.js",\n    "dev": "node --watch index.js"\n  }},\n  "dependencies": {{\n    "cors": "^2.8",\n    "express": "^4.18"\n  }}\n}}\n',
+            "client/src/App.jsx": "import { useState, useEffect } from 'react'\n\nfunction App() {\n  const [message, setMessage] = useState('Loading...')\n\n  useEffect(() => {\n    fetch('/api/hello')\n      .then(res => res.json())\n      .then(data => setMessage(data.message))\n  }, [])\n\n  return (\n    <div>\n      <h1>{message}</h1>\n    </div>\n  )\n}\n\nexport default App\n",
+            "client/src/main.jsx": "import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n)\n",
+            "client/index.html": '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>{project_name}</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="/src/main.jsx"></script>\n</body>\n</html>\n',
+            "client/package.json": '{{\n  "name": "{project_name}-client",\n  "private": true,\n  "version": "0.1.0",\n  "scripts": {{\n    "dev": "vite",\n    "build": "vite build",\n    "preview": "vite preview"\n  }},\n  "dependencies": {{\n    "react": "^18.3",\n    "react-dom": "^18.3"\n  }},\n  "devDependencies": {{\n    "@vitejs/plugin-react": "^4.0",\n    "vite": "^5.0"\n  }}\n}}\n',
+            "client/vite.config.js": "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  server: {\n    proxy: {\n      '/api': 'http://localhost:3000'\n    }\n  }\n})\n",
+            "README.md": "# {project_name}\n\nReact + Express.js 풀스택 프로젝트.\n\n## 시작하기\n\n### Server\n```bash\ncd server\nnpm install\nnpm run dev\n```\n\n### Client\n```bash\ncd client\nnpm install\nnpm run dev\n```\n",
+        },
+    },
+    "fastapi-react": {
+        "name": "fastapi-react",
+        "description": "FastAPI + React 풀스택 프로젝트",
+        "stack": {"backend": "FastAPI", "frontend": "React + Vite", "language": "Python / JavaScript"},
+        "structure": [
+            "backend/", "backend/app/__init__.py", "backend/app/main.py",
+            "backend/app/routers/__init__.py", "backend/app/routers/api.py",
+            "backend/requirements.txt",
+            "frontend/", "frontend/src/App.jsx", "frontend/src/main.jsx",
+            "frontend/index.html", "frontend/package.json", "frontend/vite.config.js",
+            "README.md",
+        ],
+        "files": {
+            "backend/app/__init__.py": "",
+            "backend/app/main.py": '"""FastAPI 메인 앱."""\nfrom fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\n\nfrom app.routers import api\n\napp = FastAPI(title="{project_name}")\n\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=["*"],\n    allow_credentials=True,\n    allow_methods=["*"],\n    allow_headers=["*"],\n)\n\napp.include_router(api.router, prefix="/api")\n\n\n@app.get("/")\nasync def root():\n    return {"message": "Welcome to {project_name}"}\n',
+            "backend/app/routers/__init__.py": "",
+            "backend/app/routers/api.py": '"""API 라우터."""\nfrom fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get("/health")\nasync def health():\n    return {"status": "ok"}\n\n\n@router.get("/hello")\nasync def hello():\n    return {"message": "Hello from FastAPI!"}\n',
+            "backend/requirements.txt": "fastapi>=0.110\nuvicorn[standard]>=0.29\n",
+            "frontend/src/App.jsx": "import { useState, useEffect } from 'react'\n\nfunction App() {\n  const [message, setMessage] = useState('Loading...')\n\n  useEffect(() => {\n    fetch('/api/hello')\n      .then(res => res.json())\n      .then(data => setMessage(data.message))\n  }, [])\n\n  return (\n    <div>\n      <h1>{message}</h1>\n    </div>\n  )\n}\n\nexport default App\n",
+            "frontend/src/main.jsx": "import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n)\n",
+            "frontend/index.html": '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>{project_name}</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="/src/main.jsx"></script>\n</body>\n</html>\n',
+            "frontend/package.json": '{{\n  "name": "{project_name}-frontend",\n  "private": true,\n  "version": "0.1.0",\n  "scripts": {{\n    "dev": "vite",\n    "build": "vite build",\n    "preview": "vite preview"\n  }},\n  "dependencies": {{\n    "react": "^18.3",\n    "react-dom": "^18.3"\n  }},\n  "devDependencies": {{\n    "@vitejs/plugin-react": "^4.0",\n    "vite": "^5.0"\n  }}\n}}\n',
+            "frontend/vite.config.js": "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  server: {\n    proxy: {\n      '/api': 'http://localhost:8000'\n    }\n  }\n})\n",
+            "README.md": "# {project_name}\n\nFastAPI + React 풀스택 프로젝트.\n\n## 시작하기\n\n### Backend\n```bash\ncd backend\npip install -r requirements.txt\nuvicorn app.main:app --reload\n```\n\n### Frontend\n```bash\ncd frontend\nnpm install\nnpm run dev\n```\n",
+        },
+    },
+    "django-htmx": {
+        "name": "django-htmx",
+        "description": "Django + HTMX 서버사이드 렌더링 프로젝트",
+        "stack": {"backend": "Django", "frontend": "HTMX", "language": "Python"},
+        "structure": [
+            "config/", "config/__init__.py", "config/settings.py", "config/urls.py", "config/wsgi.py",
+            "core/", "core/__init__.py", "core/views.py", "core/urls.py",
+            "templates/", "templates/base.html", "templates/core/index.html",
+            "static/css/style.css", "manage.py", "requirements.txt", "README.md",
+        ],
+        "files": {
+            "config/__init__.py": "",
+            "config/settings.py": '"""Django 설정."""\nimport os\nfrom pathlib import Path\n\nBASE_DIR = Path(__file__).resolve().parent.parent\nSECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-change-in-production")\nDEBUG = os.getenv("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")\nALLOWED_HOSTS = ["*"]\n\nINSTALLED_APPS = [\n    "django.contrib.admin",\n    "django.contrib.auth",\n    "django.contrib.contenttypes",\n    "django.contrib.sessions",\n    "django.contrib.messages",\n    "django.contrib.staticfiles",\n    "django_htmx",\n    "core",\n]\n\nMIDDLEWARE = [\n    "django.middleware.security.SecurityMiddleware",\n    "django.contrib.sessions.middleware.SessionMiddleware",\n    "django.middleware.common.CommonMiddleware",\n    "django.middleware.csrf.CsrfViewMiddleware",\n    "django.contrib.auth.middleware.AuthenticationMiddleware",\n    "django.contrib.messages.middleware.MessageMiddleware",\n    "django_htmx.middleware.HtmxMiddleware",\n]\n\nROOT_URLCONF = "config.urls"\n\nTEMPLATES = [\n    {\n        "BACKEND": "django.template.backends.django.DjangoTemplates",\n        "DIRS": [BASE_DIR / "templates"],\n        "APP_DIRS": True,\n        "OPTIONS": {\n            "context_processors": [\n                "django.template.context_processors.debug",\n                "django.template.context_processors.request",\n                "django.contrib.auth.context_processors.auth",\n                "django.contrib.messages.context_processors.messages",\n            ],\n        },\n    },\n]\n\nWSGI_APPLICATION = "config.wsgi.application"\n\nDATABASES = {\n    "default": {\n        "ENGINE": "django.db.backends.sqlite3",\n        "NAME": BASE_DIR / "db.sqlite3",\n    }\n}\n\nSTATIC_URL = "/static/"\nSTATICFILES_DIRS = [BASE_DIR / "static"]\nDEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"\n',
+            "config/urls.py": '"""URL 설정."""\nfrom django.contrib import admin\nfrom django.urls import path, include\n\nurlpatterns = [\n    path("admin/", admin.site.urls),\n    path("", include("core.urls")),\n]\n',
+            "config/wsgi.py": '"""WSGI config."""\nimport os\nfrom django.core.wsgi import get_wsgi_application\n\nos.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")\napplication = get_wsgi_application()\n',
+            "core/__init__.py": "",
+            "core/views.py": '"""핵심 뷰."""\nfrom django.shortcuts import render\n\n\ndef index(request):\n    """메인 페이지."""\n    return render(request, "core/index.html")\n\n\ndef hello(request):\n    """HTMX 부분 렌더링 예시."""\n    if request.htmx:\n        return render(request, "core/_hello.html", {"message": "Hello from Django + HTMX!"})\n    return render(request, "core/index.html")\n',
+            "core/urls.py": '"""Core URL 패턴."""\nfrom django.urls import path\nfrom . import views\n\napp_name = "core"\n\nurlpatterns = [\n    path("", views.index, name="index"),\n    path("hello/", views.hello, name="hello"),\n]\n',
+            "templates/base.html": '<!DOCTYPE html>\n<html lang="ko">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>{project_name}</title>\n  <script src="https://unpkg.com/htmx.org@2.0.4"></script>\n  {%% load static %%}\n  <link rel="stylesheet" href="{%% static \'css/style.css\' %%}">\n</head>\n<body>\n  <main>\n    {%% block content %%}{%% endblock %%}\n  </main>\n</body>\n</html>\n',
+            "templates/core/index.html": '{%% extends "base.html" %%}\n\n{%% block content %%}\n<h1>Welcome to {project_name}</h1>\n<button hx-get="{%% url \'core:hello\' %%}" hx-target="#result" hx-swap="innerHTML">\n  Say Hello\n</button>\n<div id="result"></div>\n{%% endblock %%}\n',
+            "templates/core/_hello.html": "<p>{{ message }}</p>\n",
+            "static/css/style.css": "body {\n  font-family: system-ui, -apple-system, sans-serif;\n  max-width: 800px;\n  margin: 2rem auto;\n  padding: 0 1rem;\n}\n\nbutton {\n  padding: 0.5rem 1rem;\n  cursor: pointer;\n}\n",
+            "manage.py": '#!/usr/bin/env python\n"""Django management."""\nimport os\nimport sys\n\n\ndef main():\n    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")\n    from django.core.management import execute_from_command_line\n    execute_from_command_line(sys.argv)\n\n\nif __name__ == "__main__":\n    main()\n',
+            "requirements.txt": "django>=5.0\ndjango-htmx>=1.17\ngunicorn>=22.0\n",
+            "README.md": "# {project_name}\n\nDjango + HTMX 서버사이드 렌더링 프로젝트.\n\n## 시작하기\n\n```bash\npip install -r requirements.txt\npython manage.py migrate\npython manage.py runserver\n```\n",
+        },
+    },
+}
+
+
+@mcp.tool()
+def list_templates() -> str:
+    """사용 가능한 프레임워크 템플릿 목록을 반환한다.
+
+    각 템플릿의 이름, 설명, 기술 스택 정보를 포함한다.
+    """
+    results = []
+    for tpl in _PROJECT_TEMPLATES.values():
+        stack_str = ", ".join(f"{k}: {v}" for k, v in tpl["stack"].items())
+        results.append(f"- **{tpl['name']}**: {tpl['description']}\n  Stack: {stack_str}")
+    return "사용 가능한 템플릿:\n\n" + "\n\n".join(results)
+
+
+@mcp.tool()
+def get_template_info(template_name: str) -> str:
+    """특정 템플릿의 상세 정보를 반환한다.
+
+    디렉토리 구조, 주요 파일, 의존성 목록, 설정 파일 등을 포함한다.
+
+    Args:
+        template_name: 템플릿 이름 (예: "flask-vue", "react-express")
+    """
+    tpl = _PROJECT_TEMPLATES.get(template_name)
+    if not tpl:
+        available = ", ".join(_PROJECT_TEMPLATES.keys())
+        return f"Error: 존재하지 않는 템플릿 '{template_name}'. 사용 가능: {available}"
+
+    stack_str = ", ".join(f"{k}: {v}" for k, v in tpl["stack"].items())
+    structure_str = "\n".join(f"  {s}" for s in tpl["structure"])
+
+    deps = []
+    for fname, content in tpl["files"].items():
+        if fname.endswith("requirements.txt") or fname.endswith("package.json"):
+            deps.append(f"  [{fname}]\n  {content.strip()}")
+
+    deps_str = "\n\n".join(deps) if deps else "  (없음)"
+
+    return (
+        f"템플릿: {tpl['name']}\n"
+        f"설명: {tpl['description']}\n"
+        f"스택: {stack_str}\n\n"
+        f"디렉토리 구조:\n{structure_str}\n\n"
+        f"의존성:\n{deps_str}\n\n"
+        f"총 파일 수: {len(tpl['files'])}개"
+    )
+
+
+@mcp.tool()
+def create_project(template_name: str, project_name: str, options: str = "{}") -> str:
+    """workspace 내에 프로젝트 보일러플레이트를 생성한다.
+
+    선택한 템플릿을 기반으로 디렉토리 구조와 파일을 생성한다.
+    workspace 밖 경로 접근은 차단된다.
+
+    Args:
+        template_name: 템플릿 이름 (예: "flask-vue")
+        project_name: 생성할 프로젝트 이름 (디렉토리명)
+        options: JSON 문자열 형태의 추가 옵션 (예: '{"db_type": "postgres"}')
+    """
+    tpl = _PROJECT_TEMPLATES.get(template_name)
+    if not tpl:
+        available = ", ".join(_PROJECT_TEMPLATES.keys())
+        return f"Error: 존재하지 않는 템플릿 '{template_name}'. 사용 가능: {available}"
+
+    try:
+        json.loads(options) if options else {}
+    except json.JSONDecodeError as e:
+        return f"Error: options JSON 파싱 실패 — {e}"
+
+    project_dir = _safe_path(project_name)
+
+    if project_dir.exists():
+        return f"Error: 이미 존재하는 디렉토리 — {project_name}"
+
+    created_files = []
+    try:
+        for rel_path, content in tpl["files"].items():
+            file_path = project_dir / rel_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            rendered = content.replace("{project_name}", project_name)
+            file_path.write_text(rendered, encoding="utf-8")
+            created_files.append(rel_path)
+    except OSError as e:
+        return f"Error: 파일 생성 실패 — {e}"
+
+    files_str = "\n".join(f"  {f}" for f in created_files)
+    return (
+        f"프로젝트 '{project_name}' 생성 완료! (템플릿: {template_name})\n\n"
+        f"생성된 파일 ({len(created_files)}개):\n{files_str}\n\n"
+        f"경로: {project_dir}"
+    )
 
 
 if __name__ == "__main__":

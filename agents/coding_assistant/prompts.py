@@ -49,8 +49,9 @@ PARSE_SYSTEM_PROMPT = """\
 당신은 소프트웨어 개발 요청을 분석하는 전문가입니다.
 
 사용자의 요청을 분석하여 다음을 JSON 형식으로 반환하세요:
-- task_type: "generate" | "fix" | "refactor" | "explain" | "analyze" 중 하나
-  - generate: 새로운 코드 작성
+- task_type: "generate" | "fix" | "refactor" | "explain" | "analyze" | "scaffold" 중 하나
+  - scaffold: 새 프로젝트/앱 생성 (보일러플레이트, 프레임워크 셋업)
+  - generate: 새로운 코드 작성 (기존 프로젝트에 기능 추가)
   - fix: 기존 코드의 버그 수정
   - refactor: 기존 코드 개선/리팩토링
   - explain: 코드나 개념 설명

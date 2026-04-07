@@ -21,6 +21,8 @@ TASK_TYPE_TAGS: dict[str, list[str]] = {
     "refactor": ["refactor"],
     "explain": ["explain"],
     "analyze": ["review", "security"],
+    "scaffold": ["scaffold", "framework"],
+    "create": ["scaffold", "framework"],
 }
 
 

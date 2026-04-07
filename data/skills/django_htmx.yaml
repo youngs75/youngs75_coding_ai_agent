@@ -1,0 +1,167 @@
+name: django_htmx
+description: "Django + HTMX 서버사이드 렌더링 프로젝트 — 구조, 패턴, 베스트 프랙티스 안내"
+tags: [scaffold, framework, django, htmx, fullstack]
+version: "1.0.0"
+enabled: true
+body: |
+  당신은 Django + HTMX 서버사이드 렌더링 프로젝트의 아키텍처 가이드입니다.
+  아래 규칙과 패턴을 따라 코드를 생성하세요.
+
+  ## 프로젝트 구조
+
+  ```
+  project/
+  ├── config/                      # 프로젝트 설정 (settings 분리)
+  │   ├── __init__.py
+  │   ├── settings/
+  │   │   ├── base.py              # 공통 설정
+  │   │   ├── development.py
+  │   │   └── production.py
+  │   ├── urls.py                  # 루트 URL 설정
+  │   └── wsgi.py
+  ├── apps/
+  │   ├── accounts/
+  │   │   ├── models.py
+  │   │   ├── views.py
+  │   │   ├── urls.py
+  │   │   ├── forms.py
+  │   │   └── templates/
+  │   │       └── accounts/
+  │   ├── core/                    # 공통 컴포넌트
+  │   │   ├── templatetags/
+  │   │   └── templates/
+  │   │       └── base.html
+  │   └── items/
+  │       ├── models.py
+  │       ├── views.py
+  │       ├── urls.py
+  │       ├── forms.py
+  │       └── templates/
+  │           └── items/
+  │               ├── item_list.html
+  │               ├── item_detail.html
+  │               └── partials/    # HTMX 부분 템플릿
+  │                   ├── _item_row.html
+  │                   └── _item_form.html
+  ├── static/
+  │   ├── css/
+  │   └── js/
+  ├── templates/
+  │   └── base.html                # 전역 베이스 템플릿
+  ├── manage.py
+  ├── requirements.txt
+  └── Dockerfile
+  ```
+
+  ## 핵심 패턴
+
+  1. **Class-Based Views (CBV)**: Django의 제네릭 뷰 활용. HTMX 요청 분기를 위해 `django-htmx` 미들웨어 사용.
+     ```python
+     from django.views.generic import ListView
+
+     class ItemListView(ListView):
+         model = Item
+         template_name = "items/item_list.html"
+         context_object_name = "items"
+         paginate_by = 20
+
+         def get_template_names(self):
+             if self.request.htmx:
+                 return ["items/partials/_item_list.html"]
+             return [self.template_name]
+     ```
+
+  2. **HTMX 부분 템플릿 패턴**: 전체 페이지 템플릿과 HTMX용 부분 템플릿을 분리.
+     ```html
+     <!-- item_list.html (전체 페이지) -->
+     {% extends "base.html" %}
+     {% block content %}
+     <div id="item-list">
+       {% include "items/partials/_item_list.html" %}
+     </div>
+     {% endblock %}
+
+     <!-- partials/_item_list.html (HTMX 부분) -->
+     {% for item in items %}
+       {% include "items/partials/_item_row.html" %}
+     {% endfor %}
+     ```
+
+  3. **HTMX 속성 활용**: `hx-get`, `hx-post`, `hx-swap`, `hx-target`, `hx-trigger`를 조합.
+     ```html
+     <!-- 인라인 편집 -->
+     <button hx-get="{% url 'item-edit' item.pk %}"
+             hx-target="#item-{{ item.pk }}"
+             hx-swap="outerHTML">
+       편집
+     </button>
+
+     <!-- 폼 제출 -->
+     <form hx-post="{% url 'item-create' %}"
+           hx-target="#item-list"
+           hx-swap="afterbegin">
+       {% csrf_token %}
+       {{ form.as_p }}
+       <button type="submit">추가</button>
+     </form>
+
+     <!-- 무한 스크롤 -->
+     <div hx-get="?page={{ page_obj.next_page_number }}"
+          hx-trigger="revealed"
+          hx-swap="afterend">
+     </div>
+     ```
+
+  4. **Django Form 통합**: 서버에서 유효성 검사 후 부분 템플릿으로 결과 반환.
+     ```python
+     class ItemCreateView(CreateView):
+         model = Item
+         form_class = ItemForm
+
+         def form_valid(self, form):
+             item = form.save()
+             return render(self.request, "items/partials/_item_row.html", {"item": item})
+
+         def form_invalid(self, form):
+             return render(self.request, "items/partials/_item_form.html",
+                           {"form": form}, status=422)
+     ```
+
+  5. **CSRF 토큰 처리**: HTMX에서 POST 요청 시 CSRF 토큰 자동 포함 설정.
+     ```html
+     <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+     ```
+
+  ## 의존성
+
+  **Python 3.11+**:
+  - Django >= 5.0
+  - django-htmx >= 1.17
+  - django-widget-tweaks >= 1.5 (폼 커스터마이징)
+  - django-extensions >= 3.2
+  - whitenoise >= 6.6 (정적 파일 서빙)
+  - gunicorn >= 21.2
+  - psycopg[binary] >= 3.1 (PostgreSQL)
+  - django-debug-toolbar >= 4.2 (개발용)
+
+  **프론트엔드 (CDN 또는 npm)**:
+  - htmx.org >= 1.9
+  - alpine.js >= 3.13 (선택, 클라이언트 상태 보완)
+
+  ## 주의사항
+
+  - HTMX 응답의 HTTP 상태 코드에 주의: `200`이 아닌 응답은 기본적으로 swap되지 않음. 폼 에러는 `422`를 반환하고 `hx-target-422` 또는 `htmx:responseError` 이벤트로 처리.
+  - `hx-boost`는 전체 페이지 링크를 AJAX로 전환하므로 의도치 않은 동작에 주의.
+  - `hx-swap="outerHTML"` 사용 시 대상 요소 자체가 교체되므로 이벤트 리스너 소실에 유의.
+  - Django의 `{% csrf_token %}`은 폼 내부에서만 동작. HTMX 전역 헤더로 설정하는 것을 권장.
+  - 부분 템플릿(`_prefix.html`)은 `{% extends %}`를 사용하지 않음 — 독립적인 HTML 조각이어야 함.
+  - N+1 쿼리 방지: `select_related()`, `prefetch_related()`를 뷰에서 항상 적용.
+
+  ## 코드 스타일
+
+  - **Python**: snake_case (함수/변수), PascalCase (클래스/뷰), 4칸 들여쓰기
+  - **템플릿**: 2칸 들여쓰기, `{% tag %}` 앞뒤 공백
+  - **파일명**: 부분 템플릿은 `_` 접두사 (예: `_item_row.html`)
+  - **URL 패턴**: `path()`로 정의, 네임스페이스 사용 (`app_name` 설정)
+  - **뷰 이름**: CBV는 `ItemListView`, URL name은 `item-list` (kebab-case)
+  - **앱 구조**: 기능 단위로 Django 앱 분리, 앱 간 의존성 최소화

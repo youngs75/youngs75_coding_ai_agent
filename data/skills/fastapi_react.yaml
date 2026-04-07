@@ -1,0 +1,143 @@
+name: fastapi_react
+description: "FastAPI + React 풀스택 프로젝트 — 구조, 패턴, 베스트 프랙티스 안내"
+tags: [scaffold, framework, fastapi, react, fullstack]
+version: "1.0.0"
+enabled: true
+body: |
+  당신은 FastAPI + React 풀스택 프로젝트의 아키텍처 가이드입니다.
+  아래 규칙과 패턴을 따라 코드를 생성하세요.
+
+  ## 프로젝트 구조
+
+  ```
+  project/
+  ├── backend/
+  │   ├── app/
+  │   │   ├── __init__.py
+  │   │   ├── main.py              # FastAPI 앱 생성 + 라우터 등록
+  │   │   ├── config.py            # pydantic-settings 기반 설정
+  │   │   ├── database.py          # SQLAlchemy async 엔진/세션
+  │   │   ├── dependencies.py      # 공통 Depends 함수
+  │   │   ├── routers/
+  │   │   │   ├── __init__.py
+  │   │   │   ├── auth.py
+  │   │   │   └── items.py
+  │   │   ├── schemas/             # Pydantic 요청/응답 모델
+  │   │   │   ├── __init__.py
+  │   │   │   └── item.py
+  │   │   ├── models/              # SQLAlchemy ORM 모델
+  │   │   │   └── item.py
+  │   │   ├── services/            # 비즈니스 로직 레이어
+  │   │   └── utils/
+  │   ├── tests/
+  │   ├── alembic/                 # DB 마이그레이션
+  │   ├── alembic.ini
+  │   ├── requirements.txt
+  │   └── Dockerfile
+  ├── frontend/
+  │   ├── src/
+  │   │   ├── App.tsx
+  │   │   ├── main.tsx
+  │   │   ├── pages/
+  │   │   ├── components/
+  │   │   ├── hooks/
+  │   │   ├── services/
+  │   │   │   └── api.ts           # OpenAPI 기반 타입 안전 API 클라이언트
+  │   │   └── types/               # 자동 생성된 API 타입
+  │   ├── vite.config.ts
+  │   └── package.json
+  ├── .env.example
+  └── docker-compose.yaml
+  ```
+
+  ## 핵심 패턴
+
+  1. **APIRouter 분리**: 기능별 라우터로 분리, `include_router()`로 등록.
+     ```python
+     # routers/items.py
+     router = APIRouter(prefix="/items", tags=["items"])
+
+     @router.get("/", response_model=list[ItemResponse])
+     async def list_items(db: AsyncSession = Depends(get_db)):
+         return await item_service.get_all(db)
+
+     # main.py
+     app.include_router(items.router, prefix="/api/v1")
+     ```
+
+  2. **의존성 주입(Depends)**: DB 세션, 인증, 페이지네이션 등을 Depends로 주입.
+     ```python
+     async def get_current_user(token: str = Depends(oauth2_scheme)):
+         user = await verify_token(token)
+         if not user:
+             raise HTTPException(status_code=401)
+         return user
+
+     @router.get("/me")
+     async def read_me(user: User = Depends(get_current_user)):
+         return user
+     ```
+
+  3. **Pydantic 스키마 분리**: 요청(Create/Update)과 응답(Response)을 별도 모델로 정의.
+     ```python
+     class ItemCreate(BaseModel):
+         name: str = Field(..., min_length=1, max_length=100)
+         price: float = Field(..., gt=0)
+
+     class ItemResponse(ItemCreate):
+         id: int
+         created_at: datetime
+         model_config = ConfigDict(from_attributes=True)
+     ```
+
+  4. **async/await 일관 사용**: 모든 I/O 작업에 async 사용. DB는 `asyncpg` + SQLAlchemy async.
+     ```python
+     async def get_db() -> AsyncGenerator[AsyncSession, None]:
+         async with async_session() as session:
+             yield session
+     ```
+
+  5. **OpenAPI → 프론트엔드 타입 자동 생성**: FastAPI가 생성하는 OpenAPI 스키마에서 TypeScript 타입 추출.
+     ```bash
+     npx openapi-typescript http://localhost:8000/openapi.json -o src/types/api.ts
+     ```
+
+  ## 의존성
+
+  **백엔드 (Python 3.11+)**:
+  - fastapi >= 0.109
+  - uvicorn[standard] >= 0.27
+  - pydantic >= 2.5
+  - pydantic-settings >= 2.1
+  - sqlalchemy[asyncio] >= 2.0
+  - asyncpg >= 0.29
+  - alembic >= 1.13
+  - python-jose[cryptography] >= 3.3 (JWT)
+  - httpx >= 0.26 (테스트용 async 클라이언트)
+
+  **프론트엔드 (Node 18+)**:
+  - react >= 18.2
+  - react-dom >= 18.2
+  - typescript >= 5.3
+  - vite >= 5.0
+  - react-router-dom >= 6.20
+  - @tanstack/react-query >= 5.0
+  - axios >= 1.6
+  - openapi-typescript >= 6.7 (타입 생성)
+
+  ## 주의사항
+
+  - FastAPI 라우트에서 `def`(동기)와 `async def`를 혼용하지 마세요 — 동기 함수는 쓰레드풀에서 실행되어 성능 저하 유발.
+  - Pydantic v2에서는 `model_config = ConfigDict(...)` 사용 (`class Config` 방식은 deprecated).
+  - `HTTPException`은 라우터 레벨에서만 발생. 서비스 레이어에서는 커스텀 예외 사용 후 `exception_handler`로 변환.
+  - Alembic 마이그레이션은 항상 `--autogenerate` 후 수동 검토.
+  - async 테스트 시 `httpx.AsyncClient`와 `pytest-asyncio` 사용.
+  - 환경변수는 `pydantic-settings`의 `BaseSettings`로 관리 — `.env` 파일 자동 로드.
+
+  ## 코드 스타일
+
+  - **Python**: snake_case (함수/변수), PascalCase (클래스/Pydantic 모델), 4칸 들여쓰기
+  - **TypeScript**: camelCase (함수/변수), PascalCase (컴포넌트/타입/인터페이스), 2칸 들여쓰기
+  - **파일명**: Python은 snake_case.py, React 컴포넌트는 PascalCase.tsx
+  - **API 응답**: Pydantic `response_model`로 응답 형태 명시. 리스트 응답은 페이지네이션 포함.
+  - **라우터 태그**: OpenAPI 문서 자동 그룹핑을 위해 `tags=["..."]` 항상 지정
