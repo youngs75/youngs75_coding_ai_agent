@@ -332,6 +332,26 @@ async def _execute_phases_sequentially(
     phase_results: list[dict] = []
     failed_ids: set[str] = set()
 
+    # Planner의 task_plan에서 framework 감지 → 스킬 사전 활성화
+    # 각 phase의 parse가 scaffold를 감지하지 못해도 프레임워크 스킬이 활성화됨
+    _framework = task_plan.get("framework", "")
+    if not _framework:
+        # architecture 텍스트에서 프레임워크 힌트 추출 시도
+        _arch_lower = architecture.lower()
+        _FRAMEWORK_HINTS = {
+            "flask_vue": ("flask", "vue"),
+            "fastapi_react": ("fastapi", "react"),
+            "django_htmx": ("django", "htmx"),
+            "react_express": ("react", "express"),
+        }
+        for fw_name, keywords in _FRAMEWORK_HINTS.items():
+            if all(kw in _arch_lower for kw in keywords):
+                _framework = fw_name
+                break
+    if _framework:
+        skill_registry.auto_activate_for_task("scaffold", framework_hint=_framework)
+        logger.info("프레임워크 스킬 사전 활성화: %s", _framework)
+
     for i, phase in enumerate(phases):
         phase_id = phase.get("id", f"phase_{i + 1}")
         title = phase.get("title", "")
@@ -378,13 +398,19 @@ async def _execute_phases_sequentially(
                 config=config,
                 skill_registry=skill_registry,
             )
+            # 사전 활성화된 스킬 본문을 초기 상태에 주입
+            _pre_skill_bodies = skill_registry.get_active_skill_bodies()
+            _init_state: dict = {
+                "messages": [HumanMessage(content=phase_message)],
+                "iteration": 0,
+                "max_iterations": 11,  # 최대 10회 재시도
+                "env_approved": True,  # 계획 승인 시 환경 설정도 암묵적 승인
+            }
+            if _pre_skill_bodies:
+                _init_state["skill_context"] = _pre_skill_bodies
+
             result = await agent.graph.ainvoke(
-                {
-                    "messages": [HumanMessage(content=phase_message)],
-                    "iteration": 0,
-                    "max_iterations": 11,  # 최대 10회 재시도
-                    "env_approved": True,  # 계획 승인 시 환경 설정도 암묵적 승인
-                }
+                _init_state
             )
 
             written = result.get("written_files", [])

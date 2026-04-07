@@ -318,3 +318,25 @@ class TestSkillRegistry:
 
         reg.auto_activate_for_task("refactor")
         assert reg.activation_stats.get("refactor", 0) >= 1
+
+    def test_auto_activate_case_insensitive(self, tmp_path):
+        """task_type 대소문자/공백 normalize 확인."""
+        (tmp_path / "debug.json").write_text(
+            json.dumps(
+                {
+                    "name": "debug",
+                    "description": "디버그",
+                    "tags": ["fix", "debug"],
+                    "body": "디버그 프롬프트",
+                }
+            ),
+            encoding="utf-8",
+        )
+        loader = SkillLoader(tmp_path)
+        reg = SkillRegistry(loader=loader)
+        reg.discover()
+
+        # 대문자, 공백 포함 task_type도 매칭
+        assert reg.auto_activate_for_task("Fix") == ["debug"]
+        assert reg.auto_activate_for_task("  fix  ") == ["debug"]
+        assert reg.auto_activate_for_task("FIX") == ["debug"]

@@ -52,6 +52,12 @@ from .prompts import EXECUTE_SYSTEM_PROMPT, PARSE_SYSTEM_PROMPT, VERIFY_SYSTEM_P
 from .schemas import CodingState
 
 
+def _similarity_ratio(a: str, b: str) -> float:
+    """두 문자열의 유사도를 0.0~1.0으로 반환한다 (SequenceMatcher 기반)."""
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a, b).ratio()
+
+
 async def _execute_tool_safely(tool: Any, args: dict) -> str:
     """도구를 안전하게 실행하고 결과를 문자열로 반환한다."""
     try:
@@ -1788,6 +1794,42 @@ class CodingAssistantAgent(BaseGraphAgent):
             "외부 서비스 연결 실패. 테스트에서는 인메모리 DB(sqlite:///:memory:)를 사용하고, "
             "외부 API는 mock 처리하세요.",
         ),
+        # HTTP 상태 코드 에러 (웹 프레임워크 테스트)
+        (
+            r"assert\s+405\s*==\s*(?:200|201|204|404)|"
+            r"assert\s+(?:200|201|204|404)\s*==\s*405|"
+            r"405\s*Method\s*Not\s*Allowed",
+            "HTTPMethodNotAllowed",
+            "HTTP 405 Method Not Allowed. 요청한 HTTP 메서드(GET/POST/PUT/DELETE)에 대한 "
+            "라우트 핸들러가 등록되지 않았습니다. "
+            "routes.py에서 해당 엔드포인트에 필요한 메서드가 모두 정의되어 있는지 확인하세요. "
+            "예: 삭제 후 조회(GET)로 404를 기대하는 테스트가 있으면 GET 핸들러도 필요합니다.",
+        ),
+        (
+            r"assert\s+404\s*==\s*(?:200|201|204)|"
+            r"assert\s+(?:200|201|204)\s*==\s*404|"
+            r"404\s*Not\s*Found",
+            "HTTPNotFound",
+            "HTTP 404 Not Found. 라우트가 등록되지 않았거나 URL 패턴이 불일치합니다. "
+            "Blueprint 등록, url_prefix, 변수 타입(<int:id> 등)을 확인하세요.",
+        ),
+        (
+            r"assert\s+500\s*==\s*(?:200|201|204)|"
+            r"assert\s+(?:200|201|204)\s*==\s*500|"
+            r"500\s*Internal\s*Server\s*Error",
+            "HTTPServerError",
+            "HTTP 500 서버 에러. 핸들러 내부에서 예외가 발생합니다. "
+            "DB 초기화, 필수 필드 누락, 잘못된 쿼리 등을 확인하세요. "
+            "Flask의 경우 app.config['TESTING']=True로 상세 에러를 확인하세요.",
+        ),
+        (
+            r"assert\s+(?:4\d{2}|5\d{2})\s*==\s*(?:2\d{2})|"
+            r"assert\s+(?:2\d{2})\s*==\s*(?:4\d{2}|5\d{2})|"
+            r"status.code.*(?:4\d{2}|5\d{2})",
+            "HTTPStatusError",
+            "HTTP 상태 코드 불일치. 라우트 핸들러의 반환 상태 코드와 테스트의 기대값을 비교하세요. "
+            "라우트 등록 여부, HTTP 메서드, URL 패턴, 핸들러 로직을 순서대로 점검하세요.",
+        ),
     ]
 
     def _classify_test_error(self, test_output: str) -> tuple[str, str]:
@@ -1821,21 +1863,32 @@ class CodingAssistantAgent(BaseGraphAgent):
                     "execution_log": log,
                 }
 
-        # 반복 감지 2: 동일 테스트 에러 반복 (연속 3회 같은 에러면 중단)
+        # 반복 감지 2: 동일 테스트 에러 반복 (연속 2회 같은 에러 패턴이면 중단)
         prev_test_output = state.get("_prev_test_output", "")
-        if prev_test_output and test_output and iteration >= 3:
-            # FAILURES 섹션만 추출하여 비교 (타임스탬프 등 무시)
-            # pytest: FAILED/ERROR/assert, Go: --- FAIL/panic, Rust: failures:/panicked, Jest: FAIL/●
+        if prev_test_output and test_output and iteration >= 2:
+            # 에러 패턴 정규화: 숫자를 제거하고 핵심 에러 구조만 비교
+            # "assert 405 == 404"와 "assert 404 == 405" → 같은 에러로 판정
             _FAIL_KEYWORDS = ("FAILED", "ERROR", "assert", "--- FAIL", "panic",
                               "failures:", "panicked", "FAIL ", "●", "Expected")
 
-            def _extract_failures(s: str) -> str:
-                lines = [l for l in s.split("\n") if any(kw in l for kw in _FAIL_KEYWORDS)]
-                return "\n".join(lines[:20])
-            cur_failures = _extract_failures(test_output)
-            prev_failures = _extract_failures(prev_test_output)
-            if cur_failures and cur_failures == prev_failures:
-                log.append(f"[inject_test_failure] 동일 테스트 에러 3회 이상 반복 — 재시도 중단")
+            def _normalize_error(s: str) -> str:
+                """에러 라인을 추출하고 숫자를 정규화하여 비교 가능한 형태로 변환."""
+                lines = [l.strip() for l in s.split("\n")
+                         if any(kw in l for kw in _FAIL_KEYWORDS)]
+                # 숫자를 N으로 치환 → "assert 405 == 404" → "assert N == N"
+                normalized = "\n".join(lines[:20])
+                normalized = re.sub(r"\b\d+\b", "N", normalized)
+                # 공백 정규화
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                return normalized
+
+            cur_norm = _normalize_error(test_output)
+            prev_norm = _normalize_error(prev_test_output)
+            if cur_norm and (cur_norm == prev_norm or (
+                len(cur_norm) > 20
+                and _similarity_ratio(cur_norm, prev_norm) > 0.85
+            )):
+                log.append(f"[inject_test_failure] 동일 테스트 에러 반복 감지 — 재시도 중단")
                 return {
                     "test_passed": True,
                     "test_output": f"동일 에러 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",

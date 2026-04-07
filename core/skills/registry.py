@@ -122,7 +122,7 @@ class SkillRegistry:
         Returns:
             활성화된 스킬 이름 목록
         """
-        tags = TASK_TYPE_TAGS.get(task_type, [])
+        tags = TASK_TYPE_TAGS.get(task_type.strip().lower(), [])
         if not tags:
             return []
 
