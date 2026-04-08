@@ -48,7 +48,12 @@ from youngs75_a2a.core.tool_call_utils import (
 from youngs75_a2a.core.tool_permissions import PermissionDecision
 
 from .config import CodingConfig
-from .prompts import EXECUTE_SYSTEM_PROMPT, PARSE_SYSTEM_PROMPT, VERIFY_SYSTEM_PROMPT
+from .prompts import (
+    EXECUTE_SYSTEM_PROMPT,
+    GENERATE_FINAL_SYSTEM_PROMPT,
+    PARSE_SYSTEM_PROMPT,
+    VERIFY_SYSTEM_PROMPT,
+)
 from .schemas import CodingState
 
 
@@ -447,23 +452,35 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return result
 
-    def _build_execute_system_prompt(self, state: CodingState) -> str:
-        """execute/generate 노드 공통 시스템 프롬프트를 구성한다."""
+    def _build_execute_system_prompt(
+        self, state: CodingState, *, purpose: str = "execute"
+    ) -> str:
+        """execute/generate 노드 공통 시스템 프롬프트를 구성한다.
+
+        Args:
+            purpose: "execute" — ReAct 도구 루프용, "generate" — 최종 코드 생성용
+        """
         parse_result = state.get("parse_result", {})
         language = parse_result.get("language", "python")
 
-        tool_descriptions = (
-            self._mcp_loader.get_tool_descriptions()
-            if self._tools
-            else "사용 가능한 도구 없음"
-        )
-
-        system_prompt = self._build_system_prompt(
-            EXECUTE_SYSTEM_PROMPT.format(
-                language=language,
-                tool_descriptions=tool_descriptions,
+        if purpose == "generate":
+            # GENERATE_FINAL: write_file 도구 사용 지시 프롬프트
+            system_prompt = self._build_system_prompt(
+                GENERATE_FINAL_SYSTEM_PROMPT.format(language=language)
             )
-        )
+        else:
+            # EXECUTE: 기존 MCP 도구 루프 프롬프트
+            tool_descriptions = (
+                self._mcp_loader.get_tool_descriptions()
+                if self._tools
+                else "사용 가능한 도구 없음"
+            )
+            system_prompt = self._build_system_prompt(
+                EXECUTE_SYSTEM_PROMPT.format(
+                    language=language,
+                    tool_descriptions=tool_descriptions,
+                )
+            )
 
         # Semantic Memory 주입
         semantic_context = state.get("semantic_context", [])
@@ -619,60 +636,133 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return result
 
-    async def _generate_final(self, state: CodingState) -> dict[str, Any]:
-        """2단계: STRONG 모델이 수집된 컨텍스트를 바탕으로 최종 코드를 생성한다.
+    # write_file 도구 루프 최대 반복 횟수
+    _GENERATE_MAX_TOOL_LOOPS = 10
 
-        도구 호출 없이 코드 생성에만 집중한다. ReAct 루프에서 수집된
-        project_context와 도구 결과가 메시지에 포함된 상태에서 호출된다.
+    async def _generate_final(self, state: CodingState) -> dict[str, Any]:
+        """2단계: STRONG 모델이 write_file 도구로 파일을 직접 저장한다.
+
+        DeepAgents 패턴: LLM이 write_file 도구를 호출하면 MCP 서버가
+        즉시 디스크에 저장. 마크다운 파싱 불필요.
         """
-        system_prompt = self._build_execute_system_prompt(state)
+        system_prompt = self._build_execute_system_prompt(
+            state, purpose="generate"
+        )
 
         # 프로젝트 컨텍스트 축적분 주입
         project_context = state.get("project_context", [])
         if project_context:
             system_prompt += "\n\n## 수집된 프로젝트 파일 컨텍스트\n"
-            system_prompt += "\n".join(project_context[:10])  # 최대 10개 파일
+            system_prompt += "\n".join(project_context[:10])
 
         context_msg = self._build_context_message(state)
 
-        # STRONG 모델 — 도구 없이 최종 코드 생성 (미들웨어 체인 경유)
+        # STRONG 모델 + write_file 도구 바인딩
         gen_model = self._get_gen_model()
 
-        # 미들웨어 체인이 메시지 윈도우 + 토큰 컴팩션을 자동 처리
+        # MCP 도구에서 write_file과 read_file만 필터링하여 바인딩
+        write_tools = [
+            t for t in self._tools
+            if getattr(t, "name", "") in ("write_file", "read_file")
+        ]
+        if write_tools:
+            gen_model = gen_model.bind_tools(write_tools)
+
         from youngs75_a2a.core.middleware import ModelRequest as MWRequest
+        from langchain_core.messages import AIMessage, ToolMessage
 
         sanitized = sanitize_messages_for_llm(state["messages"])
         sanitized.append(context_msg)
 
-        mw_request = MWRequest(
-            system_message=system_prompt,
-            messages=sanitized,
-            state=dict(state),
-            model_name="generation",
+        log = list(state.get("execution_log", []))
+        written_files: list[str] = []
+        tools_by_name = _get_tools_by_name(write_tools)
+        loop_messages = list(sanitized)
+        response = None
+        responded_ids: set[str] = set()
+
+        for loop_idx in range(self._GENERATE_MAX_TOOL_LOOPS):
+            mw_request = MWRequest(
+                system_message=system_prompt,
+                messages=loop_messages,
+                state=dict(state),
+                model_name="generation",
+            )
+
+            try:
+                mw_response = await self._middleware_chain.invoke(
+                    mw_request, gen_model
+                )
+                response = mw_response.message
+            except Exception as e:
+                error_msg = str(e)
+                logging.getLogger(__name__).warning(
+                    "[generate_final] LLM 호출 실패 (루프 %d): %s",
+                    loop_idx, error_msg[:200],
+                )
+                log.append(f"[generate_final] LLM 오류: {error_msg[:100]}")
+                break
+
+            # 도구 호출이 없으면 루프 종료
+            tool_calls = getattr(response, "tool_calls", None) or []
+            if not tool_calls:
+                break
+
+            # 도구 호출 실행
+            loop_messages.append(response)
+            for call in tool_calls:
+                call_id = tc_id(call) or f"call_{tc_name(call)}_{loop_idx}"
+                call_name = tc_name(call) or "unknown"
+                call_args = tc_args(call)
+
+                if call_name in tools_by_name:
+                    result = await _execute_tool_safely(
+                        tools_by_name[call_name], call_args
+                    )
+                    # write_file 성공 결과에서 파일 경로 수집
+                    if call_name == "write_file" and result.startswith("OK:"):
+                        filepath = result.split("OK:")[1].split("(")[0].strip()
+                        if filepath and filepath not in written_files:
+                            written_files.append(filepath)
+                else:
+                    result = f"알 수 없는 도구: {call_name}"
+
+                loop_messages.append(
+                    ToolMessage(
+                        content=result, tool_call_id=call_id, name=call_name
+                    )
+                )
+                responded_ids.add(call_id)
+
+            log.append(
+                f"[generate_final] 루프 {loop_idx}: "
+                f"도구 {len(tool_calls)}회 호출, "
+                f"파일 {len(written_files)}개 저장"
+            )
+
+        # 미완성 도구 호출 처리 (PatchToolCalls 패턴)
+        if response and hasattr(response, "tool_calls") and response.tool_calls:
+            for call in response.tool_calls:
+                cid = tc_id(call)
+                if cid and cid not in responded_ids:
+                    loop_messages.append(
+                        ToolMessage(
+                            content="도구 호출이 루프 한도 초과로 취소되었습니다.",
+                            tool_call_id=cid,
+                            name=tc_name(call) or "unknown",
+                        )
+                    )
+
+        content = (response.content or "") if response else ""
+        log.append(
+            f"[generate_final] model=STRONG, "
+            f"write_file {len(written_files)}개 파일 저장 완료"
         )
 
-        try:
-            mw_response = await self._middleware_chain.invoke(mw_request, gen_model)
-            response = mw_response.message
-        except Exception as e:
-            error_msg = str(e)
-            logging.getLogger(__name__).warning(
-                "[generate_final] LLM 호출 실패: %s", error_msg[:200]
-            )
-            log = state.get("execution_log", [])
-            log.append(f"[generate_final] LLM 오류: {error_msg[:100]}")
-            return {
-                "generated_code": state.get("generated_code", ""),
-                "execution_log": log,
-            }
-
-        log = state.get("execution_log", [])
-        log.append("[generate_final] model=STRONG, 최종 코드 생성 완료")
-
         return {
-            "generated_code": response.content or "",
+            "generated_code": content,
+            "written_files": written_files,
             "execution_log": log,
-            # messages에 LLM 응답을 추가하지 않음 — 검증 재시도 시 컨텍스트 폭증 방지
         }
 
     async def _execute_tools(self, state: CodingState) -> dict[str, Any]:
@@ -911,6 +1001,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             "iteration": state.get("iteration", 0) + 1,
             "tool_call_count": 0,
         }
+
+        # 검증 실패 시 written_files 초기화 (재생성 시 새로 쓰도록)
+        if not verify_result.get("passed"):
+            result["written_files"] = []
 
         # Procedural Memory 훅: 검증 통과 시 코드 패턴 자동 누적
         if verify_result.get("passed") and self._memory_store:
@@ -1637,10 +1731,24 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 코드 적용 (파일 저장) ──────────────────────────────
 
     async def _apply_code(self, state: CodingState) -> dict[str, Any]:
-        """생성된 코드에서 파일 경로를 추출하여 디스크에 저장한다."""
-        generated_code = state.get("generated_code", "")
+        """생성된 코드에서 파일을 저장한다.
+
+        write_file 도구로 이미 저장된 경우 스킵하고,
+        그렇지 않으면 마크다운 파싱 폴백을 수행한다.
+        """
         log = list(state.get("execution_log", []))
 
+        # 도구 호출로 이미 파일이 저장된 경우 → 스킵
+        existing_written = state.get("written_files", [])
+        if existing_written:
+            log.append(
+                f"[apply] write_file 도구로 {len(existing_written)}개 파일 "
+                "이미 저장 — 마크다운 파싱 스킵"
+            )
+            return {"written_files": existing_written, "execution_log": log}
+
+        # Fallback: 마크다운 파싱 (도구 호출이 없었을 때)
+        generated_code = state.get("generated_code", "")
         if not generated_code:
             log.append("[apply] 생성된 코드 없음 — 스킵")
             return {"written_files": [], "execution_log": log}
@@ -2130,13 +2238,14 @@ class CodingAssistantAgent(BaseGraphAgent):
             f"{escalation_hint}"
             f"{existing_hint}\n"
             f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
-            f"수정된 전체 파일을 코드 블록으로 제공하세요 (filepath 주석 포함)."
+            f"수정된 파일을 write_file 도구로 저장하세요."
         ))
         log.append(f"[inject_test_failure] 에러 주입, 수정 루프 시작 (iteration={iteration})")
 
         return {
             "messages": [error_msg],
             "execution_log": log,
+            "written_files": [],  # 재생성 시 새로 쓰도록 초기화
             "_prev_generated_code": generated_code,
             "_prev_test_output": test_output,
         }

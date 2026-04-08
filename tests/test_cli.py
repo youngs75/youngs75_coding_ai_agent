@@ -1963,13 +1963,14 @@ class TestPromptRegistry:
         assert "파일 저장 형식" in prompt
         assert "filepath:" in prompt
 
-    def test_verify_prompt_contains_citation_quality_check(self):
+    def test_verify_prompt_contains_quality_check(self):
         from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("verify")
-        assert "인용 품질" in prompt
-        assert "파일 경로/라인 번호" in prompt
+        assert "정확성" in prompt
+        assert "안전성" in prompt
+        assert "write_file" in prompt
 
     def test_deep_research_prompts_contain_citation_rules(self):
         from youngs75_a2a.agents.deep_research.prompts import (
