@@ -10,6 +10,8 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
+import sys
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -718,6 +720,80 @@ async def _run_agent_turn(
     _save_episodic_memory(session, user_input, response, passed=passed)
 
 
+_local_mcp_process: subprocess.Popen | None = None
+
+
+async def _sync_mcp_workspace(workspace: str, renderer: CLIRenderer) -> None:
+    """MCP 서버의 workspace를 CLI의 현재 workspace와 동기화한다.
+
+    1차: Docker MCP의 set_workspace 호출 시도
+    2차: 실패 시 로컬 MCP 서버를 자동 시작 (CLI 모드용)
+    """
+    import subprocess
+    import time
+
+    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+
+    config = CodingConfig()
+    mcp_url = config.mcp_servers.get("code_tools", "")
+    if not mcp_url:
+        return
+
+    # 1차: 기존 MCP 서버에 set_workspace 시도
+    try:
+        from youngs75_a2a.core.mcp_loader import MCPToolLoader
+
+        loader = MCPToolLoader({"code_tools": mcp_url})
+        tools = await loader.load()
+        set_ws = next((t for t in tools if t.name == "set_workspace"), None)
+        if set_ws:
+            result = await set_ws.ainvoke({"path": workspace})
+            result_text = result
+            if isinstance(result, list):
+                result_text = result[0].get("text", "") if result else ""
+            if "변경됨" in str(result_text):
+                renderer.success(f"MCP workspace 동기화: {workspace}")
+                return
+            # Docker mount root 제한으로 실패 → 로컬 MCP 시작
+            logger.info("Docker MCP set_workspace 거부: %s → 로컬 MCP 시작", result_text)
+    except Exception as e:
+        logger.info("MCP 서버 미응답: %s → 로컬 MCP 시작", e)
+
+    # 2차: 로컬 MCP 서버 자동 시작
+    global _local_mcp_process
+    local_port = 3013  # Docker MCP(3003)와 충돌 방지
+    local_url = f"http://localhost:{local_port}/mcp"
+
+    env = {**os.environ, "CODE_TOOLS_WORKSPACE": workspace, "CODE_TOOLS_PORT": str(local_port)}
+    try:
+        # server.py의 if __name__ == "__main__" 블록으로 직접 실행
+        server_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "mcp_servers", "code_tools", "server.py",
+        )
+        _local_mcp_process = subprocess.Popen(
+            [sys.executable, server_path],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # 서버 시작 대기
+        for _ in range(10):
+            time.sleep(0.3)
+            try:
+                import urllib.request
+                urllib.request.urlopen(f"http://localhost:{local_port}/", timeout=1)
+            except Exception:
+                continue
+            break
+
+        # CodingConfig의 MCP URL을 로컬로 전환
+        os.environ["CODE_TOOLS_MCP_URL"] = local_url
+        renderer.success(f"로컬 MCP 서버 시작 (:{local_port}, workspace: {workspace})")
+    except Exception as e:
+        logger.warning("로컬 MCP 서버 시작 실패: %s", e)
+
+
 def _init_skill_registry(
     skills_dir: str | None,
 ) -> tuple[SkillRegistry, list[str]]:
@@ -766,6 +842,9 @@ async def _main_loop(config: CLIConfig) -> None:
 
     # Phase 10: 프로젝트 컨텍스트 + 권한 + 병렬 실행기 초기화
     workspace = os.getenv("CODE_TOOLS_WORKSPACE", os.getcwd())
+
+    # MCP 서버 workspace 동기화 (Docker MCP 사용 시 호스트 경로로 설정)
+    await _sync_mcp_workspace(workspace, renderer)
 
     display_workspace = workspace
 
@@ -842,4 +921,12 @@ def run_cli(config: CLIConfig | None = None) -> None:
 
     load_dotenv()
     config = config or CLIConfig()
-    asyncio.run(_main_loop(config))
+    try:
+        asyncio.run(_main_loop(config))
+    finally:
+        # 로컬 MCP 서버 정리
+        global _local_mcp_process
+        if _local_mcp_process is not None:
+            _local_mcp_process.terminate()
+            _local_mcp_process.wait(timeout=5)
+            _local_mcp_process = None

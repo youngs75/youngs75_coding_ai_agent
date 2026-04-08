@@ -67,7 +67,16 @@ async def _execute_tool_safely(tool: Any, args: dict) -> str:
     """도구를 안전하게 실행하고 결과를 문자열로 반환한다."""
     try:
         result = await tool.ainvoke(args)
-        return str(result) if result else "실행 완료 (출력 없음)"
+        if not result:
+            return "실행 완료 (출력 없음)"
+        # MCP 도구는 [{'type': 'text', 'text': '...'}] 형태로 반환
+        if isinstance(result, list):
+            texts = [
+                item.get("text", "") if isinstance(item, dict) else str(item)
+                for item in result
+            ]
+            return "\n".join(texts) if texts else "실행 완료 (출력 없음)"
+        return str(result)
     except Exception as e:
         return f"도구 실행 오류: {e}"
 

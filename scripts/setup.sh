@@ -221,6 +221,14 @@ if [ "$SKIP_ENV" = false ]; then
             if [ -z "$DASHSCOPE_KEY" ]; then
                 fail "메인 프로바이더 API 키는 필수입니다"
             fi
+            echo ""
+            echo -e "  ${BOLD}DashScope Base URL${NC} (필수 — 워크스페이스 URL)"
+            echo -e "  콘솔 > API Key 페이지에서 확인 가능"
+            echo -e "  형식: ${CYAN}https://ws-<ID>.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1${NC}"
+            read -rp "  DASHSCOPE_BASE_URL: " DASHSCOPE_BASE_URL_INPUT
+            if [ -z "$DASHSCOPE_BASE_URL_INPUT" ]; then
+                fail "DashScope Base URL은 필수입니다 (워크스페이스 키는 워크스페이스 URL이 필요)"
+            fi
         else
             echo -e "  발급: ${CYAN}https://openrouter.ai/keys${NC}"
             read_secret "OPENROUTER_API_KEY"
@@ -289,6 +297,7 @@ if [ "$SKIP_ENV" = false ]; then
         sed \
             -e "s|^LLM_PROVIDER=.*|LLM_PROVIDER=${PROVIDER}|" \
             -e "s|^DASHSCOPE_API_KEY=.*|DASHSCOPE_API_KEY=${DASHSCOPE_KEY}|" \
+            -e "s|^DASHSCOPE_BASE_URL=.*|DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL_INPUT:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}|" \
             -e "s|^OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=${OPENROUTER_KEY}|" \
             -e "s|^TAVILY_API_KEY=.*|TAVILY_API_KEY=${TAVILY_KEY}|" \
             -e "s|^LANGFUSE_PUBLIC_KEY=.*|LANGFUSE_PUBLIC_KEY=${LF_PUB_KEY}|" \
@@ -320,6 +329,7 @@ if [ "$SKIP_ENV" = false ]; then
             sed \
                 -e "s|^LLM_PROVIDER=.*|LLM_PROVIDER=${LLM_PROVIDER:-dashscope}|" \
                 -e "s|^DASHSCOPE_API_KEY=.*|DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}|" \
+                -e "s|^DASHSCOPE_BASE_URL=.*|DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}|" \
                 -e "s|^OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}|" \
                 -e "s|^TAVILY_API_KEY=.*|TAVILY_API_KEY=${TAVILY_API_KEY:-}|" \
                 -e "s|^LANGFUSE_PUBLIC_KEY=.*|LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}|" \

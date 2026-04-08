@@ -453,11 +453,18 @@ def create_chat_model(
         model_kwargs = kwargs.pop("model_kwargs", {})
         model_kwargs["extra_body"] = extra_body_param
 
+        # DashScope: LiteLLM이 DASHSCOPE_BASE_URL 환경변수를 무시하므로
+        # api_base를 명시적으로 전달 (워크스페이스 URL 지원)
+        api_base = None
+        if provider == "dashscope" and os.getenv("DASHSCOPE_BASE_URL"):
+            api_base = os.getenv("DASHSCOPE_BASE_URL")
+
         llm = ChatLiteLLM(
             model=litellm_model,
             temperature=effective_temp,
             request_timeout=timeout,
             model_kwargs=model_kwargs,
+            api_base=api_base,
             **kwargs,
         )
         logger.debug(
