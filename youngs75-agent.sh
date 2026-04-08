@@ -36,6 +36,10 @@ while [[ $# -gt 0 ]]; do
             MODE="export"
             shift
             ;;
+        --clean)
+            MODE="clean"
+            shift
+            ;;
         --agent)
             AGENT="$2"
             shift 2
@@ -47,6 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo "  ./youngs75-agent.sh              CLI 접속 (Docker 샌드박스)"
             echo "  ./youngs75-agent.sh --agent NAME 기본 에이전트 지정"
             echo "  ./youngs75-agent.sh --export     결과물을 현재 폴더로 추출"
+            echo "  ./youngs75-agent.sh --clean      워크스페이스 초기화 (이전 산출물 삭제)"
             echo ""
             echo "에이전트: orchestrator, coding_assistant, deep_research, simple_react"
             echo ""
@@ -108,6 +113,15 @@ if [[ "$MODE" == "export" ]]; then
     done
     echo ""
     echo -e "${CYAN}📂 ${DEST}${NC}"
+    exit 0
+fi
+
+# ── Clean 모드 ──
+if [[ "$MODE" == "clean" ]]; then
+    echo -e "${YELLOW}🧹 Workspace 초기화${NC} — 이전 산출물을 삭제합니다"
+    CONTAINER="harness_mcp_server"
+    docker exec "$CONTAINER" sh -c 'find /workspace -mindepth 1 -not -name ".gitkeep" -exec rm -rf {} + 2>/dev/null; echo done' || true
+    echo -e "${GREEN}✓ /workspace 초기화 완료${NC}"
     exit 0
 fi
 

@@ -197,6 +197,51 @@ class CLIRenderer:
             f"  [{_CLR_TOOL}]⇢[/] [{_CLR_DIM}]위임:[/] [{_CLR_AGENT}]{agent_name}[/]"
         )
 
+    # ── SubAgent 프로세스 수명주기 ──
+
+    def subagent_spawn(self, agent_type: str, pid: int, task: str = "") -> None:
+        """SubAgent 프로세스 spawn을 표시한다."""
+        task_preview = _truncate(task, 60) if task else ""
+        self.console.print(
+            f"  [{_CLR_TOOL}]⚡[/] SubAgent spawn: "
+            f"[{_CLR_AGENT}]{agent_type}[/] "
+            f"[{_CLR_DIM}](pid={pid})[/]"
+            + (f" [{_CLR_DIM}]{task_preview}[/]" if task_preview else "")
+        )
+
+    def subagent_running(self, agent_type: str, pid: int, elapsed_s: float, mem_mb: float = 0.0) -> None:
+        """SubAgent 실행 상태를 표시한다."""
+        mem_info = f", mem={mem_mb:.0f}MB" if mem_mb > 0 else ""
+        self.console.print(
+            f"  [{_CLR_DIM}]⠋[/] SubAgent 실행 중: "
+            f"[{_CLR_AGENT}]{agent_type}[/] "
+            f"[{_CLR_DIM}]({elapsed_s:.1f}s{mem_info})[/]"
+        )
+
+    def subagent_completed(self, agent_type: str, pid: int, duration_s: float) -> None:
+        """SubAgent 정상 완료를 표시한다."""
+        self.console.print(
+            f"  [{_CLR_SUCCESS}]✓[/] SubAgent 완료: "
+            f"[{_CLR_AGENT}]{agent_type}[/] "
+            f"[{_CLR_DIM}](pid={pid}, {duration_s:.1f}s, exit=0)[/]"
+        )
+
+    def subagent_failed(self, agent_type: str, pid: int, error: str = "") -> None:
+        """SubAgent 실패를 표시한다."""
+        err_preview = _truncate(error, 80) if error else ""
+        self.console.print(
+            f"  [{_CLR_ERROR}]✗[/] SubAgent 실패: "
+            f"[{_CLR_AGENT}]{agent_type}[/] "
+            f"[{_CLR_DIM}](pid={pid})[/]"
+            + (f" [{_CLR_ERROR}]{err_preview}[/]" if err_preview else "")
+        )
+
+    def subagent_destroyed(self, count: int = 1) -> None:
+        """SubAgent 자원 회수를 표시한다."""
+        self.console.print(
+            f"  [{_CLR_DIM}]🗑 SubAgent 자원 회수 완료 ({count}건)[/]"
+        )
+
     # ── 토큰 스트리밍 ──
 
     def start_token_stream(self) -> None:

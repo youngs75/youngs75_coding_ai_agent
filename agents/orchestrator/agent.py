@@ -126,86 +126,66 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
         return None, None
 
 
+def _get_process_manager() -> "SubAgentProcessManager":
+    """싱글턴 SubAgentProcessManager를 반환한다."""
+    global _process_manager
+    if _process_manager is None:
+        from youngs75_a2a.core.subagents.process_manager import SubAgentProcessManager
+        _process_manager = SubAgentProcessManager(
+            registry=_local_registry,
+            timeout_s=300.0,
+        )
+    return _process_manager
+
+
+_process_manager: "SubAgentProcessManager | None" = None
+_local_registry = SubAgentRegistry()
+
+
 async def _invoke_local_agent(
     agent_name: str,
     user_message: str,
     *,
     task_plan: str | None = None,
 ) -> str | None:
-    """로컬 에이전트를 직접 호출한다 (A2A 엔드포인트 없을 때 폴백)."""
+    """로컬 에이전트를 별도 프로세스로 spawn하여 호출한다.
+
+    Claude Code 스타일 동적 SubAgent: 프로세스 생성 → 작업 → 소멸.
+    """
+    # 에이전트 타입 정규화
+    agent_type = agent_name
+    if agent_name in ("coder",):
+        agent_type = "coding_assistant"
+    elif agent_name in ("researcher",):
+        agent_type = "deep_research"
+    elif agent_name in ("react",):
+        agent_type = "simple_react"
+
     try:
-        if agent_name in ("coding_assistant", "coder"):
-            import os as _os
-            from pathlib import Path as _Path
+        manager = _get_process_manager()
+        result = await manager.spawn_and_wait(
+            agent_type=agent_type,
+            task_message=user_message,
+            task_plan=task_plan,
+            timeout_s=300.0,
+        )
 
-            from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-            from youngs75_a2a.agents.coding_assistant.config import CodingConfig
-            from youngs75_a2a.core.skills.loader import SkillLoader
-            from youngs75_a2a.core.skills.registry import SkillRegistry
+        if result.success and result.result:
+            output = result.result
+            if result.written_files:
+                output += "\n\n📁 저장된 파일:\n" + "\n".join(
+                    f"  • {f}" for f in result.written_files
+                )
+            return output
 
-            # 스킬 레지스트리 초기화
-            skill_registry = SkillRegistry()
-            skills_dir = _os.getenv(
-                "SKILLS_DIR",
-                str(_Path(__file__).resolve().parent.parent.parent / "data" / "skills"),
+        if result.error:
+            logger.warning(
+                "SubAgent 프로세스 실패 (%s): %s", agent_type, result.error[:200]
             )
-            if _Path(skills_dir).is_dir():
-                loader = SkillLoader(skills_dir)
-                skill_registry = SkillRegistry(loader=loader)
-                skill_registry.discover()
-
-            # 계획이 있으면 사용자 메시지에 포함
-            effective_message = user_message
-            if task_plan:
-                effective_message = f"{user_message}\n\n{task_plan}"
-
-            agent = await CodingAssistantAgent.create(
-                config=CodingConfig(),
-                skill_registry=skill_registry,
-            )
-            result = await agent.graph.ainvoke(
-                {
-                    "messages": [HumanMessage(content=effective_message)],
-                    "iteration": 0,
-                    "max_iterations": 11,  # 최대 10회 재시도
-                }
-            )
-            code = (
-                result.get("generated_code") or result.get("messages", [{}])[-1].content
-            )
-            # 파일 저장 결과를 응답에 포함
-            written = result.get("written_files", [])
-            if written:
-                code += "\n\n📁 저장된 파일:\n" + "\n".join(f"  • {f}" for f in written)
-            return code
-
-        if agent_name in ("deep_research", "researcher"):
-            from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
-            from youngs75_a2a.agents.deep_research.config import ResearchConfig
-
-            agent = DeepResearchAgent(config=ResearchConfig())
-            result = await agent.graph.ainvoke(
-                {
-                    "messages": [HumanMessage(content=user_message)],
-                }
-            )
-            return result.get("final_report", "")
-
-        if agent_name in ("simple_react", "react"):
-            from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
-            from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
-
-            agent = await SimpleMCPReActAgent.create(config=SimpleReActConfig())
-            result = await agent.graph.ainvoke(
-                {
-                    "messages": [HumanMessage(content=user_message)],
-                }
-            )
-            msgs = result.get("messages", [])
-            return msgs[-1].content if msgs else None
+        return result.result  # partial 결과라도 반환
 
     except Exception as e:
-        logger.warning(f"로컬 에이전트 '{agent_name}' 호출 실패: {e}")
+        logger.warning(f"SubAgent 프로세스 spawn 실패 '{agent_name}': {e}")
     return None
 
 
@@ -461,6 +441,7 @@ async def _execute_phases_sequentially(
     from youngs75_a2a.agents.coding_assistant.config import CodingConfig
     from youngs75_a2a.core.skills.loader import SkillLoader
     from youngs75_a2a.core.skills.registry import SkillRegistry
+    from youngs75_a2a.core.subagent_context import SubagentContextFilter
 
     # 스킬 레지스트리 초기화 (_invoke_local_agent와 동일)
     skill_registry = SkillRegistry()
@@ -478,26 +459,6 @@ async def _execute_phases_sequentially(
     all_written_files: list[str] = []
     phase_results: list[dict] = []
     failed_ids: set[str] = set()
-
-    # Planner의 task_plan에서 framework 감지 → 스킬 사전 활성화
-    # 각 phase의 parse가 scaffold를 감지하지 못해도 프레임워크 스킬이 활성화됨
-    _framework = task_plan.get("framework", "")
-    if not _framework:
-        # architecture 텍스트에서 프레임워크 힌트 추출 시도
-        _arch_lower = architecture.lower()
-        _FRAMEWORK_HINTS = {
-            "flask_vue": ("flask", "vue"),
-            "fastapi_react": ("fastapi", "react"),
-            "django_htmx": ("django", "htmx"),
-            "react_express": ("react", "express"),
-        }
-        for fw_name, keywords in _FRAMEWORK_HINTS.items():
-            if all(kw in _arch_lower for kw in keywords):
-                _framework = fw_name
-                break
-    if _framework:
-        skill_registry.auto_activate_for_task("scaffold", framework_hint=_framework)
-        logger.info("프레임워크 스킬 사전 활성화: %s", _framework)
 
     # PRD/SDD 문서 자동 생성
     workspace = _os.getenv("CODE_TOOLS_WORKSPACE", _os.getcwd())
@@ -528,15 +489,14 @@ async def _execute_phases_sequentially(
 
         logger.info("Phase %d/%d 시작: %s — %s", i + 1, len(phases), phase_id, title)
 
-        phase_message = _build_phase_message(
+        phase_message = SubagentContextFilter.build_phase_task_message(
             user_message=user_message,
             plan_summary=plan_summary,
             architecture=architecture,
             phase=phase,
             phase_index=i,
             total_phases=len(phases),
-            completed_phases=phase_results,
-            all_written_files=all_written_files,
+            prior_written_files=all_written_files,
         )
 
         try:
@@ -554,42 +514,30 @@ async def _execute_phases_sequentially(
                 config=config,
                 skill_registry=skill_registry,
             )
-            # 사전 활성화된 스킬 본문을 초기 상태에 주입
-            _pre_skill_bodies = skill_registry.get_active_skill_bodies()
-            _init_state: dict = {
-                "messages": [HumanMessage(content=phase_message)],
-                "iteration": 0,
-                "max_iterations": 11,  # 최대 10회 재시도
-                "env_approved": True,  # 계획 승인 시 환경 설정도 암묵적 승인
-            }
-            if _pre_skill_bodies:
-                _init_state["skill_context"] = _pre_skill_bodies
+            _init_state = SubagentContextFilter.build_init_state(
+                task_message=phase_message,
+                max_iterations=11,
+                env_approved=True,
+            )
 
             result = await agent.graph.ainvoke(
                 _init_state
             )
 
-            written = result.get("written_files", [])
-            # 파일 경로 기준 중복 제거 (같은 파일이 재시도로 여러 번 저장될 수 있음)
-            existing_paths = {f.split(" (")[0].strip() for f in all_written_files}
-            for f in written:
-                fpath = f.split(" (")[0].strip()
-                if fpath not in existing_paths:
-                    all_written_files.append(f)
-                    existing_paths.add(fpath)
-
-            # test_passed 상태 확인: 테스트 실패(max iterations 도달) 시 failed 처리
-            test_passed = result.get("test_passed", True)
+            compacted = SubagentContextFilter.compact_result(result)
+            written = compacted["written_files"]
+            test_passed = compacted["test_passed"]
             phase_status = "success" if test_passed else "failed"
 
-            # phase 내에서도 재시도로 같은 파일이 여러 번 기록될 수 있으므로 중복 제거
-            seen_paths: set[str] = set()
-            unique_written: list[str] = []
+            # 파일 경로 기준 중복 제거 후 누적
+            existing_paths = {f.split(" (")[0].strip() if isinstance(f, str) else f.get("path", "") for f in all_written_files}
             for f in written:
-                fpath = f.split(" (")[0].strip()
-                if fpath not in seen_paths:
-                    unique_written.append(f)
-                    seen_paths.add(fpath)
+                fpath = f.get("path", "") if isinstance(f, dict) else str(f)
+                if fpath and fpath not in existing_paths:
+                    all_written_files.append(fpath)
+                    existing_paths.add(fpath)
+
+            unique_written = written
 
             phase_results.append({
                 "phase_id": phase_id,
@@ -643,136 +591,6 @@ async def _execute_phases_sequentially(
         "phase_results": phase_results,
         "verification_result": verification_result,
     }
-
-
-def _inject_prev_phase_files(
-    completed_phases: list[dict],
-    max_total_chars: int = 8000,
-) -> str:
-    """이전 phase의 핵심 소스 파일 내용을 읽어 문자열로 반환한다.
-
-    모델/API 파일 등 후속 phase에서 참조가 필수인 파일만 포함한다.
-    테스트 파일, 설정 파일, 프론트엔드 정적 파일은 제외하여 컨텍스트를 경량 유지.
-    """
-    import os
-
-    # 핵심 파일 확장자/패턴 (후속 phase에서 참조 필수)
-    _KEY_PATTERNS = (
-        "models", "schemas", "routes", "api", "app",
-        "__init__", "extensions", "database", "config",
-    )
-    _SKIP_PATTERNS = ("test_", "conftest", "node_modules", ".json", ".txt", ".html")
-
-    parts: list[str] = []
-    total = 0
-
-    for prev in completed_phases:
-        if prev["status"] != "success":
-            continue
-        for f_entry in prev.get("written_files", []):
-            fpath = f_entry.split(" (")[0].strip()
-            fname = os.path.basename(fpath).lower()
-
-            # 스킵 대상 필터
-            if any(skip in fname for skip in _SKIP_PATTERNS):
-                continue
-            # 핵심 파일 필터
-            if not any(key in fname for key in _KEY_PATTERNS):
-                continue
-
-            try:
-                with open(fpath, encoding="utf-8") as fh:
-                    content = fh.read()
-            except (OSError, UnicodeDecodeError):
-                continue
-
-            entry = f"### {fpath}\n```python\n{content}\n```\n"
-            if total + len(entry) > max_total_chars:
-                break
-            parts.append(entry)
-            total += len(entry)
-
-    return "\n".join(parts)
-
-
-def _build_phase_message(
-    user_message: str,
-    plan_summary: str,
-    architecture: str,
-    phase: dict,
-    phase_index: int,
-    total_phases: int,
-    completed_phases: list[dict],
-    all_written_files: list[str],
-) -> str:
-    """phase별 CodingAssistant 프롬프트를 구성한다.
-
-    이전 phase 파일 내용은 포함하지 않고 경로만 안내하여 컨텍스트를 경량으로 유지한다.
-    CodingAssistant는 필요 시 code_tools MCP의 read_file로 이전 파일을 참조한다.
-    """
-    parts = []
-
-    # 1. 전체 프로젝트 맥락 (compact)
-    parts.append(f"## 프로젝트 개요\n{user_message}\n")
-    if plan_summary:
-        parts.append(f"**계획 요약**: {plan_summary}\n")
-    if architecture:
-        parts.append(f"**아키텍처**: {architecture}\n")
-
-    # 2. 이전 phase 결과 — 핵심 파일 내용 직접 포함
-    if completed_phases:
-        parts.append("## 이전 완료 Phase\n")
-        for prev in completed_phases:
-            status_icon = "✓" if prev["status"] == "success" else "✗"
-            parts.append(f"- {status_icon} {prev['phase_id']}: {prev['title']}")
-            for f in prev.get("written_files", []):
-                parts.append(f"  - {f}")
-
-        # 이전 phase의 핵심 소스 파일 내용을 직접 주입 (모델/API 정합성 보장)
-        _injected = _inject_prev_phase_files(completed_phases)
-        if _injected:
-            parts.append("\n## 이전 Phase 핵심 파일 내용 (참조 필수)\n")
-            parts.append(_injected)
-            parts.append(
-                "\n위 파일을 기반으로 구현하세요. 모델 필드명, import 경로를 반드시 일치시키세요.\n"
-            )
-        else:
-            parts.append(
-                "\n위 파일들은 이미 디스크에 저장되어 있습니다. "
-                "이전 phase 코드를 참조해야 하면 `read_file` 도구를 사용하세요.\n"
-            )
-
-    # 3. 현재 phase 지시사항
-    parts.append(f"## 현재 작업: Phase {phase_index + 1}/{total_phases}")
-    parts.append(f"### {phase.get('title', '')}\n")
-    parts.append(phase.get("instructions", ""))
-
-    if phase.get("files"):
-        parts.append(f"\n**대상 파일**: {', '.join(phase['files'])}")
-
-    # 4. 이전 phase 파일 보호 + 마지막 phase 통합 리마인더
-    if completed_phases:
-        parts.append(
-            "\n\n## 중요: 이전 Phase 파일 보호\n"
-            "이전 phase에서 생성된 파일을 수정해야 할 때는 반드시 `read_file`로 먼저 읽고 **필요한 부분만 수정**하세요.\n"
-            "파일 전체를 처음부터 다시 작성하면 이전 phase의 코드가 유실됩니다."
-        )
-
-    if phase_index == total_phases - 1 and completed_phases:
-        parts.append(
-            "\n\n## 통합 체크리스트 (마지막 Phase)\n"
-            "- 이전 phase에서 생성된 모듈이 진입점에 올바르게 등록/import되었는지 확인하세요\n"
-            "- **import/모듈 경로 일관성**: 이전 phase 파일을 read_file로 확인하고, 같은 import 스타일을 사용하세요\n"
-            "- 의존성 파일(requirements.txt, package.json, go.mod, Cargo.toml 등)에 모든 패키지가 포함되었는지\n"
-            "- 프로젝트 유형에 맞는 통합 확인:\n"
-            "  - 웹앱: 라우터/미들웨어 등록, CORS 설정 (클라이언트-서버 분리 시)\n"
-            "  - CLI: 서브커맨드 등록, help 메시지 정의\n"
-            "  - 라이브러리: public API export, 타입 정의\n"
-            "  - API 서버: 엔드포인트 등록, 인증 미들웨어\n"
-            "  - 데이터 파이프라인: 단계 간 데이터 흐름 연결"
-        )
-
-    return "\n".join(parts)
 
 
 def _detect_language(files: list[str]) -> str:

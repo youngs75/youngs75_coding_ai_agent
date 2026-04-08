@@ -285,10 +285,85 @@ class CoordinatorMode:
         wave: list[SubTask],
         context: list[BaseMessage],
     ) -> list[WorkerResult]:
-        """단일 웨이브의 태스크를 병렬 실행한다."""
+        """단일 웨이브의 태스크를 병렬 실행한다.
+
+        각 서브태스크를 별도 프로세스로 spawn (Claude Code 스타일).
+        커스텀 worker_fn이 설정된 경우(테스트 등)에는 기존 in-process 방식을 사용한다.
+        """
         if not wave:
             return []
 
+        # 커스텀 worker_fn이 있으면 기존 BatchExecutor 방식 유지
+        if self._worker_fn:
+            return await self._execute_wave_in_process(wave, context)
+
+        # ProcessManager 방식: 각 서브태스크를 별도 프로세스로 spawn
+        from youngs75_a2a.core.subagents.process_manager import SubAgentProcessManager
+
+        manager = SubAgentProcessManager(
+            registry=self._registry,
+            timeout_s=self._timeout_s,
+            max_concurrent=self._max_workers,
+        )
+
+        # 모든 서브태스크를 병렬 spawn_and_wait
+        spawn_coros = []
+        for subtask in wave:
+            spawn_coros.append(
+                manager.spawn_and_wait(
+                    agent_type=subtask["agent_type"],
+                    task_message=subtask["description"],
+                    timeout_s=self._timeout_s,
+                )
+            )
+
+        spawn_results = await asyncio.gather(*spawn_coros, return_exceptions=True)
+
+        results: list[WorkerResult] = []
+        for i, spawn_result in enumerate(spawn_results):
+            subtask = wave[i]
+
+            if isinstance(spawn_result, Exception):
+                error_msg = str(spawn_result)
+                status = "timeout" if "timeout" in error_msg.lower() else "failed"
+                results.append(WorkerResult(
+                    subtask_id=subtask["id"],
+                    agent_name=subtask["agent_type"],
+                    status=status,
+                    output="",
+                    duration_s=0.0,
+                    error=error_msg,
+                ))
+            elif spawn_result.success:
+                results.append(WorkerResult(
+                    subtask_id=subtask["id"],
+                    agent_name=subtask["agent_type"],
+                    status="success",
+                    output=spawn_result.result or "",
+                    duration_s=spawn_result.duration_s,
+                    error=None,
+                ))
+            else:
+                results.append(WorkerResult(
+                    subtask_id=subtask["id"],
+                    agent_name=subtask["agent_type"],
+                    status="failed",
+                    output="",
+                    duration_s=spawn_result.duration_s,
+                    error=spawn_result.error or "Unknown error",
+                ))
+
+        # 자원 정리
+        await manager.cleanup_all()
+
+        return results
+
+    async def _execute_wave_in_process(
+        self,
+        wave: list[SubTask],
+        context: list[BaseMessage],
+    ) -> list[WorkerResult]:
+        """기존 in-process 방식 (커스텀 worker_fn 또는 A2A 위임)."""
         # 각 서브태스크에 대한 인스턴스 생성
         instances: dict[str, str] = {}  # subtask_id -> agent_id
         for subtask in wave:
@@ -334,7 +409,6 @@ class CoordinatorMode:
                         error=None,
                     )
                 )
-                # COMPLETED 전이
                 if agent_id:
                     self._registry.transition_state(
                         agent_id, SubAgentStatus.COMPLETED,
@@ -345,7 +419,6 @@ class CoordinatorMode:
                 error_msg = (
                     str(task_result.error) if task_result.error else "알 수 없는 오류"
                 )
-                # 타임아웃 구분
                 status = (
                     "timeout"
                     if "timeout" in error_msg.lower()
@@ -362,7 +435,6 @@ class CoordinatorMode:
                         error=error_msg,
                     )
                 )
-                # FAILED 전이
                 if agent_id:
                     self._registry.transition_state(
                         agent_id, SubAgentStatus.FAILED,

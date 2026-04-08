@@ -236,6 +236,21 @@ class CodingAssistantAgent(BaseGraphAgent):
             compact_threshold=getattr(self._coding_config, "compact_threshold", 0.8),
         )
 
+        # 미들웨어 체인 — LLM 호출 전후 메시지/컨텍스트 자동 관리
+        from youngs75_a2a.core.middleware import (
+            MessageWindowMiddleware,
+            MiddlewareChain,
+            SummarizationMiddleware,
+        )
+        self._middleware_chain = MiddlewareChain([
+            MessageWindowMiddleware(max_turns=4, max_messages=10),
+            SummarizationMiddleware(
+                token_threshold=100_000,
+                keep_recent_messages=6,
+                max_tool_arg_chars=2000,
+            ),
+        ])
+
         # 다층 안전장치 (Claude Code OS 패턴)
         self._stall_detector = StallDetector(
             warn_threshold=self._coding_config.stall_warn_threshold,
@@ -285,6 +300,14 @@ class CodingAssistantAgent(BaseGraphAgent):
             self._verify_model = self._coding_config.get_model("verification")
         return self._verify_model
 
+    def _get_recovery_limits(self, purpose: str = "generation") -> dict[str, int]:
+        """invoke_with_max_tokens_recovery에 전달할 모델별 한도를 반환한다."""
+        tier_config = self._coding_config.get_tier_config(purpose)
+        return {
+            "model_context_limit": tier_config.total_context_limit,
+            "max_output_tokens": tier_config.max_output_tokens,
+        }
+
     # ── 노드 구현 ──────────────────────────────────────────
 
     async def _parse_request(self, state: CodingState) -> dict[str, Any]:
@@ -306,6 +329,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             self._get_parse_model(),
             messages,
             self._context_manager,
+            **self._get_recovery_limits("parsing"),
         )
 
         try:
@@ -328,7 +352,9 @@ class CodingAssistantAgent(BaseGraphAgent):
         }
 
         # task_type 기반 스킬 자동 활성화
-        if self._skill_registry:
+        # orchestrator가 이미 skill_context를 주입한 경우 중복 방지
+        existing_skills = state.get("skill_context", [])
+        if self._skill_registry and not existing_skills:
             task_type = parse_result.get("task_type", "generate")
             framework_hint = parse_result.get("framework", "")
             activated = self._skill_registry.auto_activate_for_task(
@@ -342,6 +368,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                 result["execution_log"].append(
                     f"[skills] 자동 활성화: {', '.join(activated)}"
                 )
+        elif existing_skills:
+            result["execution_log"].append(
+                f"[skills] orchestrator에서 주입된 스킬 사용 ({len(existing_skills)}건)"
+            )
 
         return result
 
@@ -530,22 +560,22 @@ class CodingAssistantAgent(BaseGraphAgent):
         if needs_tools and self._tools:
             llm_with_tools = llm_with_tools.bind_tools(self._tools)
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            *sanitize_messages_for_llm(state["messages"]),
-            context_msg,
-        ]
+        # 미들웨어 체인으로 메시지 관리 (윈도우 + 컴팩션)
+        from youngs75_a2a.core.middleware import ModelRequest as MWRequest
 
-        if self._context_manager.should_compact(messages):
-            messages = await self._context_manager.compact(
-                messages, self._get_tool_planning_model()
-            )
+        sanitized = sanitize_messages_for_llm(state["messages"])
+        sanitized.append(context_msg)
+
+        mw_request = MWRequest(
+            system_message=system_prompt,
+            messages=sanitized,
+            state=dict(state),
+            model_name="tool_planning",
+        )
+
         try:
-            response = await invoke_with_max_tokens_recovery(
-                llm_with_tools,
-                messages,
-                self._context_manager,
-            )
+            mw_response = await self._middleware_chain.invoke(mw_request, llm_with_tools)
+            response = mw_response.message
         except Exception as e:
             # DashScope 400 (invalid JSON arguments) 등 LLM 호출 실패 방어
             error_msg = str(e)
@@ -579,7 +609,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         result: dict[str, Any] = {
             "generated_code": response.content or "",
             "execution_log": log,
-            "messages": [response],
+            # messages에 LLM 응답을 추가하지 않음 — 검증 재시도 시 컨텍스트 폭증 방지
+            # 코드 내용은 generated_code 필드에 저장됨
         }
 
         if budget_verdict == BudgetVerdict.STOP:
@@ -604,24 +635,25 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         context_msg = self._build_context_message(state)
 
-        # STRONG 모델 — 도구 없이 최종 코드 생성
+        # STRONG 모델 — 도구 없이 최종 코드 생성 (미들웨어 체인 경유)
         gen_model = self._get_gen_model()
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            *sanitize_messages_for_llm(state["messages"]),
-            context_msg,
-        ]
+        # 미들웨어 체인이 메시지 윈도우 + 토큰 컴팩션을 자동 처리
+        from youngs75_a2a.core.middleware import ModelRequest as MWRequest
 
-        if self._context_manager.should_compact(messages):
-            messages = await self._context_manager.compact(messages, gen_model)
+        sanitized = sanitize_messages_for_llm(state["messages"])
+        sanitized.append(context_msg)
+
+        mw_request = MWRequest(
+            system_message=system_prompt,
+            messages=sanitized,
+            state=dict(state),
+            model_name="generation",
+        )
 
         try:
-            response = await invoke_with_max_tokens_recovery(
-                gen_model,
-                messages,
-                self._context_manager,
-            )
+            mw_response = await self._middleware_chain.invoke(mw_request, gen_model)
+            response = mw_response.message
         except Exception as e:
             error_msg = str(e)
             logging.getLogger(__name__).warning(
@@ -640,7 +672,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         return {
             "generated_code": response.content or "",
             "execution_log": log,
-            "messages": [response],
+            # messages에 LLM 응답을 추가하지 않음 — 검증 재시도 시 컨텍스트 폭증 방지
         }
 
     async def _execute_tools(self, state: CodingState) -> dict[str, Any]:
@@ -847,6 +879,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                     self._get_verify_model(),
                     messages,
                     self._context_manager,
+                    **self._get_recovery_limits("verification"),
                 )
             verify_result = json.loads(response.content)
         except TimeoutError:

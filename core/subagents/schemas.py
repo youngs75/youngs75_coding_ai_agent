@@ -122,3 +122,35 @@ class SelectionResult(BaseModel):
     agent: SubAgentSpec
     score: float
     reason: str
+
+
+# ── 프로세스 기반 SubAgent 관련 스키마 ──
+
+
+class ResourceUsage(BaseModel):
+    """프로세스 자원 사용량."""
+
+    pid: int
+    agent_id: str
+    start_time: float
+    end_time: float | None = None
+    peak_memory_mb: float = 0.0
+    cpu_time_s: float = 0.0
+    exit_code: int | None = None
+
+
+class SubAgentResult(BaseModel):
+    """SubAgent 프로세스 실행 결과 (stdout JSON 프로토콜)."""
+
+    status: str = "completed"  # "completed" | "failed"
+    result: str | None = None
+    written_files: list[str] = Field(default_factory=list)
+    duration_s: float = 0.0
+    token_usage: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
+    test_passed: bool = True       # 테스트 통과 여부
+    exit_reason: str = ""          # 종료 사유 (budget_exceeded, llm_error 등)
+
+    @property
+    def success(self) -> bool:
+        return self.status == "completed" and self.error is None

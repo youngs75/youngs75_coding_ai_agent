@@ -1,0 +1,82 @@
+"""미들웨어 체인 실행기.
+
+미들웨어 리스트를 양파(Onion) 패턴으로 실행한다.
+리스트의 첫 번째 미들웨어가 가장 바깥쪽(먼저 실행, 마지막 반환).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage, SystemMessage
+
+from .base import AgentMiddleware, Handler, ModelRequest, ModelResponse
+
+logger = logging.getLogger(__name__)
+
+
+class MiddlewareChain:
+    """미들웨어 리스트를 양파 패턴으로 실행한다.
+
+    사용 예:
+        chain = MiddlewareChain([
+            MessageWindowMiddleware(max_turns=4),
+            SummarizationMiddleware(threshold=0.85),
+            SkillMiddleware(skill_registry),
+        ])
+        request = ModelRequest(system_message="...", messages=[...])
+        response = await chain.invoke(request, llm)
+    """
+
+    def __init__(self, middlewares: list[AgentMiddleware] | None = None) -> None:
+        self._middlewares: list[AgentMiddleware] = list(middlewares or [])
+
+    def add(self, middleware: AgentMiddleware) -> "MiddlewareChain":
+        """미들웨어를 체인 끝에 추가한다."""
+        self._middlewares.append(middleware)
+        return self
+
+    @property
+    def middlewares(self) -> list[AgentMiddleware]:
+        return list(self._middlewares)
+
+    async def invoke(
+        self,
+        request: ModelRequest,
+        llm: BaseChatModel,
+    ) -> ModelResponse:
+        """미들웨어 체인을 통해 LLM을 호출한다.
+
+        1. 미들웨어를 역순으로 래핑하여 양파 구조를 만든다
+        2. 가장 안쪽 핸들러가 실제 LLM을 호출한다
+        3. 각 미들웨어는 request를 수정하고 handler()를 호출한다
+        """
+
+        # 가장 안쪽: 실제 LLM 호출
+        async def _final_handler(req: ModelRequest) -> ModelResponse:
+            all_messages = req.all_messages
+            logger.debug(
+                "[MiddlewareChain] LLM 호출: model=%s, messages=%d",
+                req.model_name,
+                len(all_messages),
+            )
+            response = await llm.ainvoke(all_messages)
+            return ModelResponse(message=response)
+
+        # 미들웨어를 역순으로 래핑 (양파 패턴)
+        handler: Handler = _final_handler
+        for middleware in reversed(self._middlewares):
+            handler = _make_wrapper(middleware, handler)
+
+        return await handler(request)
+
+
+def _make_wrapper(middleware: AgentMiddleware, next_handler: Handler) -> Handler:
+    """클로저 변수 캡처 문제를 방지하기 위한 래퍼 팩토리."""
+
+    async def _wrapped(request: ModelRequest) -> ModelResponse:
+        return await middleware.wrap_model_call(request, next_handler)
+
+    return _wrapped

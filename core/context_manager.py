@@ -276,6 +276,8 @@ async def invoke_with_max_tokens_recovery(
     context_manager: ContextManager,
     *,
     max_retries: int = 3,
+    model_context_limit: int = 262_144,
+    max_output_tokens: int = 65_536,
 ) -> BaseMessage:
     """LLM 호출 시 max_tokens 중단을 감지하고 자동 복구한다.
 
@@ -284,11 +286,16 @@ async def invoke_with_max_tokens_recovery(
     2. 이어서 생성하도록 재요청
     3. 최대 max_retries회 재시도
 
+    재시도 시 입력 토큰 + max_output_tokens > model_context_limit이면
+    재시도를 중단하고 축적된 partial 응답을 그대로 반환한다.
+
     Args:
         llm: BaseChatModel 인스턴스
         messages: 입력 메시지 리스트
         context_manager: ContextManager 인스턴스
         max_retries: 최대 재시도 횟수
+        model_context_limit: 모델의 총 컨텍스트 윈도우 크기 (input + output)
+        max_output_tokens: 모델의 최대 출력 토큰 수
 
     Returns:
         최종 AI 응답 메시지
@@ -333,6 +340,21 @@ async def invoke_with_max_tokens_recovery(
         # 이전 불완전한 응답을 포함시키고 이어서 생성 요청
         current_messages.append(AIMessage(content=partial_content))
         current_messages.append(HumanMessage(content=_MAX_TOKENS_RECOVERY_PROMPT))
+
+        # 컨텍스트 크기 안전 체크: input + max_output > 모델 한도이면 재시도 중단
+        estimated_input_tokens = context_manager.count_messages_tokens(current_messages)
+        if estimated_input_tokens + max_output_tokens > model_context_limit:
+            logger.error(
+                "[max_tokens 복구] 컨텍스트 한도 초과 — 재시도 중단 "
+                "(input=%d + max_output=%d = %d > limit=%d). "
+                "축적된 partial 응답(%d자)을 반환합니다.",
+                estimated_input_tokens,
+                max_output_tokens,
+                estimated_input_tokens + max_output_tokens,
+                model_context_limit,
+                len(accumulated_content),
+            )
+            return AIMessage(content=accumulated_content)
 
     # 루프가 끝난 경우 (이론상 도달하지 않음)
     return AIMessage(content=accumulated_content or _get_content(response))  # type: ignore[possibly-undefined]

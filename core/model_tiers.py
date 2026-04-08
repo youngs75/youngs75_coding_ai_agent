@@ -171,14 +171,75 @@ def register_model_cost_info(info: ModelCostInfo) -> None:
     _MODEL_COST_DB[info.model] = info
 
 
+# ── 모델별 컨텍스트/출력 한도 (공식 문서 기준) ──
+
+# 모델별 총 컨텍스트 한도 (input + output)
+_MODEL_CONTEXT_LIMITS: dict[str, int] = {
+    # Qwen 2.5 (레거시)
+    "qwen-turbo": 131_072,
+    "qwen-plus": 131_072,
+    "qwen-max": 262_144,
+    "qwen-coder-plus": 262_144,
+    # Qwen 3/3.5/3.6
+    "qwen3-max": 262_144,
+    "qwen3-coder-next": 1_000_000,
+    "qwen3-coder-plus": 1_000_000,
+    "qwen3-coder-flash": 1_000_000,
+    "qwen3.5-plus": 1_000_000,
+    "qwen3.5-flash": 1_000_000,
+    "qwen3.6-plus": 1_000_000,
+}
+
+# 모델별 최대 출력 토큰 (Non-thinking 모드 기준)
+_MODEL_MAX_OUTPUTS: dict[str, int] = {
+    "qwen-turbo": 16384,
+    "qwen-plus": 32768,
+    "qwen-max": 65536,
+    "qwen-coder-plus": 65536,
+    "qwen3-max": 65536,
+    "qwen3-coder-next": 65536,
+    "qwen3-coder-plus": 65536,
+    "qwen3-coder-flash": 65536,
+    "qwen3.5-plus": 32768,
+    "qwen3.5-flash": 32768,
+    "qwen3.6-plus": 65536,
+}
+
+
+def get_model_context_limit(model: str) -> int:
+    """모델의 총 컨텍스트 한도 (input + output)를 반환한다."""
+    for key, limit in _MODEL_CONTEXT_LIMITS.items():
+        if key in model:
+            return limit
+    return 262_144  # 보수적 기본값
+
+
+def get_model_max_output(model: str) -> int:
+    """모델의 최대 출력 토큰 수를 반환한다."""
+    for key, limit in _MODEL_MAX_OUTPUTS.items():
+        if key in model:
+            return limit
+    return 32768  # 보수적 기본값
+
+
 class TierConfig(BaseModel):
     """단일 티어의 모델 설정."""
 
     model: str
     provider: str = "openai"
-    context_window: int = 128_000
+    context_window: int = 128_000   # 입력 전용 컨텍스트 윈도우 (참고용)
     temperature: float | None = None  # None → 글로벌 기본값 사용
     request_timeout: float = 120.0  # LLM 요청 타임아웃 (초)
+
+    @property
+    def total_context_limit(self) -> int:
+        """모델의 총 컨텍스트 한도 (input + output)."""
+        return get_model_context_limit(self.model)
+
+    @property
+    def max_output_tokens(self) -> int:
+        """모델의 최대 출력 토큰 수."""
+        return get_model_max_output(self.model)
 
     @property
     def summarization_threshold(self) -> int:
@@ -345,29 +406,25 @@ def create_chat_model(
     litellm_model = _to_litellm_model(model, provider)
 
     # 호출자가 max_tokens를 지정하지 않으면 모델별 최대값 설정
+    # 공식 문서 기준: https://help.aliyun.com/zh/model-studio/
     if "max_tokens" not in kwargs:
-        _MAX_OUTPUT_TOKENS: dict[str, int] = {
-            # Qwen 2.5 (레거시)
-            "qwen-turbo": 16384,
-            "qwen-plus": 16384,
-            "qwen-max": 65536,
-            "qwen-coder-plus": 65536,
-            # Qwen 3/3.5/3.6
-            "qwen3-max": 65536,
-            "qwen3-coder-next": 65536,
-            "qwen3-coder-plus": 65536,
-            "qwen3-coder-flash": 65536,
-            "qwen3.5-plus": 65536,
-            "qwen3.5-flash": 32768,
-            "qwen3.6-plus": 65536,
-        }
-        # 모델명에서 매칭 (접두사 무시하고 모델명 부분에서 검색)
-        resolved = 65536  # 기본값
-        for key, limit in _MAX_OUTPUT_TOKENS.items():
-            if key in litellm_model:
-                resolved = limit
-                break
-        kwargs["max_tokens"] = resolved
+        kwargs["max_tokens"] = get_model_max_output(litellm_model)
+
+    # Thinking 모드 설정: 호출자가 명시하지 않으면 모델 유형별 기본값 적용
+    # - REASONING(planner): thinking ON → CoT로 더 깊은 추론
+    # - STRONG(coder): thinking OFF → max output 전체를 코드 생성에 사용
+    # - DEFAULT/FAST: thinking OFF → 출력 토큰 절약
+    # Qwen3 시리즈는 기본 CoT가 활성화되어 있어 명시적으로 설정해야 한다.
+    # Thinking 모드: 전 모델 비활성화
+    # qwen3-max도 thinking 없이도 충분히 좋은 품질을 제공하며,
+    # thinking ON 시 Planner가 5분+ 소요되는 UX 문제가 있음
+    extra_body = kwargs.get("extra_body", {})
+    if "enable_thinking" not in extra_body:
+        extra_body["enable_thinking"] = False
+    kwargs["extra_body"] = extra_body
+
+    # extra_body를 kwargs에서 분리 (ChatOpenAI는 명시적 파라미터로 받아야 함)
+    extra_body_param = kwargs.pop("extra_body", {})
 
     proxy_url = os.getenv("LITELLM_PROXY_URL")
 
@@ -381,20 +438,26 @@ def create_chat_model(
             openai_api_key=os.getenv("LITELLM_MASTER_KEY", "sk-harness-local-dev"),
             openai_api_base=proxy_url,
             request_timeout=timeout,
+            extra_body=extra_body_param,
             **kwargs,
         )
         logger.debug(
-            "LiteLLM Proxy 모델 생성: %s → %s (timeout=%.0fs)",
-            litellm_model, proxy_url, timeout,
+            "LiteLLM Proxy 모델 생성: %s → %s (timeout=%.0fs, extra_body=%s)",
+            litellm_model, proxy_url, timeout, extra_body_param,
         )
     else:
         # SDK 모드: ChatLiteLLM으로 직접 프로바이더 호출
         from langchain_litellm import ChatLiteLLM
 
+        # ChatLiteLLM은 model_kwargs로 extra_body 전달
+        model_kwargs = kwargs.pop("model_kwargs", {})
+        model_kwargs["extra_body"] = extra_body_param
+
         llm = ChatLiteLLM(
             model=litellm_model,
             temperature=effective_temp,
             request_timeout=timeout,
+            model_kwargs=model_kwargs,
             **kwargs,
         )
         logger.debug(
