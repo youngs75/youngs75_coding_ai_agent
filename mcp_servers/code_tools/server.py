@@ -662,7 +662,156 @@ def create_project(template_name: str, project_name: str, options: str = "{}") -
     )
 
 
+# ══════════════════════════════════════════════════════════════
+#  검색 도구 (Tavily / Serper / ArXiv)
+# ══════════════════════════════════════════════════════════════
+
+
+def _search_with_serper(
+    query: str, max_results: int = 5, search_type: str = "search"
+) -> str:
+    """Serper API로 검색. 키가 없거나 실패 시 빈 문자열 반환."""
+    import httpx
+
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return ""
+
+    try:
+        resp = httpx.post(
+            f"https://google.serper.dev/{search_type}",
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"q": query, "num": max_results},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+    except Exception:
+        return ""
+
+    data = resp.json()
+    output = []
+    for item in data.get("organic", [])[:max_results]:
+        output.append(f"### {item.get('title', 'N/A')}")
+        output.append(f"URL: {item.get('link', '')}")
+        output.append(f"{item.get('snippet', '')}")
+        output.append("")
+    return "\n".join(output)
+
+
+def _search_with_tavily(
+    query: str, max_results: int = 5, topic: str = "general"
+) -> str:
+    """Tavily API로 검색. 키가 없으면 에러 메시지 반환."""
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return "Error: TAVILY_API_KEY가 설정되지 않았습니다."
+
+    from tavily import TavilyClient
+
+    client = TavilyClient(api_key=api_key)
+    results = client.search(query=query, max_results=max_results, topic=topic)
+
+    output = []
+    for r in results.get("results", []):
+        output.append(f"### {r.get('title', 'N/A')}")
+        output.append(f"URL: {r.get('url', '')}")
+        output.append(f"{r.get('content', '')}")
+        output.append("")
+    return "\n".join(output) if output else "검색 결과가 없습니다."
+
+
+@mcp.tool()
+def search_web(query: str, max_results: int = 5) -> str:
+    """웹에서 정보를 검색합니다. (Serper → Tavily 폴백)
+
+    Args:
+        query: 검색 쿼리
+        max_results: 최대 결과 수 (기본 5)
+    """
+    result = _search_with_serper(query, max_results)
+    if not result:
+        result = _search_with_tavily(query, max_results)
+    return result
+
+
+@mcp.tool()
+def search_news(query: str, max_results: int = 5) -> str:
+    """최신 뉴스를 검색합니다. (Serper → Tavily 폴백)
+
+    Args:
+        query: 검색 쿼리
+        max_results: 최대 결과 수 (기본 5)
+    """
+    result = _search_with_serper(query, max_results, search_type="news")
+    if not result:
+        result = _search_with_tavily(query, max_results, topic="news")
+    return result
+
+
+@mcp.tool()
+def search_papers(query: str, max_results: int = 5) -> str:
+    """arXiv에서 학술 논문을 검색합니다.
+
+    Args:
+        query: 검색 쿼리 (영어 권장)
+        max_results: 최대 결과 수 (기본 5)
+    """
+    import arxiv
+
+    client = arxiv.Client()
+    search = arxiv.Search(
+        query=query,
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.Relevance,
+    )
+
+    output = []
+    for result in client.results(search):
+        output.append(f"### {result.title}")
+        output.append(f"Authors: {', '.join(a.name for a in result.authors[:3])}")
+        output.append(f"Published: {result.published.strftime('%Y-%m-%d')}")
+        output.append(f"URL: {result.entry_id}")
+        summary = result.summary.replace("\n", " ")[:300]
+        output.append(f"Abstract: {summary}...")
+        output.append("")
+
+    return "\n".join(output) if output else "검색 결과가 없습니다."
+
+
+@mcp.tool()
+def search_recent_papers(query: str, max_results: int = 5) -> str:
+    """arXiv에서 최신 논문을 날짜순으로 검색합니다.
+
+    Args:
+        query: 검색 쿼리 (영어 권장)
+        max_results: 최대 결과 수 (기본 5)
+    """
+    import arxiv
+
+    client = arxiv.Client()
+    search = arxiv.Search(
+        query=query,
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+    )
+
+    output = []
+    for result in client.results(search):
+        output.append(f"### {result.title}")
+        output.append(f"Authors: {', '.join(a.name for a in result.authors[:3])}")
+        output.append(f"Published: {result.published.strftime('%Y-%m-%d')}")
+        output.append(f"URL: {result.entry_id}")
+        categories = ", ".join(result.categories[:3])
+        output.append(f"Categories: {categories}")
+        summary = result.summary.replace("\n", " ")[:300]
+        output.append(f"Abstract: {summary}...")
+        output.append("")
+
+    return "\n".join(output) if output else "검색 결과가 없습니다."
+
+
 if __name__ == "__main__":
-    print(f"Code Tools MCP 서버 시작: http://0.0.0.0:{_PORT}/mcp")
+    print(f"통합 MCP 서버 시작: http://0.0.0.0:{_PORT}/mcp")
     print(f"Workspace: {_WORKSPACE}")
+    print(f"도구: 코드(11) + 검색(4) = 15개")
     mcp.run(transport="streamable-http")

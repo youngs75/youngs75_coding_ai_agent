@@ -1,9 +1,12 @@
-"""멀티티어 모델 해석 + OpenRouter 지원 + 비용/성능 분석.
+"""멀티티어 모델 해석 + LiteLLM Gateway + 비용/성능 분석.
 
 ModelTier 열거형으로 모델 능력 등급을 정의하고,
 purpose → tier → TierConfig → ChatModel 흐름으로 목적별 모델을 해석한다.
 
-OpenRouter 프로바이더는 OpenAI 호환 API를 통해 오픈소스 모델을 지원한다.
+LiteLLM Gateway 패턴으로 모든 프로바이더를 통합 지원한다:
+  - DashScope: dashscope/qwen3-max, dashscope/qwen-turbo 등
+  - OpenRouter: openrouter/qwen/qwen3-coder-plus 등
+  - Anthropic: claude-sonnet-4-20250514 (접두사 불필요)
 
 목적별 최적 모델 자동 선택:
   - parse: 빠르고 저렴한 모델 (FAST 티어)
@@ -21,7 +24,6 @@ import os
 from enum import Enum
 from typing import Any
 
-from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
@@ -69,88 +71,88 @@ class ModelCostInfo(BaseModel):
 
 # 알려진 모델의 비용/성능 데이터 (참고용, 환경변수로 오버라이드 가능)
 _MODEL_COST_DB: dict[str, ModelCostInfo] = {
-    # ── Qwen 시리즈 (메인) ──
-    "qwen/qwen3-coder-plus": ModelCostInfo(
-        model="qwen/qwen3-coder-plus",
+    # ── OpenRouter 경유 Qwen 시리즈 ──
+    "openrouter/qwen/qwen3-coder-plus": ModelCostInfo(
+        model="openrouter/qwen/qwen3-coder-plus",
         input_cost_per_1m=0.65,
         output_cost_per_1m=3.25,
         latency_category="medium",
         capability_scores={"code": 0.98, "reasoning": 0.95, "speed": 0.65},
     ),
-    "qwen/qwen3-coder-next": ModelCostInfo(
-        model="qwen/qwen3-coder-next",
+    "openrouter/qwen/qwen3-coder-next": ModelCostInfo(
+        model="openrouter/qwen/qwen3-coder-next",
         input_cost_per_1m=0.12,
         output_cost_per_1m=0.75,
         latency_category="medium",
         capability_scores={"code": 0.96, "reasoning": 0.92, "speed": 0.78},
     ),
-    "qwen/qwen3-coder": ModelCostInfo(
-        model="qwen/qwen3-coder",
+    "openrouter/qwen/qwen3-coder": ModelCostInfo(
+        model="openrouter/qwen/qwen3-coder",
         input_cost_per_1m=0.22,
         output_cost_per_1m=1.00,
         latency_category="medium",
         capability_scores={"code": 0.95, "reasoning": 0.90, "speed": 0.75},
     ),
-    "qwen/qwen3.5-flash-02-23": ModelCostInfo(
-        model="qwen/qwen3.5-flash-02-23",
+    "openrouter/qwen/qwen3.5-flash-02-23": ModelCostInfo(
+        model="openrouter/qwen/qwen3.5-flash-02-23",
         input_cost_per_1m=0.07,
         output_cost_per_1m=0.26,
         latency_category="low",
         capability_scores={"code": 0.78, "reasoning": 0.80, "speed": 0.92},
     ),
-    "qwen/qwen3.5-9b": ModelCostInfo(
-        model="qwen/qwen3.5-9b",
+    "openrouter/qwen/qwen3.5-9b": ModelCostInfo(
+        model="openrouter/qwen/qwen3.5-9b",
         input_cost_per_1m=0.05,
         output_cost_per_1m=0.15,
         latency_category="low",
         capability_scores={"code": 0.70, "reasoning": 0.70, "speed": 0.95},
     ),
-    "qwen/qwen3.5-397b-a17b": ModelCostInfo(
-        model="qwen/qwen3.5-397b-a17b",
+    "openrouter/qwen/qwen3.5-397b-a17b": ModelCostInfo(
+        model="openrouter/qwen/qwen3.5-397b-a17b",
         input_cost_per_1m=0.39,
         output_cost_per_1m=2.34,
         latency_category="medium",
         capability_scores={"code": 0.94, "reasoning": 0.96, "speed": 0.60},
     ),
     # ── DashScope (Qwen 공식 API) ──
-    "qwen-plus": ModelCostInfo(
-        model="qwen-plus",
+    "dashscope/qwen-plus": ModelCostInfo(
+        model="dashscope/qwen-plus",
         input_cost_per_1m=0.11,
         output_cost_per_1m=0.28,
         latency_category="low",
         capability_scores={"code": 0.95, "reasoning": 0.93, "speed": 0.85},
     ),
-    "qwen-max": ModelCostInfo(
-        model="qwen-max",
+    "dashscope/qwen-max": ModelCostInfo(
+        model="dashscope/qwen-max",
         input_cost_per_1m=1.20,
         output_cost_per_1m=6.00,
         latency_category="medium",
         capability_scores={"code": 0.95, "reasoning": 0.98, "speed": 0.60},
     ),
-    "qwen-turbo": ModelCostInfo(
-        model="qwen-turbo",
+    "dashscope/qwen-turbo": ModelCostInfo(
+        model="dashscope/qwen-turbo",
         input_cost_per_1m=0.04,
         output_cost_per_1m=0.08,
         latency_category="low",
         capability_scores={"code": 0.82, "reasoning": 0.80, "speed": 0.95},
     ),
-    "qwen-coder-plus": ModelCostInfo(
-        model="qwen-coder-plus",
+    "dashscope/qwen-coder-plus": ModelCostInfo(
+        model="dashscope/qwen-coder-plus",
         input_cost_per_1m=0.46,
         output_cost_per_1m=1.38,
         latency_category="low",
         capability_scores={"code": 0.98, "reasoning": 0.94, "speed": 0.80},
     ),
     # ── 기타 참조 모델 ──
-    "deepseek/deepseek-v3.2": ModelCostInfo(
-        model="deepseek/deepseek-v3.2",
+    "openrouter/deepseek/deepseek-v3.2": ModelCostInfo(
+        model="openrouter/deepseek/deepseek-v3.2",
         input_cost_per_1m=0.26,
         output_cost_per_1m=0.38,
         latency_category="low",
         capability_scores={"code": 0.90, "reasoning": 0.92, "speed": 0.85},
     ),
-    "z-ai/glm-5": ModelCostInfo(
-        model="z-ai/glm-5",
+    "openrouter/z-ai/glm-5": ModelCostInfo(
+        model="openrouter/z-ai/glm-5",
         input_cost_per_1m=0.72,
         output_cost_per_1m=2.30,
         latency_category="medium",
@@ -189,11 +191,36 @@ class TierConfig(BaseModel):
         return get_model_cost_info(self.model)
 
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DASHSCOPE_BASE_URL = os.getenv(
-    "DASHSCOPE_BASE_URL",
-    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+# LiteLLM 프로바이더 접두사 (모델명에 내장되어 프로바이더 자동 라우팅)
+_LITELLM_PROVIDER_PREFIXES = frozenset(
+    {"dashscope", "openrouter", "anthropic", "openai", "azure", "bedrock", "vertex_ai"}
 )
+
+
+def _to_litellm_model(model: str, provider: str) -> str:
+    """모델명을 LiteLLM 포맷으로 변환한다.
+
+    이미 LiteLLM 접두사가 있으면 그대로 반환한다.
+    레거시 모델명(접두사 없음)은 프로바이더에 따라 접두사를 추가한다.
+
+    예시:
+        _to_litellm_model("qwen3-max", "dashscope")    → "dashscope/qwen3-max"
+        _to_litellm_model("qwen/qwen3-max", "openrouter") → "openrouter/qwen/qwen3-max"
+        _to_litellm_model("dashscope/qwen3-max", "dashscope") → "dashscope/qwen3-max" (변환 없음)
+        _to_litellm_model("claude-sonnet-4-20250514", "anthropic") → "claude-sonnet-4-20250514"
+    """
+    # 이미 LiteLLM 접두사가 있으면 그대로
+    first_segment = model.split("/")[0] if "/" in model else ""
+    if first_segment in _LITELLM_PROVIDER_PREFIXES:
+        return model
+
+    # 프로바이더별 접두사 추가
+    if provider == "dashscope":
+        return f"dashscope/{model}"
+    if provider == "openrouter":
+        return f"openrouter/{model}"
+    # anthropic, openai 등은 LiteLLM이 모델명으로 자동 인식
+    return model
 
 
 def build_default_tiers() -> dict[str, TierConfig]:
@@ -203,26 +230,27 @@ def build_default_tiers() -> dict[str, TierConfig]:
         LLM_PROVIDER=dashscope  → 전 티어 DashScope 사용
         LLM_PROVIDER=openrouter → 전 티어 OpenRouter 사용 (기본값)
 
+    모델명은 LiteLLM 포맷 (dashscope/모델명, openrouter/제공자/모델명).
     티어별 오버라이드: STRONG_PROVIDER, DEFAULT_PROVIDER, FAST_PROVIDER
     """
     global_provider = os.getenv("LLM_PROVIDER", "openrouter")
 
-    # 프로바이더별 기본 모델명
+    # 프로바이더별 기본 모델명 (LiteLLM 포맷)
     if global_provider == "dashscope":
-        default_reasoning = "qwen3-max"
-        default_strong = "qwen3-coder-next"
-        default_default = "qwen3.5-plus"
-        default_fast = "qwen3.5-flash"
+        default_reasoning = "dashscope/qwen3-max"
+        default_strong = "dashscope/qwen3-coder-next"
+        default_default = "dashscope/qwen3.5-plus"
+        default_fast = "dashscope/qwen3.5-flash"
     elif global_provider == "anthropic":
         default_reasoning = "claude-sonnet-4-20250514"
         default_strong = "claude-sonnet-4-20250514"
         default_default = "claude-haiku-4-20250414"
         default_fast = "claude-haiku-4-20250414"
     else:
-        default_reasoning = "qwen/qwen3-max"
-        default_strong = "qwen/qwen3-coder-plus"
-        default_default = "qwen/qwen3-coder-next"
-        default_fast = "qwen/qwen3.5-flash-02-23"
+        default_reasoning = "openrouter/qwen/qwen3-max"
+        default_strong = "openrouter/qwen/qwen3-coder-plus"
+        default_default = "openrouter/qwen/qwen3-coder-next"
+        default_fast = "openrouter/qwen/qwen3.5-flash-02-23"
 
     return {
         ModelTier.REASONING: TierConfig(
@@ -287,7 +315,7 @@ def resolve_tier_config(
     if config is None:
         config = tiers.get(ModelTier.DEFAULT)
     if config is None:
-        return TierConfig(model="qwen/qwen3-coder-next", provider="openrouter")
+        return TierConfig(model="openrouter/qwen/qwen3-coder-next", provider="openrouter")
     return config
 
 
@@ -300,11 +328,11 @@ def create_chat_model(
 ) -> BaseChatModel:
     """TierConfig를 기반으로 LangChain ChatModel을 생성한다.
 
-    지원 프로바이더:
-    - openrouter: OpenRouter 경유 (다양한 모델 접근, 큐잉 지연 가능)
-    - dashscope: Qwen 공식 API 직접 호출 (낮은 레이턴시, Qwen 전용)
-    - anthropic: Claude 모델 직접 호출
-    - 기타: LangChain init_chat_model()로 위임
+    두 가지 모드를 자동 전환:
+    - 프록시 모드 (LITELLM_PROXY_URL 설정 시): ChatOpenAI → LiteLLM Proxy → 프로바이더
+    - SDK 모드 (기본): ChatLiteLLM SDK로 직접 프로바이더 호출
+
+    모델명은 LiteLLM 포맷 (dashscope/모델명, openrouter/제공자/모델명).
     """
     effective_temp = (
         tier_config.temperature if tier_config.temperature is not None else temperature
@@ -312,6 +340,9 @@ def create_chat_model(
     provider = tier_config.provider
     model = tier_config.model
     timeout = tier_config.request_timeout
+
+    # LiteLLM 포맷으로 변환 (레거시 모델명 호환)
+    litellm_model = _to_litellm_model(model, provider)
 
     # 호출자가 max_tokens를 지정하지 않으면 모델별 최대값 설정
     if "max_tokens" not in kwargs:
@@ -330,59 +361,45 @@ def create_chat_model(
             "qwen3.5-flash": 8192,
             "qwen3.6-plus": 16384,
         }
-        # 모델명에서 매칭 (openrouter의 "qwen/qwen3-max" 등 대응)
-        resolved = 16384  # OpenRouter/기타 프로바이더 기본값
+        # 모델명에서 매칭 (접두사 무시하고 모델명 부분에서 검색)
+        resolved = 16384  # 기본값
         for key, limit in _MAX_OUTPUT_TOKENS.items():
-            if key in model:
+            if key in litellm_model:
                 resolved = limit
                 break
         kwargs["max_tokens"] = resolved
 
-    if provider == "openrouter":
+    proxy_url = os.getenv("LITELLM_PROXY_URL")
+
+    if proxy_url:
+        # 프록시 모드: ChatOpenAI로 LiteLLM Proxy 경유
         from langchain_openai import ChatOpenAI
 
         llm = ChatOpenAI(
-            model=model,
+            model=litellm_model,
             temperature=effective_temp,
-            openai_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-            openai_api_base=OPENROUTER_BASE_URL,
+            openai_api_key=os.getenv("LITELLM_MASTER_KEY", "sk-harness-local-dev"),
+            openai_api_base=proxy_url,
             request_timeout=timeout,
             **kwargs,
         )
-    elif provider == "dashscope":
-        from langchain_openai import ChatOpenAI
-
-        llm = ChatOpenAI(
-            model=model,
-            temperature=effective_temp,
-            openai_api_key=os.environ.get("DASHSCOPE_API_KEY", ""),
-            openai_api_base=DASHSCOPE_BASE_URL,
-            request_timeout=timeout,
-            **kwargs,
-        )
-    elif provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-
-        # Anthropic은 max_tokens 필수, Claude 모델 기본값 설정
-        if "max_tokens" not in kwargs:
-            kwargs["max_tokens"] = 16384
-
-        llm = ChatAnthropic(
-            model=model,
-            temperature=effective_temp,
-            anthropic_api_key=os.environ.get(
-                "ANTHROPIC_API_KEY", os.environ.get("CLAUDE_API_KEY", "")
-            ),
-            timeout=timeout,
-            **kwargs,
+        logger.debug(
+            "LiteLLM Proxy 모델 생성: %s → %s (timeout=%.0fs)",
+            litellm_model, proxy_url, timeout,
         )
     else:
-        llm = init_chat_model(
-            model=model,
-            model_provider=provider,
+        # SDK 모드: ChatLiteLLM으로 직접 프로바이더 호출
+        from langchain_litellm import ChatLiteLLM
+
+        llm = ChatLiteLLM(
+            model=litellm_model,
             temperature=effective_temp,
             request_timeout=timeout,
             **kwargs,
+        )
+        logger.debug(
+            "LiteLLM SDK 모델 생성: %s (provider=%s, timeout=%.0fs)",
+            litellm_model, provider, timeout,
         )
 
     if structured:

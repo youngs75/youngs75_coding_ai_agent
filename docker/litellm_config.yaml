@@ -1,0 +1,115 @@
+# LiteLLM Proxy 설정 — youngs75-coding-ai-agent
+#
+# 모든 LLM 요청은 이 프록시를 경유하여 프로바이더별로 라우팅된다.
+# API 키는 환경변수로 주입 (os.environ/변수명 형식).
+#
+# 사용법:
+#   docker compose -f docker-compose.harness.yml up litellm-proxy -d
+#   curl http://localhost:4000/health
+
+model_list:
+  # ═══════════════════════════════════════════════
+  #  DashScope (Qwen 공식 API — 권장)
+  # ═══════════════════════════════════════════════
+
+  # REASONING 티어
+  - model_name: dashscope/qwen3-max
+    litellm_params:
+      model: dashscope/qwen3-max
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # STRONG 티어
+  - model_name: dashscope/qwen3-coder-next
+    litellm_params:
+      model: dashscope/qwen3-coder-next
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  - model_name: dashscope/qwen3-coder-plus
+    litellm_params:
+      model: dashscope/qwen3-coder-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # DEFAULT 티어
+  - model_name: dashscope/qwen3.5-plus
+    litellm_params:
+      model: dashscope/qwen3.5-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  - model_name: dashscope/qwen-plus
+    litellm_params:
+      model: dashscope/qwen-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # FAST 티어
+  - model_name: dashscope/qwen3.5-flash
+    litellm_params:
+      model: dashscope/qwen3.5-flash
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  - model_name: dashscope/qwen-turbo
+    litellm_params:
+      model: dashscope/qwen-turbo
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # 기타 DashScope
+  - model_name: dashscope/qwen-max
+    litellm_params:
+      model: dashscope/qwen-max
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  - model_name: dashscope/qwen-coder-plus
+    litellm_params:
+      model: dashscope/qwen-coder-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # ═══════════════════════════════════════════════
+  #  OpenRouter (다중 모델 라우터)
+  # ═══════════════════════════════════════════════
+
+  - model_name: openrouter/qwen/qwen3-max
+    litellm_params:
+      model: openrouter/qwen/qwen3-max
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/qwen/qwen3-coder-plus
+    litellm_params:
+      model: openrouter/qwen/qwen3-coder-plus
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/qwen/qwen3-coder-next
+    litellm_params:
+      model: openrouter/qwen/qwen3-coder-next
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/qwen/qwen3.5-flash-02-23
+    litellm_params:
+      model: openrouter/qwen/qwen3.5-flash-02-23
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/deepseek/deepseek-v3.2
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v3.2
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ═══════════════════════════════════════════════
+  #  Anthropic (Claude)
+  # ═══════════════════════════════════════════════
+
+  - model_name: claude-sonnet-4-20250514
+    litellm_params:
+      model: claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku-4-20250414
+    litellm_params:
+      model: claude-haiku-4-20250414
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+# ── Langfuse 자동 트레이싱 ──
+litellm_settings:
+  callbacks: ["langfuse"]
+  drop_params: true
+
+# ── 프록시 설정 ──
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

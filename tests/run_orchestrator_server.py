@@ -34,14 +34,17 @@ async def main():
     port = int(os.getenv("ORCH_PORT", "18080"))
     model = os.getenv("AGENT_MODEL") or os.getenv("FAST_MODEL", "qwen3.5-flash")
 
-    api_key = (
-        os.getenv("DASHSCOPE_API_KEY")
-        or os.getenv("OPENROUTER_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-    )
-    if not api_key:
-        print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
-        sys.exit(1)
+    # LiteLLM Proxy 모드에서는 API 키 불필요 (프록시가 관리)
+    if not os.getenv("LITELLM_PROXY_URL"):
+        api_key = (
+            os.getenv("DASHSCOPE_API_KEY")
+            or os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        if not api_key:
+            print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
+            print("   또는 LITELLM_PROXY_URL을 설정하여 프록시 모드를 사용하세요.")
+            sys.exit(1)
 
     # 하위 에이전트 엔드포인트 구성
     endpoints = [

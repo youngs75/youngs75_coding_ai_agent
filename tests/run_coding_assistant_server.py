@@ -63,14 +63,17 @@ async def main():
     # AGENT_MODEL이 설정되면 레거시 모드로 단일 모델 사용
     legacy_model = os.getenv("AGENT_MODEL")
 
-    api_key = (
-        os.getenv("DASHSCOPE_API_KEY")
-        or os.getenv("OPENROUTER_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-    )
-    if not api_key:
-        print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
-        sys.exit(1)
+    # LiteLLM Proxy 모드에서는 API 키 불필요 (프록시가 관리)
+    if not os.getenv("LITELLM_PROXY_URL"):
+        api_key = (
+            os.getenv("DASHSCOPE_API_KEY")
+            or os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        if not api_key:
+            print("❌ API 키가 설정되지 않았습니다. (DASHSCOPE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)")
+            print("   또는 LITELLM_PROXY_URL을 설정하여 프록시 모드를 사용하세요.")
+            sys.exit(1)
 
     if legacy_model:
         config = CodingConfig(

@@ -11,7 +11,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down
+.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down up-harness down-harness logs-harness ps-harness health-check
 
 # ── 초기 설정 ──
 
@@ -63,6 +63,23 @@ mcp-up: ## MCP 도구 서버 기동
 
 mcp-down: ## MCP 도구 서버 종료
 	cd docker && docker compose -f docker-compose.mcp.yml down
+
+# ── Harness (전체 에이전트 하니스) ──
+
+up-harness: ## 전체 하니스 기동 (MCP + 에이전트 + 오케스트레이터)
+	cd docker && docker compose -f docker-compose.harness.yml up -d --build
+
+down-harness: ## 전체 하니스 종료
+	cd docker && docker compose -f docker-compose.harness.yml down
+
+logs-harness: ## 하니스 로그 스트리밍
+	cd docker && docker compose -f docker-compose.harness.yml logs -f
+
+ps-harness: ## 하니스 서비스 상태 확인
+	cd docker && docker compose -f docker-compose.harness.yml ps
+
+health-check: ## 모든 하니스 서비스 헬스체크
+	@bash scripts/health_check.sh
 
 # ── 환경별 Docker 기동 ──
 

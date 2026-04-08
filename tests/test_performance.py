@@ -48,7 +48,7 @@ class TestCountTokens:
     def test_different_models_may_differ(self):
         """다른 모델 이름으로도 동작한다 (폴백 인코딩 사용)."""
         text = "Test prompt text"
-        n1 = count_tokens(text, model="deepseek/deepseek-v3.2")
+        n1 = count_tokens(text, model="openrouter/deepseek/deepseek-v3.2")
         n2 = count_tokens(text, model="unknown-model-xyz")
         # 둘 다 양수여야 하고, 같은 인코딩(cl100k_base 폴백)을 쓸 수 있음
         assert n1 > 0
@@ -183,18 +183,18 @@ class TestLLMCache:
     def test_put_and_get(self):
         cache = LLMCache(max_size=10, ttl_seconds=60)
         cache.put(
-            "deepseek/deepseek-v3.2",
+            "openrouter/deepseek/deepseek-v3.2",
             "test prompt",
             temperature=0.0,
             response="test response",
         )
-        result = cache.get("deepseek/deepseek-v3.2", "test prompt", temperature=0.0)
+        result = cache.get("openrouter/deepseek/deepseek-v3.2", "test prompt", temperature=0.0)
         assert result == "test response"
 
     def test_cache_miss(self):
         cache = LLMCache(max_size=10, ttl_seconds=60)
         result = cache.get(
-            "deepseek/deepseek-v3.2", "nonexistent prompt", temperature=0.0
+            "openrouter/deepseek/deepseek-v3.2", "nonexistent prompt", temperature=0.0
         )
         assert result is None
 
@@ -202,19 +202,19 @@ class TestLLMCache:
         """다른 모델/프롬프트/temperature는 다른 캐시 엔트리."""
         cache = LLMCache(max_size=10, ttl_seconds=60)
         cache.put(
-            "deepseek/deepseek-v3.2", "prompt", temperature=0.0, response="response-a"
+            "openrouter/deepseek/deepseek-v3.2", "prompt", temperature=0.0, response="response-a"
         )
         cache.put(
-            "deepseek/deepseek-v3.2", "prompt", temperature=0.5, response="response-b"
+            "openrouter/deepseek/deepseek-v3.2", "prompt", temperature=0.5, response="response-b"
         )
         cache.put("qwen/qwen3.5-9b", "prompt", temperature=0.0, response="response-c")
 
         assert (
-            cache.get("deepseek/deepseek-v3.2", "prompt", temperature=0.0)
+            cache.get("openrouter/deepseek/deepseek-v3.2", "prompt", temperature=0.0)
             == "response-a"
         )
         assert (
-            cache.get("deepseek/deepseek-v3.2", "prompt", temperature=0.5)
+            cache.get("openrouter/deepseek/deepseek-v3.2", "prompt", temperature=0.5)
             == "response-b"
         )
         assert cache.get("qwen/qwen3.5-9b", "prompt", temperature=0.0) == "response-c"
@@ -640,7 +640,7 @@ class TestModelCostInfo:
 
     def test_registry(self):
         """비용 데이터베이스 조회 및 등록."""
-        info = get_model_cost_info("deepseek/deepseek-v3.2")
+        info = get_model_cost_info("openrouter/deepseek/deepseek-v3.2")
         assert info is not None
         assert info.input_cost_per_1m > 0
 
@@ -653,9 +653,9 @@ class TestModelCostInfo:
         assert get_model_cost_info("custom-model") is not None
 
     def test_tier_config_cost_info(self):
-        tc = TierConfig(model="deepseek/deepseek-v3.2")
+        tc = TierConfig(model="openrouter/deepseek/deepseek-v3.2")
         assert tc.cost_info is not None
-        assert tc.cost_info.model == "deepseek/deepseek-v3.2"
+        assert tc.cost_info.model == "openrouter/deepseek/deepseek-v3.2"
 
     def test_tier_config_unknown_model(self):
         tc = TierConfig(model="unknown-xyz")
@@ -696,7 +696,7 @@ class TestEstimateCost:
     """비용 추정 테스트."""
 
     def test_known_model(self):
-        tc = TierConfig(model="deepseek/deepseek-v3.2")
+        tc = TierConfig(model="openrouter/deepseek/deepseek-v3.2")
         cost = estimate_cost(tc, input_tokens=1000, output_tokens=500)
         assert cost is not None
         assert cost["total_cost_usd"] > 0
@@ -709,7 +709,7 @@ class TestEstimateCost:
         assert cost is None
 
     def test_zero_tokens(self):
-        tc = TierConfig(model="deepseek/deepseek-v3.2")
+        tc = TierConfig(model="openrouter/deepseek/deepseek-v3.2")
         cost = estimate_cost(tc, input_tokens=0, output_tokens=0)
         assert cost is not None
         assert cost["total_cost_usd"] == 0.0

@@ -50,6 +50,10 @@ dependencies = [
     "rich>=14,<15",
     "prompt-toolkit>=3.0,<4",
     "langchain-anthropic>=1.4.0",
+    "langchain-litellm>=0.3.0",
+    "tavily-python",
+    "arxiv",
+    "httpx",
 ]
 
 [project.scripts]

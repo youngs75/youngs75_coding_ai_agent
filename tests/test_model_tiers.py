@@ -132,7 +132,7 @@ class TestResolveTierConfig:
 
     def test_all_missing_returns_hardcoded_fallback(self):
         cfg = resolve_tier_config("x", {}, {})
-        assert cfg.model == "qwen/qwen3-coder-next"
+        assert cfg.model == "openrouter/qwen/qwen3-coder-next"
         assert cfg.provider == "openrouter"
 
 
