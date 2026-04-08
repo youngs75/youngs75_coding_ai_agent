@@ -348,21 +348,21 @@ def create_chat_model(
     if "max_tokens" not in kwargs:
         _MAX_OUTPUT_TOKENS: dict[str, int] = {
             # Qwen 2.5 (레거시)
-            "qwen-turbo": 8192,
-            "qwen-plus": 8192,
-            "qwen-max": 8192,
-            "qwen-coder-plus": 16384,
+            "qwen-turbo": 16384,
+            "qwen-plus": 16384,
+            "qwen-max": 65536,
+            "qwen-coder-plus": 65536,
             # Qwen 3/3.5/3.6
-            "qwen3-max": 16384,
-            "qwen3-coder-next": 16384,
-            "qwen3-coder-plus": 16384,
-            "qwen3-coder-flash": 16384,
-            "qwen3.5-plus": 16384,
-            "qwen3.5-flash": 8192,
-            "qwen3.6-plus": 16384,
+            "qwen3-max": 65536,
+            "qwen3-coder-next": 65536,
+            "qwen3-coder-plus": 65536,
+            "qwen3-coder-flash": 65536,
+            "qwen3.5-plus": 65536,
+            "qwen3.5-flash": 32768,
+            "qwen3.6-plus": 65536,
         }
         # 모델명에서 매칭 (접두사 무시하고 모델명 부분에서 검색)
-        resolved = 16384  # 기본값
+        resolved = 65536  # 기본값
         for key, limit in _MAX_OUTPUT_TOKENS.items():
             if key in litellm_model:
                 resolved = limit

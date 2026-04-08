@@ -66,12 +66,10 @@ class ResearchConfig(BaseAgentConfig):
         ),
     )
 
-    # --- MCP 서버 ---
+    # --- MCP 서버 (통합 code_tools: 코드 도구 + 검색 도구) ---
     mcp_servers: dict[str, str] = Field(
         default_factory=lambda: {
-            "arxiv": os.getenv("ARXIV_MCP_URL", "http://localhost:3000/mcp/"),
-            "tavily": os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/"),
-            "serper": os.getenv("SERPER_MCP_URL", "http://localhost:3002/mcp/"),
+            "code_tools": os.getenv("CODE_TOOLS_MCP_URL", "http://localhost:3003/mcp/"),
         },
     )
 

@@ -23,8 +23,9 @@ __pycache__
 venv
 .env
 
-# 데이터 (볼륨으로 마운트)
+# 데이터 (볼륨으로 마운트, skills만 포함)
 data/
+!data/skills/
 
 # 문서
 *.md

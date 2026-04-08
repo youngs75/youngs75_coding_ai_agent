@@ -49,7 +49,7 @@ class CLIRenderer:
 
     # ── 배너 ──
 
-    def welcome(self, agent_name: str) -> None:
+    def welcome(self, agent_name: str, workspace: str | None = None) -> None:
         """시작 배너 출력."""
         table = Table.grid(padding=(0, 1))
         table.add_row(
@@ -60,6 +60,11 @@ class CLIRenderer:
             Text(" ", style=""),
             Text(f"Active: {agent_name}", style="green"),
         )
+        if workspace:
+            table.add_row(
+                Text(" ", style=""),
+                Text(f"Workspace: {workspace}", style="bold yellow"),
+            )
         table.add_row(
             Text(" ", style=""),
             Text("/help for commands · /quit to exit", style="dim"),

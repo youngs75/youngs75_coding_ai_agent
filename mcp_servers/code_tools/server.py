@@ -20,6 +20,8 @@ from mcp.server.fastmcp import FastMCP
 
 _PORT = int(os.getenv("CODE_TOOLS_PORT", "3003"))
 _WORKSPACE = os.getenv("CODE_TOOLS_WORKSPACE", os.getcwd())
+# set_workspace 허용 루트 — 이 경로 하위만 workspace로 설정 가능
+_MOUNT_ROOT = os.getenv("MCP_MOUNT_ROOT", "/")
 
 mcp = FastMCP(
     name="CodeToolsServer",
@@ -35,6 +37,34 @@ def _safe_path(path: str) -> Path:
     if not str(resolved).startswith(str(workspace)):
         raise ValueError(f"접근 거부: workspace 밖 경로 ({resolved})")
     return resolved
+
+
+@mcp.tool()
+def set_workspace(path: str) -> str:
+    """작업 디렉토리(workspace)를 변경한다.
+
+    에이전트가 파일을 읽고 쓰는 기준 디렉토리를 동적으로 전환한다.
+    마운트된 호스트 경로 하위만 허용된다.
+
+    Args:
+        path: 새 workspace 절대 경로 (컨테이너 내부 경로)
+    """
+    global _WORKSPACE
+    resolved = Path(path).resolve()
+    mount_root = Path(_MOUNT_ROOT).resolve()
+    if not str(resolved).startswith(str(mount_root)):
+        return f"Error: 허용 범위 밖 경로 — {resolved} (허용: {mount_root} 하위)"
+    if not resolved.is_dir():
+        # 디렉토리가 없으면 생성
+        resolved.mkdir(parents=True, exist_ok=True)
+    _WORKSPACE = str(resolved)
+    return f"Workspace 변경됨: {_WORKSPACE}"
+
+
+@mcp.tool()
+def get_workspace() -> str:
+    """현재 workspace 경로를 반환한다."""
+    return _WORKSPACE
 
 
 @mcp.tool()

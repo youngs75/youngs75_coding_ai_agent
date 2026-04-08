@@ -114,17 +114,21 @@ EXECUTE_SYSTEM_PROMPT = """\
 
 파일 생성 전에 import 그래프를 먼저 설계하고, 순환이 없는지 검증한 후 코드를 작성하세요.
 
-## 파일 저장 형식 (필수)
+## 파일 저장 형식 (필수 — 누락 시 파일이 저장되지 않음!)
+⚠ **filepath 주석이 없으면 코드가 저장되지 않습니다.** 반드시 각 코드 블록의 첫 줄에 filepath 주석을 포함하세요.
+
 **각 파일은 반드시 별도의 코드 블록으로 분리**하고, 첫 줄에 파일 경로를 주석으로 명시하세요:
 - Python/Ruby/Shell: `# filepath: path/to/file.py`
 - JavaScript/TypeScript/Go/Rust/Java/C/C++: `// filepath: path/to/file.js`
 - HTML/XML/Vue/Svelte: `<!-- filepath: path/to/file.html -->`
 - CSS/SCSS: `/* filepath: path/to/style.css */`
+- JSON: filepath 주석을 넣을 수 없으므로 코드 블록 바로 위에 `**filepath: package.json**`을 작성하세요.
 - TOML: `# filepath: Cargo.toml`
 - YAML: `# filepath: config.yaml`
-이 형식을 따르면 코드가 자동으로 파일에 저장됩니다.
-디렉토리 구조가 필요하면 경로에 포함하세요 (예: `src/main.rs`, `cmd/app/main.go`).
+
+디렉토리 구조가 필요하면 경로에 포함하세요 (예: `src/main.rs`, `frontend/package.json`).
 **하나의 코드 블록에 여러 파일을 합치지 마세요. 파일당 1개의 코드 블록을 사용하세요.**
+**filepath 주석을 빼먹으면 해당 파일이 저장되지 않으므로, 생성을 마친 후 모든 코드 블록에 filepath 주석이 있는지 다시 확인하세요.**
 
 ## 의존성 관리
 - 의존성 파일이 프로젝트에 포함된 경우, 코드에서 사용하는 **모든 외부 패키지**를 빠짐없이 추가하세요
@@ -164,6 +168,7 @@ VERIFY_SYSTEM_PROMPT = """\
 5. 의존성: 불필요한 의존성을 추가하지 않았는가, 코드에서 사용하는 패키지가 requirements.txt/package.json에 **모두 포함**되었는가
 6. 프로젝트 적합성: 기존 프로젝트 구조와 패턴에 맞는가
 7. 인용 품질: 코드 참조에 파일 경로/라인 번호가 포함되어 있는가
+8. filepath 주석: **모든 코드 블록의 첫 줄**에 `# filepath: ...` 또는 `// filepath: ...` 형식의 주석이 있는가? 누락된 코드 블록이 있으면 반드시 `passed: false`로 판정하고 누락된 블록을 지적하세요
 
 검증자 특권 정보 (코드 생성자에게는 미제공):
 - 파일 삭제 시 한 번에 {max_delete_lines}줄 이상 삭제는 위험 신호

@@ -1,21 +1,31 @@
-# A2A 에이전트 서버 컨테이너 이미지
+# A2A 에이전트 서버 + 샌드박스 개발 환경
 #
 # 빌드 컨텍스트: 프로젝트 루트 (..)
-# pyproject.toml의 package-dir 매핑으로 youngs75_a2a.* 네임스페이스를 구성한다.
+# 에이전트가 코드를 생성/테스트하는 격리된 환경을 제공한다.
+# 포함 런타임: Python 3.13, Node.js 22, Java 21
 
 FROM python:3.13-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# ── 시스템 패키지 + 런타임 설치 ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    # Node.js 22 LTS
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    # Java 21 (headless)
+    && apt-get install -y default-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
 
-# uv 설치 — 빠른 패키지 관리자
+# ── uv 설치 ──
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# 프로젝트 메타데이터 복사 후 의존성 설치
+# ── 프로젝트 의존성 설치 ──
 COPY pyproject.toml uv.lock /app/
 
-# 소스 코드 복사 (pyproject.toml의 package-dir 매핑에 맞추어 배치)
+# ── 소스 코드 복사 ──
 COPY __init__.py /app/
 COPY core/ /app/core/
 COPY agents/ /app/agents/
@@ -26,11 +36,17 @@ COPY utils/ /app/utils/
 COPY scripts/ /app/scripts/
 COPY eval_pipeline/ /app/eval_pipeline/
 COPY tests/ /app/tests/
+COPY data/skills/ /app/data/skills/
 
-# editable 모드 설치 — youngs75_a2a.* 패키지 매핑 활성화
+# ── editable 모드 설치 ──
 RUN uv pip install --system -e .
 
+# ── 샌드박스 작업 공간 ──
+RUN mkdir -p /workspace
 ENV PYTHONPATH=/app
+ENV CODE_TOOLS_WORKSPACE=/workspace
+ENV SKILLS_DIR=/app/data/skills
+
 EXPOSE 18080
 
 CMD ["python", "-m", "youngs75_a2a.tests.run_agent_server"]

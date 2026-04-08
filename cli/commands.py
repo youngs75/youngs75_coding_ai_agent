@@ -105,6 +105,10 @@ def handle_command(
             _show_tools(session, renderer)
             return CommandResult()
 
+        case "/export":
+            _handle_export(renderer)
+            return CommandResult()
+
         case _:
             renderer.error(f"알 수 없는 커맨드: {cmd}. /help를 입력하세요.")
             return CommandResult()
@@ -130,7 +134,8 @@ def _show_help(renderer: CLIRenderer) -> None:
         "  /clear             — 대화 기록 초기화\n"
         "  /session           — 현재 세션 정보\n"
         "  /memory            — 메모리 상태\n"
-        "  /quit, /exit, /q   — 종료"
+        "  /export            — 결과물 목록 확인 + 추출 안내\n"
+        "  /quit, /exit, /q   — ���료"
     )
 
 
@@ -169,6 +174,45 @@ def _show_session(session: CLISession, renderer: CLIRenderer) -> None:
 def _show_memory(session: CLISession, renderer: CLIRenderer) -> None:
     count = session.memory.total_count
     renderer.system_message(f"메모리 항목 수: {count}")
+
+
+def _handle_export(renderer: CLIRenderer) -> None:
+    """워크스페이스 결과물 목록을 표시하고 export 방법을 안내한다."""
+    import os
+    from pathlib import Path
+
+    workspace = os.environ.get("CODE_TOOLS_WORKSPACE", "/workspace")
+    ws_path = Path(workspace)
+
+    if not ws_path.is_dir():
+        renderer.error(f"워크스페이스가 존재하지 않습���다: {workspace}")
+        return
+
+    # 제외 패턴
+    exclude = {".venv", "node_modules", "__pycache__", ".pytest_cache", "instance", ".cli_history"}
+
+    files: list[str] = []
+    for root, dirs, filenames in os.walk(ws_path):
+        # 제외 디렉토리 스킵
+        dirs[:] = [d for d in dirs if d not in exclude and not d.startswith(".")]
+        for fname in filenames:
+            if fname.endswith(".pyc") or fname.startswith("."):
+                continue
+            rel = os.path.relpath(os.path.join(root, fname), ws_path)
+            files.append(rel)
+
+    if not files:
+        renderer.system_message("워크스페이스에 파일이 없습니다.")
+        return
+
+    files.sort()
+    lines = [f"📦 워크스페이스 파일 ({len(files)}개):"]
+    for f in files:
+        lines.append(f"  {f}")
+    lines.append("")
+    lines.append("호스트에서 추출하려면:")
+    lines.append("  ./youngs75-agent.sh --export")
+    renderer.system_message("\n".join(lines))
 
 
 def _handle_skill(

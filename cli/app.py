@@ -145,21 +145,32 @@ def _extract_node_summary(node: str, output: dict) -> str:
             return f"통과{env_summary}"
         test_out = output.get("test_output", "")
         if test_out:
-            # pytest의 "E   " 라인 (실제 에러)을 우선 표시, 그 다음 Error 키워드
+            # pytest의 "E   " 라인 (실제 에러)을 우선 표시, 그 다음 Error/FAILED 키워드
             error_line = ""
             fallback_line = ""
             for line in test_out.split("\n"):
                 stripped = line.strip()
+                if not stripped:
+                    continue
                 # "E   실제에러메시지" 라인이 가장 유용 (pytest assertion/exception)
                 if stripped.startswith("E ") and not error_line:
-                    error_line = stripped[:60]
-                # "Error" 키워드 포함 줄은 fallback (pytest 헤더일 수 있음)
+                    error_line = stripped[:80]
+                # "FAILED" pytest 요약 라인
+                elif stripped.startswith("FAILED") and not error_line:
+                    error_line = stripped[:80]
+                # "Error" 키워드 포함 줄은 fallback
                 elif ("Error" in stripped or "error" in stripped) and not fallback_line:
-                    fallback_line = stripped[:60]
+                    fallback_line = stripped[:80]
+                # "[syntax]" 또는 "[js-syntax]" 오류
+                elif stripped.startswith("[syntax]") or stripped.startswith("[js-syntax]") or stripped.startswith("[ts-check]"):
+                    if not error_line:
+                        error_line = stripped[:80]
             if not error_line:
-                error_line = fallback_line or test_out.split("\n")[0][:60]
+                # 첫 번째 비어있지 않은 줄 사용
+                first_line = next((l.strip() for l in test_out.split("\n") if l.strip()), "")
+                error_line = fallback_line or first_line[:80] or "상세 로그 없음"
         else:
-            error_line = "실패"
+            error_line = "상세 로그 없음"
         return f"실패{env_summary} — {error_line}"
     if node == "research_external":
         research = output.get("research_context", [])
@@ -756,6 +767,8 @@ async def _main_loop(config: CLIConfig) -> None:
     # Phase 10: 프로젝트 컨텍스트 + 권한 + 병렬 실행기 초기화
     workspace = os.getenv("CODE_TOOLS_WORKSPACE", os.getcwd())
 
+    display_workspace = workspace
+
     # 프로젝트 컨텍스트 로더
     context_loader = ProjectContextLoader(workspace)
     context_section = context_loader.build_system_prompt_section()
@@ -783,7 +796,7 @@ async def _main_loop(config: CLIConfig) -> None:
         history=FileHistory(config.history_file),
     )
 
-    renderer.welcome(session.info.agent_name)
+    renderer.welcome(session.info.agent_name, workspace=display_workspace)
     if discovered_skills:
         renderer.success(
             f"스킬 {len(discovered_skills)}개 로드: {', '.join(discovered_skills)}"

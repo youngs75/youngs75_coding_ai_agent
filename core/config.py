@@ -70,23 +70,15 @@ class BaseAgentConfig(BaseModel):
     ) -> BaseChatModel:
         """목적별 LLM 모델을 반환한다.
 
-        기본 구현은 _resolve_model_name + model_provider로 모델을 생성한다.
-        OpenRouter 프로바이더는 create_chat_model()을 통해 처리한다.
+        purpose_tiers[purpose] → model_tiers[tier] → create_chat_model() 경로로
+        목적에 맞는 모델을 선택한다.
         """
-        model_name = self._resolve_model_name(purpose)
-        tier_config = TierConfig(
-            model=model_name,
-            provider=self.model_provider,
-        )
+        tier_config = self.get_tier_config(purpose)
         return create_chat_model(
             tier_config,
             temperature=self.temperature,
             structured=structured,
         )
-
-    def _resolve_model_name(self, purpose: str) -> str:
-        """목적별 모델명 결정. 서브클래스에서 오버라이드."""
-        return self.default_model
 
     def get_tier_config(self, purpose: str = "default") -> TierConfig:
         """목적에 해당하는 TierConfig를 반환한다."""

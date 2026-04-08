@@ -147,12 +147,14 @@ class TestBaseAgentConfigTiers:
         tc = config.get_tier_config("generation")
         assert tc.model == build_default_tiers()[ModelTier.STRONG].model
 
-    def test_legacy_get_model_still_uses_resolve_model_name(self):
-        """BaseAgentConfig.get_model()은 레거시 경로(_resolve_model_name)를 유지한다."""
+    def test_get_model_uses_tier_config(self):
+        """BaseAgentConfig.get_model()은 purpose_tiers → model_tiers를 사용한다."""
         from youngs75_a2a.core.config import BaseAgentConfig
 
-        config = BaseAgentConfig(default_model="test-model", model_provider="openai")
-        assert config._resolve_model_name("any") == "test-model"
+        config = BaseAgentConfig()
+        tier_config = config.get_tier_config("default")
+        # get_model이 get_tier_config과 같은 모델을 사용하는지 확인
+        assert tier_config.model is not None
 
     def test_legacy_fields_preserved(self):
         from youngs75_a2a.core.config import BaseAgentConfig

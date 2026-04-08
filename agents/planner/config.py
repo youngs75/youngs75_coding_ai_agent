@@ -33,11 +33,10 @@ class PlannerConfig(BaseAgentConfig):
         ],
     )
 
-    # 웹 검색 MCP 서버 (외부 API 문서 조사용)
+    # 웹 검색 MCP 서버 (통합 code_tools 서버에 검색 도구 포함)
     web_search_mcp_servers: dict[str, str] = Field(
         default_factory=lambda: {
-            "tavily": os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/"),
-            "serper": os.getenv("SERPER_MCP_URL", "http://localhost:3002/mcp/"),
+            "code_tools": os.getenv("CODE_TOOLS_MCP_URL", "http://localhost:3003/mcp/"),
         },
     )
 

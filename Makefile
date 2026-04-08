@@ -11,7 +11,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down up-harness down-harness logs-harness ps-harness health-check
+.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down up-harness down-harness logs-harness ps-harness health-check cli
 
 # ── 초기 설정 ──
 
@@ -80,6 +80,9 @@ ps-harness: ## 하니스 서비스 상태 확인
 
 health-check: ## 모든 하니스 서비스 헬스체크
 	@bash scripts/health_check.sh
+
+cli: ## 대화형 CLI 실행 (Docker 우선, 로컬 폴백)
+	@bash youngs75-agent.sh
 
 # ── 환경별 Docker 기동 ──
 
