@@ -159,6 +159,43 @@ body: |
   })
   ```
 
+  6. **React 드래그&드롭** (HTML5 네이티브):
+     ```tsx
+     // Column.tsx — 드롭 영역
+     function Column({ column, onMoveCard }: ColumnProps) {
+       const handleDragOver = (e: React.DragEvent) => e.preventDefault()
+       const handleDrop = (e: React.DragEvent) => {
+         const cardId = Number(e.dataTransfer.getData('cardId'))
+         onMoveCard(cardId, column.id)
+       }
+       return (
+         <div onDragOver={handleDragOver} onDrop={handleDrop}>
+           {column.cards.map(card => (
+             <Card key={card.id} card={card} />
+           ))}
+         </div>
+       )
+     }
+
+     // Card.tsx — 드래그 가능한 카드
+     function Card({ card }: CardProps) {
+       const handleDragStart = (e: React.DragEvent) => {
+         e.dataTransfer.setData('cardId', String(card.id))
+       }
+       return <div draggable onDragStart={handleDragStart}>{card.title}</div>
+     }
+     ```
+
+     **⚠ 드래그&드롭 필수 규칙**:
+     - `onDragOver`에서 `e.preventDefault()` 없으면 `onDrop` 미발생
+     - 외부 라이브러리 대신 HTML5 네이티브 API 사용 권장 (npm install 실패 위험 제거)
+
+  7. **API 메서드 일치 규칙 (필수)**:
+     프론트엔드 API 호출 메서드는 백엔드 라우트와 **반드시 일치**해야 합니다:
+     - 백엔드 `router.post('/cards/:id/move')` → 프론트 `api.post(\`/cards/${id}/move\`)`
+     - 백엔드 `router.put('/cards/:id')` → 프론트 `api.put(\`/cards/${id}\`)`
+     - 불일치 시 405 Method Not Allowed 에러 발생
+
   ## Common Pitfalls
 
   - **app.use(express.json()) 누락** → req.body가 undefined
@@ -167,6 +204,8 @@ body: |
   - **async 에러 미처리** → Unhandled Promise Rejection으로 서버 크래시
   - **프론트엔드 axios baseURL 불일치** → API 호출 실패
   - **TypeScript strict 모드 미활성화** → 런타임 타입 에러
+  - **API 메서드 불일치** → 백엔드 POST vs 프론트 PUT → 405 에러
+  - **함수 시그니처 불일치** → 호출부 인자와 정의 파라미터 불일치 → 런타임 에러
 
   ## 의존성 및 코드 스타일
 

@@ -21,12 +21,12 @@ class TestProjectCreatorTools:
     def _patch_workspace(self, tmp_path, monkeypatch):
         """workspace를 tmp_path로 패치."""
         monkeypatch.setattr(
-            "mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
+            "coding_agent.mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
         )
         self.workspace = tmp_path
 
     def test_list_templates(self):
-        from mcp_servers.code_tools.server import list_templates
+        from coding_agent.mcp_servers.code_tools.server import list_templates
 
         result = list_templates()
         assert "flask-vue" in result
@@ -35,7 +35,7 @@ class TestProjectCreatorTools:
         assert "django-htmx" in result
 
     def test_get_template_info_valid(self):
-        from mcp_servers.code_tools.server import get_template_info
+        from coding_agent.mcp_servers.code_tools.server import get_template_info
 
         result = get_template_info("flask-vue")
         assert "Flask" in result
@@ -43,14 +43,14 @@ class TestProjectCreatorTools:
         assert "디렉토리 구조" in result
 
     def test_get_template_info_invalid(self):
-        from mcp_servers.code_tools.server import get_template_info
+        from coding_agent.mcp_servers.code_tools.server import get_template_info
 
         result = get_template_info("nonexistent")
         assert "Error" in result
         assert "flask-vue" in result  # 사용 가능한 목록 표시
 
     def test_create_project_flask_vue(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("flask-vue", "my-app")
         assert "생성 완료" in result
@@ -59,7 +59,7 @@ class TestProjectCreatorTools:
         assert (self.workspace / "my-app" / "README.md").exists()
 
     def test_create_project_react_express(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("react-express", "web-app")
         assert "생성 완료" in result
@@ -67,7 +67,7 @@ class TestProjectCreatorTools:
         assert (self.workspace / "web-app" / "client" / "package.json").exists()
 
     def test_create_project_fastapi_react(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("fastapi-react", "api-app")
         assert "생성 완료" in result
@@ -75,7 +75,7 @@ class TestProjectCreatorTools:
         assert (self.workspace / "api-app" / "frontend" / "vite.config.js").exists()
 
     def test_create_project_django_htmx(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("django-htmx", "cms-app")
         assert "생성 완료" in result
@@ -84,7 +84,7 @@ class TestProjectCreatorTools:
         assert (self.workspace / "cms-app" / "templates" / "base.html").exists()
 
     def test_create_project_template_variable_substitution(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         create_project("flask-vue", "hello-world")
         readme = (self.workspace / "hello-world" / "README.md").read_text()
@@ -92,13 +92,13 @@ class TestProjectCreatorTools:
         assert "{project_name}" not in readme
 
     def test_create_project_invalid_template(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("nonexistent", "app")
         assert "Error" in result
 
     def test_create_project_duplicate_directory(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         create_project("flask-vue", "dup-app")
         result = create_project("flask-vue", "dup-app")
@@ -106,14 +106,14 @@ class TestProjectCreatorTools:
         assert "이미 존재" in result
 
     def test_create_project_invalid_options_json(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         result = create_project("flask-vue", "bad-opts", options="{invalid}")
         assert "Error" in result
         assert "JSON" in result
 
     def test_safe_path_blocks_traversal(self):
-        from mcp_servers.code_tools.server import create_project
+        from coding_agent.mcp_servers.code_tools.server import create_project
 
         with pytest.raises(ValueError, match="접근 거부"):
             create_project("flask-vue", "../escape-attempt")

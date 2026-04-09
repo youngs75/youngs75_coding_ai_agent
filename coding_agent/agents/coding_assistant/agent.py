@@ -1013,6 +1013,16 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "suggestions": [f"검증 오류: {e}"],
             }
 
+        # ── 정적 API 일치 검증 ──
+        api_issues = self._check_api_consistency(generated_code)
+        if api_issues:
+            existing_issues = verify_result.get("issues", [])
+            verify_result["issues"] = api_issues + existing_issues
+            # P0/P1 이슈가 있으면 실패로 재판정
+            if any(i.startswith("[P0]") or i.startswith("[P1]") for i in api_issues):
+                verify_result["passed"] = False
+                log.append(f"[verify] API 일치 검증 실패: {len(api_issues)}건")
+
         log.append(f"[verify] passed={verify_result.get('passed')}")
 
         result: dict[str, Any] = {
@@ -1345,7 +1355,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             log.append("[run_tests] 환경 설정 승인됨")
 
         # Python venv 생성 + 의존성 설치
-        # 재시도 시: 의존성 파일(requirements.txt 등)이 변경된 경우에만 재설치
+        # 재시도 시: 의존성 파일 변경 또는 ModuleNotFoundError 발생 시 재설치
         iteration = state.get("iteration", 0)
         venv_python = None
         should_install_deps = iteration == 0
@@ -1356,6 +1366,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             if any(f.split(" (")[0].strip() in dep_files for f in written):
                 should_install_deps = True
                 log.append("[run_tests] 의존성 파일 변경 감지 — 재설치")
+            # _inject_test_failure에서 설정한 플래그 확인
+            if state.get("_deps_changed"):
+                should_install_deps = True
+                log.append("[run_tests] 의존성 변경 플래그 감지 — 재설치")
 
         if py_files:
             venv_python = await self._setup_project_env(workspace, log)
@@ -1945,6 +1959,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         if iteration >= max_iterations:
             logging.getLogger(__name__).warning("[run_tests] 최대 반복 도달 — 테스트 실패 상태로 종료")
+            self._save_failure_pattern(state)
             return END
 
         # 실패 시: INJECT_TEST_FAILURE 노드에서 에러를 messages에 주입 → GENERATE_FINAL
@@ -1966,9 +1981,8 @@ class CodingAssistantAgent(BaseGraphAgent):
             return
 
         # 이전 에러 분류
-        error_type, _ = self._classify_test_error(prev_test_output)
+        error_type, guidance = self._classify_test_error(prev_test_output)
         if error_type == "Unknown":
-            # 알 수 없는 에러는 저장하지 않음 (노이즈 방지)
             return
 
         parse_result = state.get("parse_result", {})
@@ -1979,10 +1993,14 @@ class CodingAssistantAgent(BaseGraphAgent):
         generated_code = state.get("generated_code", "")
         code_snippet = generated_code[:500] if generated_code else ""
 
+        # 실패→성공에서의 구체적 해결 방법 추출
+        iteration = state.get("iteration", 0)
         description = (
-            f"[{error_type}] {language}/{task_type} 프로젝트에서 발생. "
-            f"에러: {prev_test_output[:200]}... "
-            f"해결: 코드 재생성으로 수정 성공."
+            f"[FIX:{error_type}] {language}/{task_type} — "
+            f"에러: {prev_test_output[:150].strip()} | "
+            f"해결: {guidance[:100]} | "
+            f"시도: {iteration}회 | "
+            f"수정 코드 패턴: {code_snippet[:200]}"
         )
 
         try:
@@ -1997,6 +2015,46 @@ class CodingAssistantAgent(BaseGraphAgent):
                 )
         except Exception as e:
             logging.getLogger(__name__).debug("[memory] 패턴 저장 실패 (무시): %s", e)
+
+    def _save_failure_pattern(self, state: CodingState) -> None:
+        """최대 반복 도달 시 실패 패턴을 Procedural Memory에 저장한다.
+
+        Codex 패턴: 실패 롤아웃에서도 "이렇게 하면 안 된다"는 패턴을 학습한다.
+        미래 동일 에러 발생 시 에스컬레이션 힌트에서 참조된다.
+        """
+        if not self._memory_store:
+            return
+
+        test_output = state.get("test_output", "")
+        if not test_output:
+            return
+
+        error_type, guidance = self._classify_test_error(test_output)
+        parse_result = state.get("parse_result", {})
+        task_type = parse_result.get("task_type", "generate")
+        language = parse_result.get("language", "python")
+        iteration = state.get("iteration", 0)
+
+        description = (
+            f"[FAIL:{error_type}] {language}/{task_type} — "
+            f"최대 반복({iteration}회) 도달 후 미해결. "
+            f"에러: {test_output[:200].strip()} | "
+            f"시도한 해결법: {guidance[:100]} | "
+            f"교훈: 이 에러 유형은 코드 재생성만으로 해결 불가. "
+            f"근본적 접근 변경 필요 (의존성 제거, 구조 단순화 등)."
+        )
+
+        try:
+            self._memory_store.accumulate_skill(
+                code="",
+                description=description,
+                tags=[error_type.lower(), language, task_type, "test_failure", "anti_pattern"],
+            )
+            logging.getLogger(__name__).info(
+                "[memory] 실패 패턴 저장: %s (iteration=%d)", error_type, iteration
+            )
+        except Exception as e:
+            logging.getLogger(__name__).debug("[memory] 실패 패턴 저장 실패 (무시): %s", e)
 
     # ── 테스트 출력 처리 ───────────────────────────────────────
 
@@ -2171,6 +2229,88 @@ class CodingAssistantAgent(BaseGraphAgent):
         ),
     ]
 
+    @staticmethod
+    def _check_api_consistency(generated_code: str) -> list[str]:
+        """프론트엔드 API 호출과 백엔드 라우트의 HTTP 메서드/경로 일치를 정적 검증한다.
+
+        Returns:
+            불일치 이슈 목록 (P1 태그 포함). 없으면 빈 리스트.
+        """
+        if not generated_code:
+            return []
+
+        issues: list[str] = []
+
+        # 백엔드 라우트 추출: @api.route("/path", methods=["METHOD"])
+        backend_routes: dict[str, set[str]] = {}  # path → {methods}
+        for match in re.finditer(
+            r'@\w+\.route\(\s*["\']([^"\']+)["\']'
+            r'(?:.*?methods\s*=\s*\[([^\]]+)\])?',
+            generated_code,
+        ):
+            path = match.group(1)
+            methods_str = match.group(2)
+            if methods_str:
+                methods = {
+                    m.strip().strip("'\"").upper()
+                    for m in methods_str.split(",")
+                }
+            else:
+                methods = {"GET"}
+            # 변수 경로 정규화: <int:id> → <id>
+            normalized = re.sub(r"<\w+:(\w+)>", r"<\1>", path)
+            if normalized in backend_routes:
+                backend_routes[normalized] |= methods
+            else:
+                backend_routes[normalized] = methods
+
+        if not backend_routes:
+            return []
+
+        # 프론트엔드 API 호출 추출: api.post("/path"), axios.put("/path")
+        fe_calls: list[tuple[str, str]] = []  # [(method, path)]
+        for match in re.finditer(
+            r'(?:api|axios|client|http)\.(get|post|put|patch|delete)\(\s*'
+            r'[`"\']([^`"\']*?)[`"\']',
+            generated_code,
+            re.IGNORECASE,
+        ):
+            method = match.group(1).upper()
+            path = match.group(2)
+            # 템플릿 리터럴 변수 정규화: ${cardId} → <id>
+            normalized = re.sub(r"\$\{[^}]+\}", "<id>", path)
+            # /api 접두사 추가 (없으면)
+            if not normalized.startswith("/api"):
+                normalized = "/api" + (normalized if normalized.startswith("/") else "/" + normalized)
+            fe_calls.append((method, normalized))
+
+        # 교차 검증
+        for fe_method, fe_path in fe_calls:
+            # 백엔드에서 매칭되는 경로 찾기
+            matched_path = None
+            for be_path in backend_routes:
+                # 정규화된 경로 비교 (변수 부분은 <id>로 통일)
+                be_normalized = re.sub(r"<\w+>", "<id>", be_path)
+                fe_normalized = re.sub(r"<\w+>", "<id>", fe_path)
+                if be_normalized == fe_normalized:
+                    matched_path = be_path
+                    break
+
+            if matched_path is None:
+                continue  # 경로 매칭 실패는 무시 (동적 경로일 수 있음)
+
+            be_methods = backend_routes[matched_path]
+            if fe_method not in be_methods:
+                issues.append(
+                    f"[P1] API 메서드 불일치: 프론트엔드 {fe_method} {fe_path} "
+                    f"→ 백엔드 {matched_path} 은 {be_methods}만 허용. "
+                    f"프론트엔드의 api.{fe_method.lower()}()를 "
+                    f"api.{next(iter(be_methods)).lower()}()로 변경하거나, "
+                    f"백엔드 라우트에 {fe_method} 메서드를 추가하세요."
+                )
+
+        return issues
+
     def _classify_test_error(self, test_output: str) -> tuple[str, str]:
         """테스트 출력에서 에러 유형을 분류하고 수정 지시를 반환한다."""
         for pattern, error_type, guidance in self._ERROR_PATTERNS:
@@ -2237,6 +2377,42 @@ class CodingAssistantAgent(BaseGraphAgent):
         error_type, guidance = self._classify_test_error(test_output)
         log.append(f"[inject_test_failure] 에러 유형: {error_type}")
 
+        # ── ModuleNotFoundError 자동 패치 ──
+        deps_changed = False
+        if error_type == "ModuleNotFoundError":
+            missing_modules = re.findall(
+                r"No module named ['\"]([^'\"]+)['\"]", test_output
+            )
+            if missing_modules:
+                workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+                req_path = os.path.join(workspace, "requirements.txt")
+                if os.path.exists(req_path):
+                    with open(req_path) as f:
+                        existing = f.read()
+                    existing_pkgs = {
+                        line.split("==")[0].split(">=")[0].split("<=")[0].split("[")[0].strip().lower()
+                        for line in existing.splitlines()
+                        if line.strip() and not line.strip().startswith("#")
+                    }
+                    added = []
+                    for mod in missing_modules:
+                        # 최상위 패키지명만 추출 (예: backend.config → backend는 프로젝트 내부)
+                        top_pkg = mod.split(".")[0].replace("_", "-")
+                        # 프로젝트 내부 모듈이면 스킵
+                        internal_dir = os.path.join(workspace, mod.split(".")[0])
+                        if os.path.exists(internal_dir) or os.path.exists(internal_dir + ".py"):
+                            continue
+                        if top_pkg.lower() not in existing_pkgs:
+                            added.append(top_pkg)
+                    if added:
+                        with open(req_path, "a") as f:
+                            for pkg in added:
+                                f.write(f"\n{pkg}")
+                        deps_changed = True
+                        log.append(
+                            f"[inject_test_failure] requirements.txt에 자동 추가: {added}"
+                        )
+
         # ── 재시도 횟수 기반 에스컬레이션 힌트 ──
         escalation_hint = ""
         if iteration >= 3:
@@ -2294,6 +2470,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             "written_files": [],  # 재생성 시 새로 쓰도록 초기화
             "_prev_generated_code": generated_code,
             "_prev_test_output": test_output,
+            "_deps_changed": deps_changed,
         }
 
     # ── 그래프 구성 ─────────────────────────────────────────

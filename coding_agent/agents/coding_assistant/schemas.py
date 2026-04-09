@@ -90,3 +90,6 @@ class CodingState(TypedDict, total=False):
     # 반복 감지용 — 이전 생성 코드 및 테스트 에러 캐시
     _prev_generated_code: str
     _prev_test_output: str
+
+    # 의존성 변경 플래그 — inject_test_failure에서 requirements.txt 수정 시 True
+    _deps_changed: bool

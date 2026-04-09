@@ -7,23 +7,25 @@ AI Assistant Coding Agent Harness — MCP 도구 기반 코드 생성/검증/실
 ## 프로젝트 구조
 
 ```
-youngs75_coding_ai_agent/           # 패키지명: coding_agent
-├── core/                           # 공통 프레임워크 (BaseGraphAgent, MCP Loader)
-│   ├── memory/                     # CoALA 4종 메모리 시스템
-│   ├── skills/                     # 3-Level 스킬 시스템 (자동 활성화)
-│   ├── middleware/                  # LLM 미들웨어 체인
-│   └── subagents/                  # SubAgent 동적 선택 레지스트리
-├── agents/                         # 에이전트 구현체
-│   ├── orchestrator/               # Orchestrator (기본 에이전트, Planner 경유 라우팅)
-│   ├── planner/                    # Planner (아키텍처 설계 + 태스크 분해)
-│   ├── coding_assistant/           # CodingAssistant (코드 생성 + 자동 파일 저장)
-│   └── verifier/                   # VerificationAgent (코드 검증)
-├── a2a_local/                      # A2A 프로토콜 브릿지 (a2a-sdk 충돌 방지)
-├── mcp_servers/                    # MCP 서버
-│   └── code_tools/                 # 파일 I/O, 코드 검색, 코드 실행
-├── eval_pipeline/                  # DeepEval 기반 평가 파이프라인 (Langfuse 연동)
-├── cli/                            # 대화형 CLI (prompt-toolkit + rich)
-├── scripts/                        # 스텝별 실행 엔트리포인트
+youngs75_coding_ai_agent/
+├── coding_agent/                   # 메인 패키지
+│   ├── core/                       # 공통 프레임워크 (BaseGraphAgent, MCP Loader)
+│   │   ├── memory/                 # CoALA 4종 메모리 시스템
+│   │   ├── skills/                 # 3-Level 스킬 시스템 (자동 활성화)
+│   │   ├── middleware/             # LLM 미들웨어 체인
+│   │   └── subagents/             # SubAgent 동적 선택 레지스트리
+│   ├── agents/                     # 에이전트 구현체
+│   │   ├── orchestrator/           # Orchestrator (기본 에이전트, Planner 경유 라우팅)
+│   │   ├── planner/               # Planner (아키텍처 설계 + 태스크 분해)
+│   │   ├── coding_assistant/       # CodingAssistant (코드 생성 + 자동 파일 저장)
+│   │   └── verifier/              # VerificationAgent (코드 검증)
+│   ├── a2a/                        # A2A 프로토콜 브릿지
+│   ├── mcp_servers/                # MCP 서버
+│   │   └── code_tools/            # 파일 I/O, 코드 검색, 코드 실행
+│   ├── eval_pipeline/              # DeepEval 기반 평가 파이프라인 (Langfuse 연동)
+│   ├── cli/                        # 대화형 CLI (prompt-toolkit + rich)
+│   ├── utils/                      # 유틸리티 (로깅, 환경변수)
+│   └── scripts/                    # 스텝별 실행 엔트리포인트
 ├── tests/                          # 테스트 (960+ passed)
 ├── docs/                           # 문서 (Architecture, API, User Guide)
 ├── docker/                         # Docker Compose Harness (통합 구성)

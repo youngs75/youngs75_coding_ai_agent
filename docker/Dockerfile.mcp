@@ -22,11 +22,8 @@ RUN pip install --no-cache-dir \
 COPY tests/run_code_tools_mcp.py /app/run_code_tools_mcp.py
 
 # code_tools 패키지 구조
-RUN mkdir -p /app/coding_agent/mcp_servers/code_tools \
-    && touch /app/coding_agent/__init__.py \
-    && touch /app/coding_agent/mcp_servers/__init__.py
-COPY mcp_servers/__init__.py /app/coding_agent/mcp_servers/__init__.py
-COPY mcp_servers/code_tools/ /app/coding_agent/mcp_servers/code_tools/
+COPY coding_agent/__init__.py /app/coding_agent/__init__.py
+COPY coding_agent/mcp_servers/ /app/coding_agent/mcp_servers/
 
 ENV PYTHONPATH=/app
 

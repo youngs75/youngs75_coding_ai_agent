@@ -110,6 +110,8 @@ services:
     restart: unless-stopped
     ports:
       - "18084:18084"
+    env_file:
+      - ../.env
     environment:
       - AGENT_PORT=18084
       - CODE_TOOLS_MCP_URL=http://mcp-server:3003/mcp/
@@ -117,7 +119,6 @@ services:
       # LiteLLM Proxy 경유
       - LITELLM_PROXY_URL=http://litellm-proxy:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
-      - LLM_PROVIDER=${LLM_PROVIDER:-dashscope}
       # Phase 11 설정
       - HOOK_CONFIG_PATH=${HOOK_CONFIG_PATH:-}
       - TOOL_PERMISSIONS_PATH=${TOOL_PERMISSIONS_PATH:-}
@@ -125,7 +126,7 @@ services:
       - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
     volumes:
       - workspace_data:/workspace
-    command: ["python", "-m", "coding_agent.tests.run_coding_assistant_server"]
+    command: ["python", "tests/run_coding_assistant_server.py"]
     depends_on:
       mcp-server:
         condition: service_healthy
@@ -152,14 +153,15 @@ services:
     restart: unless-stopped
     ports:
       - "18080:18080"
+    env_file:
+      - ../.env
     environment:
       - ORCH_PORT=18080
       - CODING_ASSISTANT_URL=http://agent-coding-assistant:18084
       - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
       - LITELLM_PROXY_URL=http://litellm-proxy:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
-      - LLM_PROVIDER=${LLM_PROVIDER:-dashscope}
-    command: ["python", "-m", "coding_agent.tests.run_orchestrator_server"]
+    command: ["python", "tests/run_orchestrator_server.py"]
     depends_on:
       agent-coding-assistant:
         condition: service_healthy

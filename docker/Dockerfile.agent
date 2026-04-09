@@ -26,15 +26,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock /app/
 
 # ── 소스 코드 복사 ──
-COPY __init__.py /app/
-COPY core/ /app/core/
-COPY agents/ /app/agents/
-COPY a2a_local/ /app/a2a_local/
-COPY mcp_servers/ /app/mcp_servers/
-COPY cli/ /app/cli/
-COPY utils/ /app/utils/
-COPY scripts/ /app/scripts/
-COPY eval_pipeline/ /app/eval_pipeline/
+COPY coding_agent/ /app/coding_agent/
 COPY tests/ /app/tests/
 COPY data/skills/ /app/data/skills/
 
@@ -49,4 +41,4 @@ ENV SKILLS_DIR=/app/data/skills
 
 EXPOSE 18080
 
-CMD ["python", "-m", "coding_agent.tests.run_coding_assistant_server"]
+CMD ["python", "tests/run_coding_assistant_server.py"]

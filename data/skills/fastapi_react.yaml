@@ -183,6 +183,9 @@ body: |
   - **get_db dependency override 누락** → 테스트가 프로덕션 DB 사용
   - **from_attributes=True 누락** → ORM 객체가 Pydantic 모델로 변환 안 됨
   - **async def vs def 혼용** → 동기 함수는 쓰레드풀에서 실행되어 성능 저하
+  - **API 메서드 불일치** → 백엔드 `@router.post` vs 프론트 `api.put()` → 405 에러
+  - **함수 시그니처 불일치** → 호출부 인자와 정의 파라미터 불일치 → 런타임 에러
+  - **외부 드래그&드롭 라이브러리 의존** → npm install 실패 위험, HTML5 네이티브 API 권장
 
   ## 코드 스타일
 

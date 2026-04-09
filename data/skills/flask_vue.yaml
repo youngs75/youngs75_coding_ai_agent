@@ -150,6 +150,99 @@ body: |
      export default api
      ```
 
+  6. **Pinia 스토어 패턴** (API 연동):
+     ```js
+     // src/stores/boardStore.js
+     import { ref } from 'vue'
+     import { defineStore } from 'pinia'
+     import api from '../api/client'
+
+     export const useBoardStore = defineStore('board', () => {
+       const boards = ref([])
+       const loading = ref(false)
+
+       async function fetchBoards() {
+         loading.value = true
+         try {
+           const { data } = await api.get('/boards')
+           boards.value = data
+         } finally {
+           loading.value = false
+         }
+       }
+
+       // ⚠ API 메서드는 백엔드 routes.py와 반드시 일치시킬 것
+       // POST /api/cards/<id>/move → api.post(`/cards/${id}/move`, ...)
+       // PUT /api/cards/<id> → api.put(`/cards/${id}`, ...)
+       async function moveCard(cardId, targetColumnId, newOrder) {
+         await api.post(`/cards/${cardId}/move`, {
+           target_column_id: targetColumnId, new_order: newOrder
+         })
+         await fetchBoards()  // 상태 갱신
+       }
+
+       return { boards, loading, fetchBoards, moveCard }
+     })
+     ```
+
+  7. **Vue 3 드래그&드롭** (HTML5 네이티브 — 외부 라이브러리 불필요):
+     ```vue
+     <!-- Column.vue — 드래그 대상(Card)을 감싸는 드롭 영역 -->
+     <template>
+       <div class="column"
+         @dragover.prevent
+         @drop="onDrop"
+       >
+         <h3>{{ column.title }}</h3>
+         <Card v-for="card in column.cards" :key="card.id"
+           :card="card" @dragstart="onDragStart($event, card)" />
+       </div>
+     </template>
+
+     <script setup>
+     import { useBoardStore } from '../stores/boardStore'
+     import Card from './Card.vue'
+
+     const props = defineProps({ column: Object })
+     const store = useBoardStore()
+
+     const onDragStart = (event, card) => {
+       event.dataTransfer.setData('cardId', card.id)
+       event.dataTransfer.setData('fromColumnId', card.column_id)
+     }
+
+     const onDrop = (event) => {
+       const cardId = Number(event.dataTransfer.getData('cardId'))
+       store.moveCard(cardId, props.column.id, 0)
+     }
+     </script>
+     ```
+
+     ```vue
+     <!-- Card.vue — 드래그 가능한 카드 -->
+     <template>
+       <div class="card" draggable="true"
+         @dragstart="$emit('dragstart', $event, card)">
+         <p>{{ card.title }}</p>
+       </div>
+     </template>
+
+     <script setup>
+     defineProps({ card: Object })
+     </script>
+     ```
+
+     **⚠ 드래그&드롭 필수 규칙**:
+     - `@dragover.prevent` 없으면 `@drop` 이벤트 발생 안 함
+     - `dataTransfer.setData/getData`로 카드 ID 전달
+     - 외부 라이브러리(vue3-smooth-dnd 등) 대신 HTML5 네이티브 API 사용 권장 — npm install 실패 위험 제거
+     - moveCard 호출 후 반드시 `fetchBoards()`로 상태 동기화
+
+  8. **컴포넌트 props/emit 규칙**:
+     - `defineProps()`로 타입 선언, `defineEmits()`로 이벤트 선언
+     - 부모→자식: props, 자식→부모: emit
+     - 스토어 직접 접근은 최상위 컴포넌트(Board.vue, App.vue)에서만
+
   ## 테스트 패턴
 
   **conftest.py** (반드시 생성):
@@ -210,6 +303,10 @@ body: |
   - **프론트엔드 axios 미import** → API 호출 시 ReferenceError
   - **Vite 프록시 미설정** → 개발 시 API 호출 실패 (CORS 또는 404)
   - **모델 필드명 불일치** → 백엔드 `title` vs 프론트 `name` → 데이터 미표시
+  - **API 메서드 불일치** → 백엔드 `POST /cards/<id>/move` vs 프론트 `api.put(...)` → 405 에러
+  - **vue3-smooth-dnd 의존성 실패** → npm install 에러, HTML5 네이티브 API 사용 권장
+  - **Pinia 스토어 함수 시그니처 불일치** → `createColumn(boardId, {title})` 호출 vs `createColumn(boardId, title, order)` 정의
+  - **package.json에 index.html 누락** → Vite 빌드 시 진입점 없음 에러
 
   ## 코드 스타일
 

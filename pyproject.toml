@@ -2,31 +2,9 @@
 requires = ["setuptools>=70"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.package-dir]
-"coding_agent" = "."
-"coding_agent.core" = "core"
-"coding_agent.core.memory" = "core/memory"
-"coding_agent.core.skills" = "core/skills"
-"coding_agent.core.subagents" = "core/subagents"
-"coding_agent.agents" = "agents"
-"coding_agent.agents.coding_assistant" = "agents/coding_assistant"
-"coding_agent.agents.deep_research" = "agents/deep_research"
-"coding_agent.agents.deep_research.nodes" = "agents/deep_research/nodes"
-"coding_agent.agents.deep_research.subgraphs" = "agents/deep_research/subgraphs"
-"coding_agent.agents.orchestrator" = "agents/orchestrator"
-"coding_agent.agents.simple_react" = "agents/simple_react"
-"coding_agent.a2a" = "a2a_local"
-"coding_agent.eval_pipeline" = "eval_pipeline"
-"coding_agent.eval_pipeline.llm" = "eval_pipeline/llm"
-"coding_agent.eval_pipeline.loop1_dataset" = "eval_pipeline/loop1_dataset"
-"coding_agent.eval_pipeline.loop2_evaluation" = "eval_pipeline/loop2_evaluation"
-"coding_agent.eval_pipeline.loop3_remediation" = "eval_pipeline/loop3_remediation"
-"coding_agent.eval_pipeline.observability" = "eval_pipeline/observability"
-"coding_agent.mcp_servers" = "mcp_servers"
-"coding_agent.mcp_servers.code_tools" = "mcp_servers/code_tools"
-"coding_agent.cli" = "cli"
-"coding_agent.utils" = "utils"
-"coding_agent.scripts" = "scripts"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["coding_agent*"]
 
 [project]
 name = "youngs75-coding-ai-agent"

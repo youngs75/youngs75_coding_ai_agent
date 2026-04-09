@@ -16,7 +16,7 @@
 # ── 초기 설정 ──
 
 setup: ## 원커맨드 초기 설정 (Python + 의존성 + .env + MCP)
-	@bash scripts/setup.sh
+	@bash coding_agent/scripts/setup.sh
 
 # ── 린트 & 포맷 ──
 
@@ -57,7 +57,7 @@ ps: ## Docker 서비스 상태 확인
 	cd docker && docker compose ps
 
 health-check: ## 모든 서비스 헬스체크
-	@bash scripts/health_check.sh
+	@bash coding_agent/scripts/health_check.sh
 
 cli: ## 대화형 CLI 실행 (Docker 우선, 로컬 폴백)
 	@bash youngs75-agent.sh
