@@ -182,7 +182,10 @@ class PlannerAgent(BaseGraphAgent):
         mw_request = MWRequest(
             system_message=ANALYZE_SYSTEM_PROMPT,
             messages=[HumanMessage(content=user_request)],
-            metadata={"purpose": "planning"},
+            metadata={
+                "purpose": "planning",
+                "request_timeout": self._planner_config.get_request_timeout("planning"),
+            },
         )
         mw_response = await self._middleware_chain.invoke(mw_request, model)
         response = mw_response.message
@@ -434,7 +437,10 @@ class PlannerAgent(BaseGraphAgent):
                 research_context=research_str,
             ),
             messages=[HumanMessage(content=user_request)],
-            metadata={"purpose": "planning"},
+            metadata={
+                "purpose": "planning",
+                "request_timeout": self._planner_config.get_request_timeout("planning"),
+            },
         )
         mw_response = await self._middleware_chain.invoke(mw_request, model)
         response = mw_response.message

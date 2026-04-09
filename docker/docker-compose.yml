@@ -158,11 +158,17 @@ services:
     environment:
       - ORCH_PORT=18080
       - CODING_ASSISTANT_URL=http://agent-coding-assistant:18084
+      - CODE_TOOLS_MCP_URL=http://mcp-server:3003/mcp/
+      - CODE_TOOLS_WORKSPACE=/workspace
       - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
       - LITELLM_PROXY_URL=http://litellm-proxy:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
+    volumes:
+      - workspace_data:/workspace
     command: ["python", "tests/run_orchestrator_server.py"]
     depends_on:
+      mcp-server:
+        condition: service_healthy
       agent-coding-assistant:
         condition: service_healthy
       litellm-proxy:

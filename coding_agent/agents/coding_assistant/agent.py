@@ -380,9 +380,11 @@ class CodingAssistantAgent(BaseGraphAgent):
             )
 
         # Structured Output으로 파싱 결과를 Pydantic 모델로 강제
+        # method="function_calling": response_format(json_schema) 대신 tool_calls 사용
+        # → OpenAI SDK의 ParsedChatCompletionMessage.parsed 직렬화 경고 방지
         try:
             structured_model = self._get_parse_model().with_structured_output(
-                ParseResultModel
+                ParseResultModel, method="function_calling"
             )
             response = await structured_model.ainvoke(messages)
             parse_result = response.model_dump()
@@ -602,6 +604,16 @@ class CodingAssistantAgent(BaseGraphAgent):
             context_parts.append(
                 "\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issue_strs)
             )
+            # 이전 생성 코드를 포함하여 LLM이 read_file 없이도 수정 가능하게 함
+            prev_code = state.get("generated_code", "")
+            if prev_code:
+                # 토큰 폭발 방지: 최대 8000자
+                truncated = prev_code[:8000]
+                if len(prev_code) > 8000:
+                    truncated += f"\n\n... (총 {len(prev_code)}자 중 8000자만 표시)"
+                context_parts.append(
+                    f"\n이전에 생성한 코드 (위 문제를 수정하세요):\n```\n{truncated}\n```"
+                )
             context_parts.append("위 문제를 수정하여 다시 코드를 작성하세요.")
 
         return HumanMessage(content="\n".join(context_parts))
@@ -616,6 +628,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         task_type = parse_result.get("task_type", "generate")
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
+
 
         # generate/scaffold/analyze 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
         # generate_final(STRONG)이 직접 코드를 생성한다.
@@ -646,6 +659,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             messages=sanitized,
             state=dict(state),
             model_name="tool_planning",
+            metadata={
+                "purpose": "tool_planning",
+                "request_timeout": self._coding_config.get_request_timeout("tool_planning"),
+            },
         )
 
         try:
@@ -746,7 +763,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         try:
             manifest_model = self._get_parse_model().with_structured_output(
-                FileManifest
+                FileManifest, method="function_calling"
             )
             response = await manifest_model.ainvoke([
                 SystemMessage(content=self._MANIFEST_SYSTEM_PROMPT),
@@ -801,6 +818,9 @@ class CodingAssistantAgent(BaseGraphAgent):
         DeepAgents 패턴: LLM이 write_file 도구를 호출하면 MCP 서버가
         즉시 디스크에 저장. 마크다운 파싱 불필요.
         """
+        # execute 단계의 stall 카운트를 리셋 — generate는 별개 단계
+        self._stall_detector.reset()
+
         system_prompt = self._build_execute_system_prompt(
             state, purpose="generate"
         )
@@ -861,6 +881,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                 messages=loop_messages,
                 state=dict(state),
                 model_name="generation",
+                metadata={
+                    "purpose": "generation",
+                    "request_timeout": self._coding_config.get_request_timeout("generation"),
+                },
             )
 
             try:
@@ -1178,7 +1202,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 # Structured Output으로 검증 결과를 Pydantic 모델로 강제
                 try:
                     structured_model = self._get_verify_model().with_structured_output(
-                        VerifyResultModel
+                        VerifyResultModel, method="function_calling"
                     )
                     response = await structured_model.ainvoke(messages)
                     verify_result = response.model_dump()
@@ -1231,6 +1255,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             "verify_result": verify_result,
             "execution_log": log,
             "iteration": state.get("iteration", 0) + 1,
+            # 이전 exit_reason 클리어 — 재시도 시 잔존하면 _should_retry가 즉시 탈출함
+            "exit_reason": "",
+            # 현재 생성 코드를 _prev로 저장 — 테스트 실패 시 동일 코드 반복 감지용
+            "_prev_generated_code": generated_code,
         }
 
         # 검증 실패 시 written_files 초기화 (재생성 시 새로 쓰도록)
@@ -2144,12 +2172,17 @@ class CodingAssistantAgent(BaseGraphAgent):
             return self.get_node_name("APPLY_CODE")
         if iteration >= max_iterations:
             return self.get_node_name("APPLY_CODE")
+        # StallDetector FORCE_EXIT 등 안전장치 발동 시 재시도하지 않고 현재 코드로 진행
+        exit_reason = state.get("exit_reason", "")
+        if exit_reason:
+            return self.get_node_name("APPLY_CODE")
         return self.get_node_name("EXECUTE")
 
     def _should_retry_tests(self, state: CodingState) -> str:
         """실행 기반 테스트 실패 시 수정 루프를 결정한다.
 
         테스트 통과 → END
+        테스트 실패 + exit_reason 설정됨 → END (안전장치 발동, 재시도 무의미)
         테스트 실패 + iteration 남음 → GENERATE_FINAL (에러 메시지가 messages에 주입됨)
         테스트 실패 + iteration 소진 → END (최선의 결과로 종료)
         """
@@ -2158,6 +2191,14 @@ class CodingAssistantAgent(BaseGraphAgent):
         max_iterations = state.get("max_iterations", 3)
 
         if test_passed:
+            return END
+
+        # StallDetector FORCE_EXIT 등 안전장치 발동 시 재시도하지 않고 종료
+        exit_reason = state.get("exit_reason", "")
+        if exit_reason:
+            logging.getLogger(__name__).warning(
+                "[run_tests] exit_reason=%s — 재시도 없이 종료", exit_reason
+            )
             return END
 
         if iteration >= max_iterations:

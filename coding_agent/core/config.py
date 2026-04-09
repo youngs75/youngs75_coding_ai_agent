@@ -84,6 +84,10 @@ class BaseAgentConfig(BaseModel):
         """목적에 해당하는 TierConfig를 반환한다."""
         return resolve_tier_config(purpose, self.model_tiers, self.purpose_tiers)
 
+    def get_request_timeout(self, purpose: str = "default") -> float:
+        """목적에 해당하는 LLM 요청 타임아웃(초)을 반환한다."""
+        return self.get_tier_config(purpose).request_timeout
+
     def get_mcp_endpoint(self, server_name: str) -> str | None:
         """MCP 서버 엔드포인트를 반환한다."""
         return self.mcp_servers.get(server_name)

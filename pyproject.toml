@@ -52,3 +52,9 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 reruns = 2
 reruns_delay = 3
+# eval 테스트는 외부 서비스(Langfuse, DeepEval)가 필요하므로 기본 실행에서 제외
+# 명시 실행: pytest tests/eval/
+addopts = "--ignore=tests/eval"
+markers = [
+    "eval: 평가 파이프라인 테스트 (외부 서비스 필요)",
+]

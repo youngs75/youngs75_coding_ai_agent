@@ -223,7 +223,10 @@ class VerificationAgent(BaseGraphAgent):
             mw_request = MWRequest(
                 system_message=REVIEW_SYSTEM_PROMPT,
                 messages=[HumanMessage(content=review_context)],
-                metadata={"purpose": "verification"},
+                metadata={
+                    "purpose": "verification",
+                    "request_timeout": self._verifier_config.get_request_timeout("verification"),
+                },
             )
             mw_response = await asyncio.wait_for(
                 self._middleware_chain.invoke(mw_request, self.model),

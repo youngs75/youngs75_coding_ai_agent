@@ -477,7 +477,9 @@ def create_chat_model(
         )
 
     if structured:
-        llm = llm.with_structured_output(structured, include_raw=True)
+        llm = llm.with_structured_output(
+            structured, method="function_calling", include_raw=True
+        )
 
     return llm
 

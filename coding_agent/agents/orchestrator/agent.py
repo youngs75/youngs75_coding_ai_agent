@@ -140,7 +140,10 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
         mw_request = MWRequest(
             system_message=system_prompt,
             messages=[HumanMessage(content=user_message)],
-            metadata={"purpose": "classification"},
+            metadata={
+                "purpose": "classification",
+                "request_timeout": oc.get_request_timeout("parsing"),
+            },
         )
         mw_response = await _middleware_chain.invoke(mw_request, llm)
         response = mw_response.message

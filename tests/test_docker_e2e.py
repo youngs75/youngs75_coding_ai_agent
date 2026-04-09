@@ -1,14 +1,18 @@
 """
-Docker E2E 테스트 — CLI → Agent → MCP 서비스 체인 검증
+Docker E2E 테스트 — Harness 통합 구성 검증
 
 pytest 기반으로 Docker 환경의 전체 서비스 연동을 검증한다.
 Docker 컨테이너가 실행 중이지 않으면 모든 테스트를 자동 skip 처리한다.
 
-실행 (Docker 컨테이너 기동 후):
-  cd coding_agent/docker && docker compose up -d
-  python -m pytest tests/test_docker_e2e.py -v
+현재 Harness 구성:
+  1. litellm-db      (내부)    — PostgreSQL
+  2. litellm-proxy   (:4000)  — LLM Gateway + Langfuse 트레이싱
+  3. mcp-server      (:3003)  — 통합 MCP (코드 도구 + 검색)
+  4. agent-coding    (:18084) — CodingAssistant (샌드박스 + CLI)
+  5. orchestrator    (:18080) — Orchestrator 에이전트
 
-로컬 환경 (Docker 없이) 실행 시 모든 테스트 skip:
+실행 (Docker 컨테이너 기동 후):
+  make up
   python -m pytest tests/test_docker_e2e.py -v
 """
 
@@ -21,30 +25,29 @@ from typing import Any
 import httpx
 import pytest
 
-# ─── 서비스 엔드포인트 정의 ──────────────────────────────
+# ─── 서비스 엔드포인트 정의 (Harness 통합 구성) ──────────
 
 MCP_SERVICES: dict[str, str] = {
-    "Tavily": "http://localhost:3001",
-    "arXiv": "http://localhost:3000",
-    "Serper": "http://localhost:3002",
+    "CodeTools": "http://localhost:3003",
 }
 
 AGENT_SERVICES: dict[str, str] = {
-    "SimpleReAct": "http://localhost:18081",
-    "DeepResearch": "http://localhost:18082",
-    "DeepResearchA2A": "http://localhost:18083",
+    "CodingAssistant": "http://localhost:18084",
+    "Orchestrator": "http://localhost:18080",
 }
 
-ALL_SERVICES: dict[str, str] = {**MCP_SERVICES, **AGENT_SERVICES}
+INFRA_SERVICES: dict[str, str] = {
+    "LiteLLM": "http://localhost:4000",
+}
+
+ALL_SERVICES: dict[str, str] = {**MCP_SERVICES, **AGENT_SERVICES, **INFRA_SERVICES}
 
 # Docker 내부 네트워크 서비스명 → 포트 매핑 (docker-compose.yml 기준)
 DOCKER_INTERNAL_ENDPOINTS: dict[str, str] = {
-    "mcp-tavily": "http://mcp-tavily:3001",
-    "mcp-arxiv": "http://mcp-arxiv:3000",
-    "mcp-serper": "http://mcp-serper:3002",
-    "agent-simple-react": "http://agent-simple-react:18081",
-    "agent-deep-research": "http://agent-deep-research:18082",
-    "agent-deep-research-a2a": "http://agent-deep-research-a2a:18083",
+    "mcp-server": "http://mcp-server:3003",
+    "agent-coding-assistant": "http://agent-coding-assistant:18084",
+    "orchestrator": "http://orchestrator:18080",
+    "litellm-proxy": "http://litellm-proxy:4000",
 }
 
 
@@ -62,10 +65,17 @@ async def _is_service_reachable(url: str, timeout: float = 2.0) -> bool:
                     return True
             except httpx.HTTPError:
                 pass
+            # LiteLLM은 /health/liveliness
+            try:
+                resp = await client.get(f"{url}/health/liveliness")
+                if resp.status_code == 200:
+                    return True
+            except httpx.HTTPError:
+                pass
             # MCP 서버는 /mcp 엔드포인트 사용
             try:
                 resp = await client.get(f"{url}/mcp")
-                return resp.status_code in (200, 405)
+                return resp.status_code in (200, 405, 406)
             except httpx.HTTPError:
                 return False
     except Exception:
@@ -133,7 +143,7 @@ async def docker_available():
     """Docker 서비스가 실행 중인지 확인하는 모듈 레벨 픽스처."""
     available = await _check_any_service_running()
     if not available:
-        pytest.skip("Docker 서비스가 실행 중이지 않습니다 (docker compose up -d 필요)")
+        pytest.skip("Docker 서비스가 실행 중이지 않습니다 (make up 필요)")
     return True
 
 
@@ -148,7 +158,7 @@ async def _skip_if_service_down(url: str, name: str):
 
 
 class TestMCPServiceHealth:
-    """MCP 서버 3종의 접근성을 검증한다."""
+    """통합 MCP 서버의 접근성을 검증한다."""
 
     @pytest.mark.parametrize("name,url", list(MCP_SERVICES.items()))
     async def test_mcp_service_reachable(self, docker_available, name: str, url: str):
@@ -156,38 +166,27 @@ class TestMCPServiceHealth:
         await _skip_if_service_down(url, name)
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{url}/mcp")
-            # MCP 서버는 GET /mcp에 대해 응답 (405 또는 200)
             assert resp.status_code in (200, 405), (
                 f"{name}: 예상치 못한 상태 {resp.status_code}"
             )
 
-    @pytest.mark.parametrize(
-        "name,url",
-        [
-            ("Tavily", "http://localhost:3001"),
-            ("Serper", "http://localhost:3002"),
-        ],
-    )
-    async def test_mcp_with_env_keys(self, docker_available, name: str, url: str):
-        """API 키가 필요한 MCP 서비스가 정상 기동되었는지 확인한다.
-
-        Tavily/Serper는 환경변수(API 키)가 설정되어야 정상 동작한다.
-        기동 자체가 되었으면 env_file에서 키를 올바르게 읽은 것이다.
-        """
-        await _skip_if_service_down(url, name)
-        reachable = await _is_service_reachable(url)
-        assert reachable, f"{name}: 서비스 기동 실패 (API 키 누락 가능)"
+    async def test_mcp_health_endpoint(self, docker_available):
+        """MCP 서버의 /health 엔드포인트가 정상 응답하는지 확인한다."""
+        url = MCP_SERVICES["CodeTools"]
+        await _skip_if_service_down(url, "CodeTools MCP")
+        health = await _get_health(url)
+        assert health is not None, "CodeTools MCP: /health 응답 없음"
 
 
 # ─── Agent 서비스 헬스체크 테스트 ────────────────────────
 
 
 class TestAgentServiceHealth:
-    """Agent 서버 3종의 /health 엔드포인트를 검증한다."""
+    """Agent 서버의 /health 엔드포인트를 검증한다."""
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
     async def test_agent_health_endpoint(self, docker_available, name: str, url: str):
-        """/health 엔드포인트가 status=healthy를 반환하는지 확인한다."""
+        """/health 엔드포인트가 정상 응답하는지 확인한다."""
         await _skip_if_service_down(url, name)
         health = await _get_health(url)
         assert health is not None, f"{name}: /health 응답 없음"
@@ -197,12 +196,27 @@ class TestAgentServiceHealth:
     async def test_agent_health_includes_metadata(
         self, docker_available, name: str, url: str
     ):
-        """/health 응답에 agent 이름과 port 정보가 포함되는지 확인한다."""
+        """/health 응답에 agent 이름과 status 정보가 포함되는지 확인한다."""
         await _skip_if_service_down(url, name)
         health = await _get_health(url)
         assert health is not None
         assert "agent" in health, f"{name}: agent 필드 누락"
-        assert "port" in health, f"{name}: port 필드 누락"
+        assert "status" in health, f"{name}: status 필드 누락"
+
+
+# ─── Infra 서비스 헬스체크 테스트 ────────────────────────
+
+
+class TestInfraServiceHealth:
+    """LiteLLM Proxy 등 인프라 서비스 검증."""
+
+    async def test_litellm_health(self, docker_available):
+        """LiteLLM Proxy의 /health/liveliness 엔드포인트가 응답하는지 확인한다."""
+        url = INFRA_SERVICES["LiteLLM"]
+        await _skip_if_service_down(url, "LiteLLM")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{url}/health/liveliness")
+            assert resp.status_code == 200, f"LiteLLM: {resp.status_code}"
 
 
 # ─── AgentCard (A2A 프로토콜) 테스트 ────────────────────
@@ -257,27 +271,25 @@ class TestA2AProtocol:
         result = await _send_a2a_message(
             url, "안녕하세요, 간단히 테스트입니다.", timeout=120.0
         )
-        # JSON-RPC 응답 구조 확인
         assert "jsonrpc" in result, "jsonrpc 필드 누락"
         assert result["jsonrpc"] == "2.0"
-        # result 또는 error 중 하나는 있어야 함
         assert "result" in result or "error" in result, "result/error 필드 모두 누락"
 
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
-    async def test_simple_react_query(self, docker_available):
-        """SimpleReAct 에이전트에 검색 질의가 정상 처리되는지 확인한다."""
-        url = AGENT_SERVICES["SimpleReAct"]
-        await _skip_if_service_down(url, "SimpleReAct")
+    async def test_orchestrator_query(self, docker_available):
+        """Orchestrator에 질의가 정상 처리되는지 확인한다."""
+        url = AGENT_SERVICES["Orchestrator"]
+        await _skip_if_service_down(url, "Orchestrator")
         result = await _send_a2a_message(url, "Python GIL이란?", timeout=120.0)
         assert "result" in result, f"에러 응답: {result.get('error')}"
 
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
-    async def test_deep_research_query(self, docker_available):
-        """DeepResearch 에이전트에 연구 질의가 정상 처리되는지 확인한다."""
-        url = AGENT_SERVICES["DeepResearch"]
-        await _skip_if_service_down(url, "DeepResearch")
+    async def test_coding_assistant_query(self, docker_available):
+        """CodingAssistant에 코드 생성 질의가 정상 처리되는지 확인한다."""
+        url = AGENT_SERVICES["CodingAssistant"]
+        await _skip_if_service_down(url, "CodingAssistant")
         result = await _send_a2a_message(
-            url, "LLM이란 무엇인가 한 문장으로 설명해줘", timeout=120.0
+            url, "피보나치 함수를 Python으로 작성해줘", timeout=180.0
         )
         assert "result" in result, f"에러 응답: {result.get('error')}"
 
@@ -286,11 +298,7 @@ class TestA2AProtocol:
 
 
 class TestCLIToAgentChain:
-    """CLI 컨테이너에서 Agent 서비스로의 연동 체인을 검증한다.
-
-    CLI는 대화형 모드이므로 직접 호출 대신,
-    Agent 서비스의 A2A 엔드포인트를 통한 간접 검증을 수행한다.
-    """
+    """CLI 컨테이너에서 Agent 서비스로의 연동 체인을 검증한다."""
 
     @pytest.mark.parametrize("name,url", list(AGENT_SERVICES.items()))
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
@@ -299,7 +307,6 @@ class TestCLIToAgentChain:
     ):
         """CLI가 보내는 것과 동일한 형식의 A2A 요청을 Agent가 수락하는지 확인한다."""
         await _skip_if_service_down(url, name)
-        # CLI에서 사용하는 A2AClient 형식과 동일한 요청
         request_payload = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
@@ -318,65 +325,22 @@ class TestCLIToAgentChain:
             data = resp.json()
             assert data.get("jsonrpc") == "2.0"
 
-    async def test_cli_available_agents_match_docker_services(self):
-        """docker-compose의 Agent 서비스와 CLI AVAILABLE_AGENTS 매핑이 일관적인지 확인한다.
-
-        CLI 코드에 정의된 에이전트 목록이 Docker에서 실행되는 서비스를 커버하는지
-        구조적으로 검증한다 (코드 import 기반 검증, Docker 미실행시에도 동작).
-        """
-        from coding_agent.cli.commands import AVAILABLE_AGENTS
-
-        # Docker에서 실행되는 에이전트 타입에 대응하는 CLI 에이전트 이름
-        docker_to_cli_mapping = {
-            "SimpleReAct": "simple_react",
-            "DeepResearch": "deep_research",
-            # DeepResearchA2A는 deep_research의 A2A 래퍼
-        }
-        for docker_name, cli_name in docker_to_cli_mapping.items():
-            assert cli_name in AVAILABLE_AGENTS, (
-                f"Docker 서비스 {docker_name}에 대응하는 '{cli_name}'이 "
-                f"AVAILABLE_AGENTS에 없음: {AVAILABLE_AGENTS}"
-            )
-
 
 # ─── Agent → MCP 서비스 체인 테스트 ─────────────────────
 
 
 class TestAgentToMCPChain:
-    """Agent 서비스가 MCP 도구를 정상적으로 호출하는지 검증한다.
-
-    Agent에게 MCP 도구 사용이 필요한 질의를 보내서
-    전체 체인(Agent → MCP)이 동작하는지 확인한다.
-    """
+    """Agent 서비스가 MCP 도구를 정상적으로 호출하는지 검증한다."""
 
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
-    async def test_simple_react_uses_tavily_mcp(self, docker_available):
-        """SimpleReAct가 Tavily MCP를 통해 검색을 수행하는지 확인한다.
-
-        SimpleReAct는 TAVILY_MCP_URL을 통해 Tavily MCP에 연결된다.
-        검색 질의를 보내면 MCP 도구를 호출하여 결과를 반환해야 한다.
-        """
-        url = AGENT_SERVICES["SimpleReAct"]
-        await _skip_if_service_down(url, "SimpleReAct")
-        await _skip_if_service_down(MCP_SERVICES["Tavily"], "Tavily MCP")
+    async def test_orchestrator_e2e_with_mcp(self, docker_available):
+        """Orchestrator → CodingAssistant → MCP 전체 체인이 동작하는지 확인한다."""
+        url = AGENT_SERVICES["Orchestrator"]
+        await _skip_if_service_down(url, "Orchestrator")
+        await _skip_if_service_down(MCP_SERVICES["CodeTools"], "CodeTools MCP")
 
         result = await _send_a2a_message(
-            url, "2026년 AI 최신 뉴스 1개만 검색해줘", timeout=180.0
-        )
-        assert "result" in result, f"Agent→MCP 체인 실패: {result.get('error')}"
-
-    @pytest.mark.flaky(reruns=3, reruns_delay=5)
-    async def test_deep_research_uses_multiple_mcp(self, docker_available):
-        """DeepResearch가 여러 MCP 서비스를 활용하는지 확인한다.
-
-        DeepResearch는 Tavily + arXiv + Serper MCP에 모두 연결되어 있다.
-        복합 질의를 보내면 다중 MCP 도구를 활용해야 한다.
-        """
-        url = AGENT_SERVICES["DeepResearch"]
-        await _skip_if_service_down(url, "DeepResearch")
-
-        result = await _send_a2a_message(
-            url, "양자 컴퓨팅 최신 동향을 한 문장으로 요약해줘", timeout=180.0
+            url, "간단한 hello world Python 스크립트를 만들어줘", timeout=180.0
         )
         assert "result" in result, f"Agent→MCP 체인 실패: {result.get('error')}"
 
@@ -385,7 +349,7 @@ class TestAgentToMCPChain:
 
 
 class TestNetworkConnectivity:
-    """Docker 네트워크(youngs75_net) 내 서비스 간 연결성을 검증한다."""
+    """Docker 네트워크(harness_net) 내 서비스 간 연결성을 검증한다."""
 
     @pytest.mark.parametrize("name,url", list(ALL_SERVICES.items()))
     async def test_service_port_exposed(self, docker_available, name: str, url: str):
@@ -396,7 +360,7 @@ class TestNetworkConnectivity:
         assert reachable
 
     async def test_all_mcp_services_healthy(self, docker_available):
-        """모든 MCP 서비스가 동시에 응답하는지 확인한다 (의존성 동시성 검증)."""
+        """모든 MCP 서비스가 동시에 응답하는지 확인한다."""
         results = {}
         for name, url in MCP_SERVICES.items():
             results[name] = await _is_service_reachable(url)
@@ -420,8 +384,8 @@ class TestErrorHandling:
 
     async def test_agent_returns_error_on_invalid_method(self, docker_available):
         """잘못된 JSON-RPC 메서드에 대해 에러 응답을 반환하는지 확인한다."""
-        url = AGENT_SERVICES["SimpleReAct"]
-        await _skip_if_service_down(url, "SimpleReAct")
+        url = AGENT_SERVICES["Orchestrator"]
+        await _skip_if_service_down(url, "Orchestrator")
 
         invalid_payload = {
             "jsonrpc": "2.0",
@@ -431,7 +395,6 @@ class TestErrorHandling:
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json=invalid_payload)
-            # 서버가 에러 응답을 반환하거나 4xx/5xx를 반환해야 함
             if resp.status_code == 200:
                 data = resp.json()
                 assert "error" in data, "잘못된 메서드에 대해 error 응답 필요"
@@ -440,8 +403,8 @@ class TestErrorHandling:
 
     async def test_agent_handles_empty_message(self, docker_available):
         """빈 메시지를 보냈을 때 서버가 크래시하지 않는지 확인한다."""
-        url = AGENT_SERVICES["SimpleReAct"]
-        await _skip_if_service_down(url, "SimpleReAct")
+        url = AGENT_SERVICES["Orchestrator"]
+        await _skip_if_service_down(url, "Orchestrator")
 
         empty_payload = {
             "jsonrpc": "2.0",
@@ -457,7 +420,6 @@ class TestErrorHandling:
         }
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(url, json=empty_payload)
-            # 크래시 없이 응답 (200 정상 응답 또는 에러 코드)
             assert resp.status_code < 600, f"서버 크래시: {resp.status_code}"
 
     async def test_health_returns_quickly(self, docker_available):
@@ -529,7 +491,6 @@ class TestDockerConfigValidation:
         assert "harness_net" in networks, "harness_net 네트워크 미정의"
 
         for svc_name, svc_config in config.get("services", {}).items():
-            # profiles로 분리된 서비스(eval-runner) 제외
             if svc_config.get("profiles"):
                 continue
             svc_networks = svc_config.get("networks", [])
@@ -551,12 +512,10 @@ class TestDockerConfigValidation:
 
         services = config.get("services", {})
 
-        # agent-coding-assistant → mcp-server, litellm-proxy
         agent_deps = services.get("agent-coding-assistant", {}).get("depends_on", {})
         assert "mcp-server" in agent_deps, "CodingAssistant: mcp-server 의존성 누락"
         assert "litellm-proxy" in agent_deps, "CodingAssistant: litellm-proxy 의존성 누락"
 
-        # orchestrator → agent-coding-assistant, litellm-proxy
         orch_deps = services.get("orchestrator", {}).get("depends_on", {})
         assert "agent-coding-assistant" in orch_deps, "Orchestrator: agent-coding-assistant 의존성 누락"
 
@@ -620,14 +579,10 @@ class TestIntegrationScenario:
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_full_chain_health_then_query(self, docker_available):
         """MCP 헬스 → Agent 헬스 → AgentCard → 질의 순서의 전체 흐름을 검증한다."""
-        # 1단계: MCP 서비스 중 하나라도 정상인지 확인
-        mcp_any_ok = False
-        for name, url in MCP_SERVICES.items():
-            if await _is_service_reachable(url):
-                mcp_any_ok = True
-                break
-        if not mcp_any_ok:
-            pytest.skip("MCP 서비스 모두 미실행")
+        # 1단계: MCP 서비스 정상인지 확인
+        mcp_url = MCP_SERVICES["CodeTools"]
+        if not await _is_service_reachable(mcp_url):
+            pytest.skip("MCP 서비스 미실행")
 
         # 2단계: Agent 서비스 중 하나라도 정상인지 확인
         target_agent = None
@@ -651,24 +606,14 @@ class TestIntegrationScenario:
         assert result["jsonrpc"] == "2.0"
 
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
-    async def test_concurrent_agent_queries(self, docker_available):
-        """여러 Agent에 동시 질의가 가능한지 확인한다."""
-        available = {}
-        for name, url in AGENT_SERVICES.items():
-            if await _is_service_reachable(url):
-                available[name] = url
+    async def test_orchestrator_delegates_to_coding_assistant(self, docker_available):
+        """Orchestrator가 CodingAssistant에 코딩 작업을 위임하는지 확인한다."""
+        orch_url = AGENT_SERVICES["Orchestrator"]
+        coding_url = AGENT_SERVICES["CodingAssistant"]
+        await _skip_if_service_down(orch_url, "Orchestrator")
+        await _skip_if_service_down(coding_url, "CodingAssistant")
 
-        if len(available) < 2:
-            pytest.skip(
-                f"동시 테스트에 2개 이상의 Agent 필요 (현재 {len(available)}개)"
-            )
-
-        tasks = []
-        for name, url in available.items():
-            tasks.append(_send_a2a_message(url, "간단한 테스트", timeout=120.0))
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        success_count = sum(
-            1 for r in results if isinstance(r, dict) and "jsonrpc" in r
+        result = await _send_a2a_message(
+            orch_url, "피보나치 수열을 계산하는 Python 함수를 만들어줘", timeout=180.0
         )
-        assert success_count >= 1, "동시 질의에서 성공한 Agent가 없음"
+        assert "result" in result, f"Orchestrator→CodingAssistant 위임 실패: {result.get('error')}"
