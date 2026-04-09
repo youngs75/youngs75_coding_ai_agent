@@ -160,7 +160,7 @@ class CodingState(TypedDict, total=False):
     # Planner가 지정한 Phase별 생성 예정 파일 경로 목록
     planned_files: list[str]
 
-    # FileManifest — 코드 생성 전 파일 간 인터페이스 선언 (Structured Output)
+    # FileManifest — 레거시, 단순화된 그래프(v2)에서는 사용하지 않음
     file_manifest: dict
 
     # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
@@ -169,6 +169,9 @@ class CodingState(TypedDict, total=False):
     # 반복 감지용 — 이전 생성 코드 및 테스트 에러 캐시
     _prev_generated_code: str
     _prev_test_output: str
+
+    # 에러 유형 히스토리 — 이종 에러 진동 감지용 (예: ["ImportError", "TypeError", "ImportError"])
+    _error_type_history: Annotated[list[str], override_reducer]
 
     # 의존성 변경 플래그 — inject_test_failure에서 requirements.txt 수정 시 True
     _deps_changed: bool

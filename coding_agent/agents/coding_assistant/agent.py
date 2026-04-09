@@ -239,16 +239,18 @@ class CodingAssistantAgent(BaseGraphAgent):
     """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
-        "PARSE": "parse_request",
+        # 단순화된 4-노드 그래프 (v2)
         "RETRIEVE_MEMORY": "retrieve_memory",
-        "EXECUTE": "execute_code",
-        "EXECUTE_TOOLS": "execute_tools",
-        "PLAN_MANIFEST": "plan_file_manifest",
-        "GENERATE_FINAL": "generate_final",
-        "VERIFY": "verify_result",
+        "GENERATE": "generate_code",
         "RUN_TESTS": "run_tests",
-        "APPLY_CODE": "apply_code",
-        "INJECT_TEST_FAILURE": "inject_test_failure",
+        "INJECT_ERROR": "inject_error",
+        # 레거시 호환 별칭 (기존 코드/테스트 참조용)
+        "PARSE": "retrieve_memory",
+        "EXECUTE": "generate_code",
+        "GENERATE_FINAL": "generate_code",
+        "VERIFY": "run_tests",
+        "APPLY_CODE": "run_tests",
+        "INJECT_TEST_FAILURE": "inject_error",
     }
 
     def __init__(
@@ -440,13 +442,27 @@ class CodingAssistantAgent(BaseGraphAgent):
         return result
 
     async def _retrieve_memory(self, state: CodingState) -> dict[str, Any]:
-        """Episodic/Procedural Memory를 검색하여 상태에 주입한다.
+        """진입점: 안전장치 초기화 + Memory 검색.
 
-        parse 후 execute 전에 실행되어 관련 과거 이력과
-        학습된 스킬 패턴을 자동으로 컨텍스트에 포함시킨다.
+        단순화된 그래프(v2)의 첫 번째 노드.
+        기존 PARSE에서 수행하던 안전장치 초기화를 흡수하고,
+        Episodic/Procedural Memory를 검색하여 상태에 주입한다.
         """
+        # 안전장치 초기화 (기존 PARSE에서 이관)
+        self._abort_controller.reset()
+        self._stall_detector.reset()
+        self._turn_budget.reset()
+
+        # iteration/max_iterations 초기화 (Orchestrator가 설정하지 않은 경우)
+        base_result: dict[str, Any] = {
+            "iteration": state.get("iteration", 0),
+            "max_iterations": state.get("max_iterations", 3),
+            "tool_call_count": 0,
+            "exit_reason": "",
+        }
+
         if not self._memory_store:
-            return {}
+            return base_result
 
         parse_result = state.get("parse_result", {})
         description = parse_result.get("description", "")
@@ -509,7 +525,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         except Exception:
             pass
 
-        return result
+        return {**base_result, **result}
 
     def _build_execute_system_prompt(
         self, state: CodingState, *, purpose: str = "execute"
@@ -813,6 +829,85 @@ class CodingAssistantAgent(BaseGraphAgent):
     # write_file 도구 루프 최대 반복 횟수
     _GENERATE_MAX_TOOL_LOOPS = 10
 
+    async def _generate_code(self, state: CodingState) -> dict[str, Any]:
+        """단순화된 그래프(v2)의 코드 생성 노드.
+
+        기존 GENERATE_FINAL + 정적 검증 + 마크다운 폴백을 통합한다.
+        STRONG 모델이 write_file 도구로 파일을 직접 저장한다.
+        """
+        # 반복 감지: 동일 코드 반복 시 조기 종료
+        generated_code = state.get("generated_code", "")
+        prev_code = state.get("_prev_generated_code", "")
+        if prev_code and generated_code:
+            norm_cur = re.sub(r"\s+", " ", generated_code).strip()
+            norm_prev = re.sub(r"\s+", " ", prev_code).strip()
+            if norm_cur == norm_prev or (
+                len(norm_cur) > 100
+                and abs(len(norm_cur) - len(norm_prev)) < len(norm_cur) * 0.05
+                and norm_cur[:500] == norm_prev[:500]
+            ):
+                iteration = state.get("iteration", 0)
+                return {
+                    "test_passed": True,
+                    "test_output": f"동일 코드 반복으로 재시도 중단 (시도 {iteration}회)",
+                    "execution_log": list(state.get("execution_log", []))
+                    + ["[generate] 동일 코드 반복 감지 — 재시도 중단"],
+                }
+
+        # 핵심: 기존 _generate_final 호출
+        result = await self._generate_final(state)
+
+        # 마크다운 파싱 폴백 (기존 APPLY_CODE에서 이관)
+        written_files = result.get("written_files", [])
+        content = result.get("generated_code", "")
+        log = list(result.get("execution_log", []))
+        if not written_files and content:
+            blocks = _extract_code_blocks(content)
+            workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+            saved = []
+            for block in blocks:
+                fp = block.get("filepath", "")
+                code = block.get("code", "")
+                if not fp or not code:
+                    continue
+                fp = _normalize_file_path(fp, workspace)
+                if not fp or any(fp.startswith(p) for p in _FORBIDDEN_PATHS):
+                    continue
+                full_path = os.path.join(workspace, fp)
+                try:
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    with open(full_path, "w") as f:
+                        f.write(code)
+                    lines = code.count("\n") + 1
+                    saved.append(f"{fp} (+{lines} lines)")
+                except OSError as e:
+                    log.append(f"[generate] 파일 저장 실패: {fp}: {e}")
+            if saved:
+                written_files = saved
+                log.append(f"[generate] 마크다운 폴백으로 {len(saved)}개 파일 저장")
+            result["written_files"] = written_files
+
+        # 정적 검증 (기존 VERIFY에서 이관, LLM 호출 없이)
+        if content:
+            api_issues = self._check_api_consistency(content)
+            sig_issues = self._check_signature_consistency(content)
+            static_issues = api_issues + sig_issues
+            if static_issues:
+                log.append(f"[generate] 정적 검증 이슈 {len(static_issues)}건")
+            result["verify_result"] = {
+                "passed": not any(
+                    i.startswith("[P0]") or i.startswith("[P1]")
+                    for i in static_issues
+                ),
+                "issues": static_issues,
+                "suggestions": [],
+            }
+        else:
+            result["verify_result"] = {"passed": True, "issues": [], "suggestions": []}
+
+        result["execution_log"] = log
+        return result
+
     async def _generate_final(self, state: CodingState) -> dict[str, Any]:
         """2단계: STRONG 모델이 write_file 도구로 파일을 직접 저장한다.
 
@@ -908,7 +1003,11 @@ class CodingAssistantAgent(BaseGraphAgent):
                 break
 
             # 도구 호출 실행
-            loop_messages.append(response)
+            # DashScope 호환: AIMessage의 tool_calls args를 JSON 문자열로 정규화
+            # LangChain 내부 형식(args: dict)이 DashScope 재전송 시
+            # arguments(JSON string) 변환에 실패하는 문제 방지
+            sanitized_response = self._sanitize_ai_tool_calls(response)
+            loop_messages.append(sanitized_response)
             for call in tool_calls:
                 call_id = tc_id(call) or f"call_{tc_name(call)}_{loop_idx}"
                 call_name = tc_name(call) or "unknown"
@@ -1328,6 +1427,86 @@ class CodingAssistantAgent(BaseGraphAgent):
             log.append(f"[runtime] {lang}: {status}")
         return results
 
+    # ── 메시지 직렬화 호환성 ──────────────────────────────────
+
+    @staticmethod
+    def _sanitize_ai_tool_calls(ai_msg: Any) -> Any:
+        """AIMessage의 tool_calls를 LLM 공급자 호환 형식으로 정규화한다.
+
+        LangChain AIMessage는 tool_calls.args를 dict로 저장하지만,
+        DashScope/vLLM 등 일부 공급자는 재전송 시 arguments가
+        JSON 문자열이어야 한다. 이 메서드는 dict args를 JSON 문자열로
+        변환한 additional_kwargs를 보장한다.
+        """
+        from langchain_core.messages import AIMessage
+
+        if not isinstance(ai_msg, AIMessage):
+            return ai_msg
+
+        tool_calls = getattr(ai_msg, "tool_calls", None)
+        if not tool_calls:
+            return ai_msg
+
+        # additional_kwargs.tool_calls가 있으면 arguments를 JSON 문자열로 보장
+        ak = getattr(ai_msg, "additional_kwargs", {}) or {}
+        ak_tool_calls = ak.get("tool_calls", [])
+        if ak_tool_calls:
+            fixed = False
+            for tc in ak_tool_calls:
+                fn = tc.get("function", {})
+                args = fn.get("arguments")
+                if isinstance(args, dict):
+                    fn["arguments"] = json.dumps(args, ensure_ascii=False)
+                    fixed = True
+            if fixed:
+                new_ak = dict(ak)
+                new_ak["tool_calls"] = ak_tool_calls
+                return AIMessage(
+                    content=ai_msg.content or "",
+                    tool_calls=tool_calls,
+                    additional_kwargs=new_ak,
+                    id=getattr(ai_msg, "id", None),
+                )
+
+        return ai_msg
+
+    # ── Python 캐시 정리 ──────────────────────────────────────
+
+    async def _clean_python_cache(self, workspace: str, log: list[str]) -> None:
+        """workspace 내 __pycache__, .pyc, .pytest_cache를 삭제한다.
+
+        수정된 .py 파일이 캐시된 .pyc로 인해 반영되지 않는 문제를 방지한다.
+        재시도 시에도 매번 호출되어 이전 빌드 아티팩트를 제거한다.
+        """
+        removed = 0
+        for root, dirs, files in os.walk(workspace, topdown=True):
+            # .venv, node_modules, .git 내부는 건너뜀
+            dirs[:] = [
+                d for d in dirs
+                if d not in (".venv", "node_modules", ".git", ".tox")
+            ]
+            # __pycache__ 디렉토리 삭제
+            for d in list(dirs):
+                if d in ("__pycache__", ".pytest_cache"):
+                    target = os.path.join(root, d)
+                    try:
+                        import shutil
+                        shutil.rmtree(target)
+                        removed += 1
+                        dirs.remove(d)
+                    except OSError:
+                        pass
+            # 개별 .pyc 파일 삭제
+            for f in files:
+                if f.endswith(".pyc"):
+                    try:
+                        os.remove(os.path.join(root, f))
+                        removed += 1
+                    except OSError:
+                        pass
+        if removed:
+            log.append(f"[cache-clean] Python 캐시 {removed}건 삭제")
+
     # ── 프로젝트 환경 설정 (venv 생성 + 의존성 설치) ──
 
     async def _get_venv_python(self, workspace: str) -> str | None:
@@ -1483,16 +1662,16 @@ class CodingAssistantAgent(BaseGraphAgent):
         log = list(state.get("execution_log", []))
         workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
 
-        # ── planned vs written 비교 검증 ──
+        # ── planned vs written 비교 검증 (디스크 존재 확인) ──
         planned_files = state.get("planned_files", [])
         if planned_files:
-            written_paths = {
-                _normalize_file_path(f, workspace) for f in written_files
-            }
-            missing = [
-                f for f in planned_files
-                if _normalize_file_path(f, workspace) not in written_paths
-            ]
+            missing = []
+            for f in planned_files:
+                norm = _normalize_file_path(f, workspace)
+                full_path = os.path.join(workspace, norm)
+                # 디스크에 실제로 존재하는지 확인 (이전 Phase 생성 파일 포함)
+                if not os.path.exists(full_path):
+                    missing.append(f)
             if missing:
                 missing_str = ", ".join(missing)
                 log.append(
@@ -1501,7 +1680,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 return {
                     "test_passed": False,
                     "test_output": (
-                        f"계획된 파일 중 {len(missing)}개가 생성되지 않았습니다: {missing_str}\n"
+                        f"계획된 파일 중 {len(missing)}개가 디스크에 존재하지 않습니다: {missing_str}\n"
                         "누락된 파일을 write_file로 생성하세요."
                     ),
                     "execution_log": log,
@@ -1624,6 +1803,10 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         # 실제 사용할 python 경로 결정
         project_python = venv_python or "python3"
+
+        # 0.9단계: Python 캐시 정리 — .pyc가 남아있으면 수정된 코드가 반영되지 않음
+        if py_files:
+            await self._clean_python_cache(workspace, log)
 
         errors: list[str] = []
 
@@ -2387,8 +2570,8 @@ class CodingAssistantAgent(BaseGraphAgent):
             self._save_failure_pattern(state)
             return END
 
-        # 실패 시: INJECT_TEST_FAILURE 노드에서 에러를 messages에 주입 → GENERATE_FINAL
-        return self.get_node_name("INJECT_TEST_FAILURE")
+        # 실패 시: INJECT_ERROR 노드에서 에러 원문을 messages에 주입 → GENERATE
+        return self.get_node_name("INJECT_ERROR")
 
     # ── 학습 패턴 저장 (Procedural Memory) ──────────────────────
 
@@ -2814,8 +2997,72 @@ class CodingAssistantAgent(BaseGraphAgent):
                 return error_type, guidance
         return "Unknown", "에러 메시지를 분석하여 원인을 파악하고 수정하세요."
 
+    async def _inject_error(self, state: CodingState) -> dict[str, Any]:
+        """단순화된 에러 주입: 에러 원문만 LLM에게 전달한다.
+
+        핵심 원칙: Harness = 기계적 도구 제공자, LLM = 판단자.
+        에러 분류/힌트/가이던스를 제거하고, LLM이 직접 에러를 분석하게 한다.
+        """
+        test_output = state.get("test_output", "")
+        log = list(state.get("execution_log", []))
+        iteration = state.get("iteration", 0)
+        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
+
+        # Harness가 하는 것: 기계적 작업만
+        # 1. Python 캐시 정리
+        await self._clean_python_cache(workspace, log)
+
+        # 2. ModuleNotFoundError 자동 패치 (requirements.txt에 패키지 추가)
+        deps_changed = False
+        missing_modules = re.findall(
+            r"No module named ['\"]([^'\"]+)['\"]", test_output
+        )
+        if missing_modules:
+            req_path = os.path.join(workspace, "requirements.txt")
+            if os.path.exists(req_path):
+                with open(req_path) as f:
+                    existing = f.read()
+                existing_pkgs = {
+                    line.split("==")[0].split(">=")[0].split("<=")[0].split("[")[0].strip().lower()
+                    for line in existing.splitlines()
+                    if line.strip() and not line.strip().startswith("#")
+                }
+                added = []
+                for mod in missing_modules:
+                    top_pkg = mod.split(".")[0].replace("_", "-")
+                    internal_dir = os.path.join(workspace, mod.split(".")[0])
+                    if os.path.exists(internal_dir) or os.path.exists(internal_dir + ".py"):
+                        continue
+                    if top_pkg.lower() not in existing_pkgs:
+                        added.append(top_pkg)
+                if added:
+                    with open(req_path, "a") as f:
+                        for pkg in added:
+                            f.write(f"\n{pkg}")
+                    deps_changed = True
+                    log.append(f"[inject_error] requirements.txt에 자동 추가: {added}")
+
+        # 3. 에러 원문만 전달 — LLM이 직접 판단
+        error_msg = HumanMessage(content=(
+            f"테스트가 실패했습니다 (시도 {iteration}회). "
+            f"에러를 분석하고 수정하세요.\n\n"
+            f"```\n{test_output[:3000]}\n```\n\n"
+            f"수정된 파일을 write_file 도구로 저장하세요."
+        ))
+
+        log.append(f"[inject_error] 에러 원문 주입 (iteration={iteration})")
+
+        return {
+            "messages": [error_msg],
+            "execution_log": log,
+            "written_files": [],
+            "_prev_generated_code": state.get("generated_code", ""),
+            "_prev_test_output": test_output,
+            "_deps_changed": deps_changed,
+        }
+
     async def _inject_test_failure(self, state: CodingState) -> dict[str, Any]:
-        """테스트 실패 에러를 messages에 주입하여 GENERATE_FINAL이 수정 코드를 생성하게 한다."""
+        """[레거시] 테스트 실패 에러를 messages에 주입. _inject_error로 대체됨."""
         test_output = state.get("test_output", "")
         log = list(state.get("execution_log", []))
         iteration = state.get("iteration", 0)
@@ -2872,6 +3119,46 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         error_type, guidance = self._classify_test_error(test_output)
         log.append(f"[inject_test_failure] 에러 유형: {error_type}")
+
+        # 반복 감지 3: 이종 에러 진동 (A→B→A→B 패턴)
+        error_history = list(state.get("_error_type_history", []))
+        error_history.append(error_type)
+        oscillation_detected = False
+        if len(error_history) >= 4:
+            # 마지막 4개에서 A-B-A-B 패턴 감지
+            last4 = error_history[-4:]
+            if (last4[0] == last4[2] and last4[1] == last4[3]
+                    and last4[0] != last4[1]):
+                oscillation_detected = True
+                log.append(
+                    f"[inject_test_failure] 이종 에러 진동 감지: "
+                    f"{last4[0]} ↔ {last4[1]} — 전체 재생성 강제"
+                )
+        if not oscillation_detected and len(error_history) >= 3:
+            # 3개 중 2종류가 번갈아 나오는 패턴도 감지
+            last3 = error_history[-3:]
+            if last3[0] == last3[2] and last3[0] != last3[1]:
+                oscillation_detected = True
+                log.append(
+                    f"[inject_test_failure] 이종 에러 진동 감지: "
+                    f"{last3[0]} ↔ {last3[1]} — 전체 재생성 강제"
+                )
+
+        # 진동 감지 시: 이전 코드를 완전히 버리고 근본적 재설계를 요구
+        oscillation_hint = ""
+        if oscillation_detected:
+            oscillation_hint = (
+                "\n\n### 🔴 이종 에러 진동 감지 — 전략 변경 필수\n"
+                f"최근 시도에서 **{error_history[-2]}** ↔ **{error_history[-1]}** "
+                "에러가 반복 교차되고 있습니다. 부분 수정으로는 해결 불가합니다.\n\n"
+                "**반드시 다음을 수행하세요:**\n"
+                "1. 이전에 생성한 모든 파일의 구조를 **처음부터 재설계**하세요\n"
+                "2. 순환 import를 원천 차단: 공유 객체(db, config)는 "
+                "**단일 파일(extensions.py)**에만 정의하고 다른 파일에서 import\n"
+                "3. Blueprint 등록 시 url_prefix와 테스트 코드의 URL이 "
+                "**정확히 일치**하는지 확인\n"
+                "4. 모든 파일을 **한 번에 write_file로 저장** — 일부만 수정하지 마세요\n"
+            )
 
         # ── ModuleNotFoundError 자동 패치 ──
         deps_changed = False
@@ -2978,12 +3265,27 @@ class CodingAssistantAgent(BaseGraphAgent):
                 + file_contents_hint
             )
 
+        # ── 이전 시도 히스토리 요약 (컨텍스트 보존) ──
+        retry_history_hint = ""
+        if len(error_history) >= 2:
+            history_lines = []
+            for idx, err_type in enumerate(error_history, 1):
+                history_lines.append(f"  - 시도 {idx}: {err_type}")
+            retry_history_hint = (
+                "\n\n### 이전 시도 이력\n"
+                "지금까지의 에러 유형 변화입니다. "
+                "**이전에 실패한 접근법을 반복하지 마세요.**\n"
+                + "\n".join(history_lines) + "\n"
+            )
+
         error_msg = HumanMessage(content=(
             f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
             f"### 에러 유형: {error_type}\n"
             f"**수정 방향**: {guidance}\n\n"
             f"### 에러 출력:\n"
             f"```\n{test_output[:2000]}\n```\n"
+            f"{oscillation_hint}"
+            f"{retry_history_hint}"
             f"{escalation_hint}"
             f"{existing_hint}"
             f"{file_contents_hint}\n"
@@ -2998,71 +3300,36 @@ class CodingAssistantAgent(BaseGraphAgent):
             "written_files": [],  # 재생성 시 새로 쓰도록 초기화
             "_prev_generated_code": generated_code,
             "_prev_test_output": test_output,
+            "_error_type_history": error_history,
             "_deps_changed": deps_changed,
         }
 
     # ── 그래프 구성 ─────────────────────────────────────────
 
     def init_nodes(self, graph: StateGraph) -> None:
-        graph.add_node(self.get_node_name("PARSE"), self._parse_request)
+        # 단순화된 4-노드 그래프 (v2)
+        # Harness = 기계적 도구 제공자, LLM = 판단자
         graph.add_node(self.get_node_name("RETRIEVE_MEMORY"), self._retrieve_memory)
-        graph.add_node(self.get_node_name("EXECUTE"), self._execute_code)
-        graph.add_node(self.get_node_name("EXECUTE_TOOLS"), self._execute_tools)
-        graph.add_node(self.get_node_name("PLAN_MANIFEST"), self._plan_file_manifest)
-        graph.add_node(self.get_node_name("GENERATE_FINAL"), self._generate_final)
-        graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
-        graph.add_node(self.get_node_name("APPLY_CODE"), self._apply_code)
+        graph.add_node(self.get_node_name("GENERATE"), self._generate_code)
         graph.add_node(self.get_node_name("RUN_TESTS"), self._run_tests)
-        graph.add_node(self.get_node_name("INJECT_TEST_FAILURE"), self._inject_test_failure)
+        graph.add_node(self.get_node_name("INJECT_ERROR"), self._inject_error)
 
     def init_edges(self, graph: StateGraph) -> None:
-        # parse → retrieve_memory → execute
-        graph.set_entry_point(self.get_node_name("PARSE"))
-        graph.add_edge(
-            self.get_node_name("PARSE"),
-            self.get_node_name("RETRIEVE_MEMORY"),
-        )
+        # 진입점 → 메모리 검색 → 코드 생성 → 테스트 → (종료 or 에러 주입 → 재생성)
+        graph.set_entry_point(self.get_node_name("RETRIEVE_MEMORY"))
         graph.add_edge(
             self.get_node_name("RETRIEVE_MEMORY"),
-            self.get_node_name("EXECUTE"),
+            self.get_node_name("GENERATE"),
         )
-        # execute(FAST) → (tools or generate_final)
-        graph.add_conditional_edges(
-            self.get_node_name("EXECUTE"),
-            self._should_use_tools,
-        )
-        # tools → execute (ReAct 루프 — FAST 모델)
         graph.add_edge(
-            self.get_node_name("EXECUTE_TOOLS"),
-            self.get_node_name("EXECUTE"),
-        )
-        # plan_manifest(Structured Output) → generate_final(STRONG)
-        graph.add_edge(
-            self.get_node_name("PLAN_MANIFEST"),
-            self.get_node_name("GENERATE_FINAL"),
-        )
-        # generate_final(STRONG) → verify(LLM)
-        graph.add_edge(
-            self.get_node_name("GENERATE_FINAL"),
-            self.get_node_name("VERIFY"),
-        )
-        # verify(LLM) → (retry or apply_code)
-        graph.add_conditional_edges(
-            self.get_node_name("VERIFY"),
-            self._should_retry,
-        )
-        # apply_code → run_tests (파일 저장 후 실제 실행)
-        graph.add_edge(
-            self.get_node_name("APPLY_CODE"),
+            self.get_node_name("GENERATE"),
             self.get_node_name("RUN_TESTS"),
         )
-        # run_tests → (END or inject_test_failure for fix)
         graph.add_conditional_edges(
             self.get_node_name("RUN_TESTS"),
             self._should_retry_tests,
         )
-        # inject_test_failure → generate_final (에러 메시지 주입 후 재생성)
         graph.add_edge(
-            self.get_node_name("INJECT_TEST_FAILURE"),
-            self.get_node_name("GENERATE_FINAL"),
+            self.get_node_name("INJECT_ERROR"),
+            self.get_node_name("GENERATE"),
         )

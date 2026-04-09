@@ -30,13 +30,11 @@ def test_step1_graph_structure():
 
     assert agent.graph is not None, "그래프가 빌드되지 않음"
 
-    # 노드 확인
+    # 노드 확인 (단순화된 4-노드 그래프 v2)
     node_names = set(agent.graph.get_graph().nodes.keys())
     expected = {
-        "parse_request",
         "retrieve_memory",
-        "execute_code",
-        "verify_result",
+        "generate_code",
         "run_tests",
         "__start__",
         "__end__",
@@ -344,7 +342,12 @@ class TestMemoryRetrieval:
             },
         }
         result = await agent._retrieve_memory(state)
-        assert result == {}
+        # 단순화된 그래프(v2): 안전장치 초기화 값이 포함됨
+        assert "iteration" in result
+        assert "max_iterations" in result
+        # 메모리 관련 키는 없어야 함
+        assert "procedural_skills" not in result
+        assert "episodic_log" not in result
 
     @pytest.mark.asyncio
     async def test_retrieve_procedural_skills(self):
