@@ -10,23 +10,23 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from youngs75_a2a.eval_pipeline.llm.json_utils import extract_json_object
-from youngs75_a2a.eval_pipeline.llm.openrouter import get_openrouter_client
-from youngs75_a2a.eval_pipeline.loop2_evaluation.calibration_cases import (
+from coding_agent.eval_pipeline.llm.json_utils import extract_json_object
+from coding_agent.eval_pipeline.llm.openrouter import get_openrouter_client
+from coding_agent.eval_pipeline.loop2_evaluation.calibration_cases import (
     MetricKey,
     cases_for_metric,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
     SafetyMetric,
     create_citation_quality_metric,
     create_response_completeness_metric,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.prompts import (
+from coding_agent.eval_pipeline.loop2_evaluation.prompts import (
     CITATION_QUALITY_PROMPT,
     RESPONSE_COMPLETENESS_PROMPT,
     SAFETY_PROMPT,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 PROMPT_CONSTANT_MAP: dict[MetricKey, str] = {
     "response_completeness": "RESPONSE_COMPLETENESS_PROMPT",

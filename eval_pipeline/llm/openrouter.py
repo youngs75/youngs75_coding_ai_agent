@@ -1,7 +1,7 @@
 """OpenAI 범용 클라이언트 모듈.
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.llm.openrouter import get_openrouter_client
+    from coding_agent.eval_pipeline.llm.openrouter import get_openrouter_client
     client = get_openrouter_client()
     response = client.chat.completions.create(
         model="deepseek/deepseek-v3.2",

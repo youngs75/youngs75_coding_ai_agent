@@ -4,7 +4,7 @@ Coding Agent Harness의 핵심 도구를 제공하는 MCP 서버.
 에이전트가 프로젝트 컨텍스트를 파악하고, 코드를 작성/수정/실행할 수 있게 한다.
 
 실행:
-    python -m youngs75_a2a.mcp_servers.code_tools.server
+    python -m coding_agent.mcp_servers.code_tools.server
 포트: 3003 (환경변수 CODE_TOOLS_PORT로 변경 가능)
 """
 
@@ -72,7 +72,7 @@ def read_file(path: str, max_lines: int = 500) -> str:
     """프로젝트 파일의 내용을 읽는다.
 
     Args:
-        path: workspace 기준 상대 경로 (예: "youngs75_a2a/core/base_agent.py")
+        path: workspace 기준 상대 경로 (예: "coding_agent/core/base_agent.py")
         max_lines: 최대 읽을 줄 수 (기본 500)
     """
     target = _safe_path(path)

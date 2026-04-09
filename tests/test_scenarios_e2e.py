@@ -62,7 +62,7 @@ class TestScenario1SimpleCodeGeneration:
         """이진 탐색 함수 요청 시 도구 호출 횟수가 적어야 한다."""
         from langchain_core.messages import HumanMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -114,7 +114,7 @@ class TestScenario2MCPToolUsage:
         """파일 분석 요청 시 응답이 올바른 정보를 포함한다."""
         from langchain_core.messages import HumanMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -167,7 +167,7 @@ class TestScenario3BugFix:
         """재귀 호출 버그를 수정하는지 확인."""
         from langchain_core.messages import HumanMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -221,8 +221,8 @@ class TestScenario5VerifierQuality:
         """문법 오류가 있는 코드를 검증기가 실패로 판정하는지."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        from youngs75_a2a.agents.coding_assistant.prompts import VERIFY_SYSTEM_PROMPT
-        from youngs75_a2a.core.model_tiers import (
+        from coding_agent.agents.coding_assistant.prompts import VERIFY_SYSTEM_PROMPT
+        from coding_agent.core.model_tiers import (
             build_default_purpose_tiers,
             build_default_tiers,
             create_chat_model,
@@ -298,13 +298,13 @@ class TestScenario4SemanticMemoryInjection:
         from langchain_core.messages import HumanMessage
         from pathlib import Path
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
-        from youngs75_a2a.core.memory.store import MemoryStore
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
-        from youngs75_a2a.core.memory.schemas import MemoryType
+        from coding_agent.core.memory.store import MemoryStore
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.schemas import MemoryType
 
         # 메모리 준비
         store = MemoryStore()

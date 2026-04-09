@@ -1,231 +1,210 @@
-# youngs75_coding_ai_agent 프로덕션 배포 — MCP 3개 + Agent 3개 + CLI 1개 = 7 컨테이너
+# coding_agent 통합 Harness — 샌드박스 아키텍처
 #
 # 구성:
-#   MCP 서버:  Tavily(:3001) + arXiv(:3000) + Serper(:3002)
-#   Agent:     SimpleReAct(:18081) + DeepResearch(:18082) + DeepResearchA2A(:18083)
-#   CLI:       대화형 에이전트 인터페이스 (youngs75-agent)
+#   1. litellm-proxy  (:4000)  — LLM Gateway + Langfuse 트레이싱
+#   2. mcp-server     (:3003)  — 통합 MCP (코드 도구 + 검색)
+#   3. agent-coding   (:18084) — CodingAssistant (샌드박스 + CLI)
+#   4. orchestrator   (:18080) — Orchestrator 에이전트
 #
 # 사용법:
-#   cd docker
-#   docker compose up -d          # 전체 기동
-#   docker compose ps             # 상태 확인
-#   docker compose logs -f agent-deep-research  # 특정 서비스 로그
-#   docker compose run --rm cli   # CLI 대화형 모드 실행
-#   docker compose down           # 종료
-#
-# 빌드 컨텍스트: 프로젝트 루트 (..)
-# 테스트:
-#   export $(grep -v '^#' .env | xargs)
-#   python -m youngs75_a2a.tests.test_docker_e2e
+#   make up-harness          # 전체 기동
+#   make health-check        # 헬스체크
+#   ./youngs75-agent.sh      # CLI 접속 (docker exec)
+#   ./youngs75-agent.sh --export  # 결과물 추출
+#   make down-harness        # 종료
 
 services:
   # ═══════════════════════════════════════════════
-  #  MCP 서버 (도구 제공)
+  #  PostgreSQL (LiteLLM 내부 DB)
   # ═══════════════════════════════════════════════
 
-  mcp-tavily:
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: harness_litellm_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+    volumes:
+      - litellm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - harness_net
+
+  # ═══════════════════════════════════════════════
+  #  LiteLLM Proxy (LLM Gateway + UI + DB)
+  # ═══════════════════════════════════════════════
+
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm-database:main-latest
+    container_name: harness_litellm_proxy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml
+    env_file:
+      - ../.env
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
+      - DATABASE_URL=postgresql://litellm:litellm@litellm-db:5432/litellm
+      - LANGFUSE_HOST=${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+    command: ["--config", "/app/config.yaml"]
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as r; r.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - harness_net
+
+  # ═══════════════════════════════════════════════
+  #  통합 MCP 서버 (코드 도구 + 웹/논문 검색)
+  # ═══════════════════════════════════════════════
+
+  mcp-server:
     build:
       context: ..
       dockerfile: docker/Dockerfile.mcp
-    container_name: youngs75_mcp_tavily
+    container_name: harness_mcp_server
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3003:3003"
+    environment:
+      - CODE_TOOLS_PORT=3003
+      - CODE_TOOLS_WORKSPACE=/workspace
+      - MCP_MOUNT_ROOT=/workspace
     env_file:
       - ../.env
-    command: ["python", "/app/run_tavily_mcp.py"]
+    volumes:
+      - workspace_data:/workspace
+    command: ["python", "/app/run_code_tools_mcp.py"]
     healthcheck:
-      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3001/mcp"]
+      test: ["CMD", "sh", "-c", "curl -sf -X POST -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"id\":1,\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"hc\",\"version\":\"1\"}}}' http://localhost:3003/mcp"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 10s
     networks:
-      - youngs75_net
-
-  mcp-arxiv:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.mcp
-    container_name: youngs75_mcp_arxiv
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    command: ["python", "/app/run_arxiv_mcp.py"]
-    healthcheck:
-      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3000/mcp"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - youngs75_net
-
-  mcp-serper:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.mcp
-    container_name: youngs75_mcp_serper
-    restart: unless-stopped
-    ports:
-      - "3002:3002"
-    env_file:
-      - ../.env
-    command: ["python", "/app/run_serper_mcp.py"]
-    healthcheck:
-      test: ["CMD", "curl", "-so", "/dev/null", "-w", "%{http_code}", "http://localhost:3002/mcp"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - youngs75_net
+      - harness_net
 
   # ═══════════════════════════════════════════════
-  #  Agent 서버 (A2A 프로토콜)
+  #  CodingAssistant 에이전트 (샌드박스)
   # ═══════════════════════════════════════════════
 
-  agent-simple-react:
+  agent-coding-assistant:
     build:
       context: ..
       dockerfile: docker/Dockerfile.agent
-    container_name: youngs75_agent_simple_react
+    container_name: harness_agent_coding
     restart: unless-stopped
     ports:
-      - "18081:18081"
-    env_file:
-      - ../.env
+      - "18084:18084"
     environment:
-      - AGENT_PORT=18081
-      - AGENT_MODEL=deepseek/deepseek-v3.2
-      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
-      # LangSmith 원격 트레이싱 비활성화 (불필요한 401 오류 방지)
-      - LANGCHAIN_TRACING_V2=false
-    command: ["python", "-m", "youngs75_a2a.tests.run_simple_react_server"]
+      - AGENT_PORT=18084
+      - CODE_TOOLS_MCP_URL=http://mcp-server:3003/mcp/
+      - CODE_TOOLS_WORKSPACE=/workspace
+      # LiteLLM Proxy 경유
+      - LITELLM_PROXY_URL=http://litellm-proxy:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
+      - LLM_PROVIDER=${LLM_PROVIDER:-dashscope}
+      # Phase 11 설정
+      - HOOK_CONFIG_PATH=${HOOK_CONFIG_PATH:-}
+      - TOOL_PERMISSIONS_PATH=${TOOL_PERMISSIONS_PATH:-}
+      - ENABLE_PARALLEL_TOOLS=${ENABLE_PARALLEL_TOOLS:-true}
+      - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
+    volumes:
+      - workspace_data:/workspace
+    command: ["python", "-m", "coding_agent.tests.run_coding_assistant_server"]
     depends_on:
-      mcp-tavily:
+      mcp-server:
+        condition: service_healthy
+      litellm-proxy:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18081/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:18084/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - harness_net
+
+  # ═══════════════════════════════════════════════
+  #  Orchestrator 에이전트
+  # ═══════════════════════════════════════════════
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    container_name: harness_orchestrator
+    restart: unless-stopped
+    ports:
+      - "18080:18080"
+    environment:
+      - ORCH_PORT=18080
+      - CODING_ASSISTANT_URL=http://agent-coding-assistant:18084
+      - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
+      - LITELLM_PROXY_URL=http://litellm-proxy:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
+      - LLM_PROVIDER=${LLM_PROVIDER:-dashscope}
+    command: ["python", "-m", "coding_agent.tests.run_orchestrator_server"]
+    depends_on:
+      agent-coding-assistant:
+        condition: service_healthy
+      litellm-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18080/health"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
     networks:
-      - youngs75_net
-
-  agent-deep-research:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.agent
-    container_name: youngs75_agent_deep_research
-    restart: unless-stopped
-    ports:
-      - "18082:18082"
-    env_file:
-      - ../.env
-    environment:
-      - AGENT_PORT=18082
-      - AGENT_MODEL=deepseek/deepseek-v3.2
-      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
-      - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
-      - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
-      - LANGCHAIN_TRACING_V2=false
-    command: ["python", "-m", "youngs75_a2a.tests.run_agent_server"]
-    depends_on:
-      mcp-tavily:
-        condition: service_healthy
-      mcp-arxiv:
-        condition: service_healthy
-      mcp-serper:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18082/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    networks:
-      - youngs75_net
-
-  agent-deep-research-a2a:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.agent
-    container_name: youngs75_agent_deep_research_a2a
-    restart: unless-stopped
-    ports:
-      - "18083:18083"
-    env_file:
-      - ../.env
-    environment:
-      - AGENT_PORT=18083
-      - AGENT_MODEL=deepseek/deepseek-v3.2
-      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
-      - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
-      - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
-      - LANGCHAIN_TRACING_V2=false
-    command: ["python", "-m", "youngs75_a2a.tests.run_deep_research_a2a_server"]
-    depends_on:
-      mcp-tavily:
-        condition: service_healthy
-      mcp-arxiv:
-        condition: service_healthy
-      mcp-serper:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18083/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    networks:
-      - youngs75_net
+      - harness_net
 
   # ═══════════════════════════════════════════════
-  #  CLI 대화형 인터페이스
+  #  평가 파이프라인 (선택, --profile eval)
   # ═══════════════════════════════════════════════
 
-  cli:
+  eval-runner:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.cli
-    container_name: youngs75_cli
+      dockerfile: docker/Dockerfile.eval
+    container_name: harness_eval_runner
     env_file:
       - ../.env
     environment:
-      # 모델 설정
-      - MODEL_PROVIDER=${MODEL_PROVIDER:-openrouter}
-      - MODEL_NAME=${MODEL_NAME:-deepseek/deepseek-v3.2}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      # MCP 서버 엔드포인트 (컨테이너 네트워크 내부 주소)
-      - TAVILY_MCP_URL=http://mcp-tavily:3001/mcp/
-      - ARXIV_MCP_URL=http://mcp-arxiv:3000/mcp/
-      - SERPER_MCP_URL=http://mcp-serper:3002/mcp/
-      # Agent 서버 엔드포인트 (CLI에서 에이전트 접근용)
-      - SIMPLE_REACT_URL=http://agent-simple-react:18081
-      - DEEP_RESEARCH_URL=http://agent-deep-research:18082
-      - DEEP_RESEARCH_A2A_URL=http://agent-deep-research-a2a:18083
-    # 대화형 모드 활성화
-    stdin_open: true
-    tty: true
+      - DATA_DIR=/app/data
+      - LOCAL_CORPUS_DIR=/app/data/corpus
+      - CODING_AGENT_URL=http://agent-coding-assistant:18084
+    volumes:
+      - ../data:/app/data
     depends_on:
-      mcp-tavily:
+      agent-coding-assistant:
         condition: service_healthy
-      mcp-arxiv:
-        condition: service_healthy
-      mcp-serper:
-        condition: service_healthy
-      agent-simple-react:
-        condition: service_healthy
-      agent-deep-research:
-        condition: service_healthy
-      agent-deep-research-a2a:
-        condition: service_healthy
+    profiles:
+      - eval
     networks:
-      - youngs75_net
+      - harness_net
+
+volumes:
+  litellm_db_data:
+    driver: local
+  workspace_data:
+    driver: local
 
 networks:
-  youngs75_net:
+  harness_net:
     driver: bridge

@@ -14,15 +14,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
-from youngs75_a2a.agents.orchestrator.schemas import (
+from coding_agent.agents.orchestrator.coordinator import CoordinatorMode
+from coding_agent.agents.orchestrator.schemas import (
     SubTask,
     WorkerResult,
 )
-from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
-from youngs75_a2a.core.context_manager import ContextManager
-from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+from coding_agent.agents.orchestrator.task_graph import TaskGraph
+from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.subagents.registry import SubAgentRegistry
+from coding_agent.core.subagents.schemas import SubAgentSpec
 
 # ─────────────────────────────────────────────────────────────
 # 헬퍼: 테스트용 SubTask 생성
@@ -875,14 +875,14 @@ class TestRouteAfterClassify:
 
     def test_route_to_coordinator(self):
         """selected_agent가 __coordinator__이면 coordinate로 라우팅."""
-        from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
+        from coding_agent.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "__coordinator__"}
         assert _route_after_classify(state) == "coordinate"  # type: ignore[arg-type]
 
     def test_route_to_plan_for_coding(self):
         """selected_agent가 코딩 에이전트이면 plan으로 라우팅."""
-        from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
+        from coding_agent.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "coder"}
         assert _route_after_classify(state) == "plan"  # type: ignore[arg-type]
@@ -892,14 +892,14 @@ class TestRouteAfterClassify:
 
     def test_route_to_delegate_for_non_coding(self):
         """selected_agent가 비코딩 에이전트이면 delegate로 직접 라우팅."""
-        from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
+        from coding_agent.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "deep_research"}
         assert _route_after_classify(state) == "delegate"  # type: ignore[arg-type]
 
     def test_route_none_to_delegate(self):
         """selected_agent가 none이면 delegate로 라우팅 (delegate에서 처리)."""
-        from youngs75_a2a.agents.orchestrator.agent import _route_after_classify
+        from coding_agent.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "none"}
         assert _route_after_classify(state) == "delegate"  # type: ignore[arg-type]
@@ -910,8 +910,8 @@ class TestOrchestratorAgentGraph:
 
     def test_graph_has_coordinate_node(self):
         """OrchestratorAgent 그래프에 coordinate 노드가 포함된다."""
-        from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
-        from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
+        from coding_agent.agents.orchestrator.agent import OrchestratorAgent
+        from coding_agent.agents.orchestrator.config import OrchestratorConfig
 
         config = OrchestratorConfig()
         agent = OrchestratorAgent(config=config)
@@ -926,7 +926,7 @@ class TestOrchestratorAgentGraph:
 
     def test_node_names_include_coordinate(self):
         """NODE_NAMES에 COORDINATE가 포함된다."""
-        from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
+        from coding_agent.agents.orchestrator.agent import OrchestratorAgent
 
         assert "COORDINATE" in OrchestratorAgent.NODE_NAMES
         assert OrchestratorAgent.NODE_NAMES["COORDINATE"] == "coordinate"

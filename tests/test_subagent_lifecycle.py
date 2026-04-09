@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from youngs75_a2a.core.subagents import (
+from coding_agent.core.subagents import (
     VALID_TRANSITIONS,
     SubAgentEvent,
     SubAgentInstance,

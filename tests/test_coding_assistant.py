@@ -20,7 +20,7 @@ _skip_no_api_key = pytest.mark.skipif(
 
 def test_step1_graph_structure():
     """그래프 노드/엣지 구조가 올바른지 확인한다."""
-    from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+    from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
 
     config = CodingConfig()
     agent = CodingAssistantAgent(config=config)
@@ -49,7 +49,7 @@ def test_step1_graph_structure():
 
 def test_step1_safety_envelope():
     """ActionValidator가 위험 코드를 차단하는지 확인한다."""
-    from youngs75_a2a.core.action_validator import ActionValidator
+    from coding_agent.core.action_validator import ActionValidator
 
     validator = ActionValidator()
 
@@ -84,7 +84,7 @@ def test_step1_safety_envelope():
 @_skip_no_api_key
 async def test_step2_llm_integration():
     """LLM 연동 전체 파이프라인 테스트."""
-    from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+    from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
 
     config = CodingConfig()
     agent = await CodingAssistantAgent.create(config=config)
@@ -123,7 +123,7 @@ class TestMaxToolCallsEnforcement:
     """max_tool_calls 한도 체크 테스트."""
 
     def _make_agent(self, max_tool_calls: int = 3):
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -135,7 +135,7 @@ class TestMaxToolCallsEnforcement:
 
     def test_tool_call_count_initialized_in_parse(self):
         """_parse_request 반환에 tool_call_count=0이 포함된다."""
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -143,7 +143,7 @@ class TestMaxToolCallsEnforcement:
         config = CodingConfig()
         CodingAssistantAgent(config=config)
         # _parse_request는 비동기이므로 직접 호출하지 않고 스키마를 확인
-        from youngs75_a2a.agents.coding_assistant.schemas import CodingState
+        from coding_agent.agents.coding_assistant.schemas import CodingState
 
         # CodingState에 tool_call_count 필드가 존재하는지 확인
         annotations = CodingState.__annotations__
@@ -213,7 +213,7 @@ class TestMaxToolCallsEnforcement:
     def test_tool_call_count_resets_on_retry(self):
         """_verify_result 반환에 tool_call_count=0이 포함되어 재시도 시 리셋된다."""
         # verify_result 반환 구조 확인 (LLM 없이 반환값 구조만 테스트)
-        from youngs75_a2a.agents.coding_assistant.schemas import CodingState
+        from coding_agent.agents.coding_assistant.schemas import CodingState
 
         # verify_result가 반환하는 dict에 tool_call_count: 0이 포함되는지
         # agent.py 소스 코드에서 확인 가능하지만, 여기서는 스키마 필드 존재만 확인
@@ -231,7 +231,7 @@ class TestProjectContextDeduplication:
 
         from langchain_core.messages import AIMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -272,7 +272,7 @@ class TestProjectContextDeduplication:
 
         from langchain_core.messages import AIMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -312,11 +312,11 @@ class TestMemoryRetrieval:
     """_retrieve_memory 노드 — Procedural/Episodic Memory 자동 검색."""
 
     def _make_agent_with_memory(self):
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
-        from youngs75_a2a.core.memory.store import MemoryStore
+        from coding_agent.core.memory.store import MemoryStore
 
         store = MemoryStore()
         config = CodingConfig()
@@ -327,7 +327,7 @@ class TestMemoryRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_memory_returns_empty_without_store(self):
         """memory_store가 없으면 빈 딕셔너리를 반환한다."""
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -375,7 +375,7 @@ class TestMemoryRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_episodic_log(self):
         """저장된 Episodic 이력이 검색되어 상태에 주입된다."""
-        from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
+        from coding_agent.core.memory.schemas import MemoryItem, MemoryType
 
         agent, store = self._make_agent_with_memory()
 
@@ -433,11 +433,11 @@ class TestEpisodicMemoryAccumulation:
     """_record_episodic_memory — 실행 결과를 Episodic Memory에 기록."""
 
     def _make_agent_with_memory(self):
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
-        from youngs75_a2a.core.memory.store import MemoryStore
+        from coding_agent.core.memory.store import MemoryStore
 
         store = MemoryStore()
         config = CodingConfig()
@@ -447,7 +447,7 @@ class TestEpisodicMemoryAccumulation:
 
     def test_record_episodic_on_pass(self):
         """검증 통과 시 에피소딕 메모리가 기록된다."""
-        from youngs75_a2a.core.memory.schemas import MemoryType
+        from coding_agent.core.memory.schemas import MemoryType
 
         agent, store = self._make_agent_with_memory()
 
@@ -472,7 +472,7 @@ class TestEpisodicMemoryAccumulation:
 
     def test_record_episodic_on_fail(self):
         """검증 실패 시 에피소딕 메모리에 실패 이력이 기록된다."""
-        from youngs75_a2a.core.memory.schemas import MemoryType
+        from coding_agent.core.memory.schemas import MemoryType
 
         agent, store = self._make_agent_with_memory()
 
@@ -502,7 +502,7 @@ class TestEpisodicMemoryAccumulation:
 
     def test_no_record_without_memory_store(self):
         """memory_store가 없으면 에러 없이 무시된다."""
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
@@ -527,7 +527,7 @@ class TestEpisodicMemoryAccumulation:
 
     def test_episodic_tags_include_status(self):
         """에피소딕 메모리 태그에 성공/실패 상태가 포함된다."""
-        from youngs75_a2a.core.memory.schemas import MemoryType
+        from coding_agent.core.memory.schemas import MemoryType
 
         agent, store = self._make_agent_with_memory()
 

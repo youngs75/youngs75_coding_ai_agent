@@ -1,6 +1,6 @@
 """TurnBudgetTracker 단위 테스트."""
 
-from youngs75_a2a.core.turn_budget import BudgetVerdict, TurnBudgetTracker
+from coding_agent.core.turn_budget import BudgetVerdict, TurnBudgetTracker
 
 
 class TestTurnBudgetBasic:

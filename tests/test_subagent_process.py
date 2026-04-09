@@ -18,9 +18,9 @@ import tempfile
 
 import pytest
 
-from youngs75_a2a.core.subagents.process_manager import SubAgentProcessManager
-from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-from youngs75_a2a.core.subagents.schemas import (
+from coding_agent.core.subagents.process_manager import SubAgentProcessManager
+from coding_agent.core.subagents.registry import SubAgentRegistry
+from coding_agent.core.subagents.schemas import (
     ResourceUsage,
     SubAgentResult,
     SubAgentSpec,
@@ -327,7 +327,7 @@ class TestMaxTokensRecovery:
 
         from langchain_core.messages import AIMessage, HumanMessage
 
-        from youngs75_a2a.core.context_manager import (
+        from coding_agent.core.context_manager import (
             ContextManager,
             invoke_with_max_tokens_recovery,
         )

@@ -20,7 +20,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
-from youngs75_a2a.core.model_tiers import (
+from coding_agent.core.model_tiers import (
     TierConfig,
     build_default_purpose_tiers,
     build_default_tiers,

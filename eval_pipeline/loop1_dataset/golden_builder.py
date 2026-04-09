@@ -20,7 +20,7 @@ Synthetic → Review → Augment → Golden의 4단계를 순차적으로 실행
     3. 기본: Synthetic 생성 → CSV 내보내기 → 사용자에게 리뷰 안내
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
+    from coding_agent.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
 
     # 데모 모드 (Human Review 건너뛰기)
     items = build_golden_dataset(num_goldens=10, skip_review=True)
@@ -34,15 +34,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
-from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
-from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import (
+from coding_agent.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
+from coding_agent.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
+from coding_agent.eval_pipeline.loop1_dataset.feedback_augmenter import (
     augment_with_feedback,
 )
-from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+from coding_agent.eval_pipeline.loop1_dataset.synthesizer import (
     generate_synthetic_dataset,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def build_golden_dataset(

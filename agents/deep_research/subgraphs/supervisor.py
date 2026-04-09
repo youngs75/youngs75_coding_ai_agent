@@ -15,9 +15,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from youngs75_a2a.core.tool_call_utils import tc_name, tc_id, tc_args
-from youngs75_a2a.agents.deep_research.config import ResearchConfig
-from youngs75_a2a.agents.deep_research.schemas import (
+from coding_agent.core.tool_call_utils import tc_name, tc_id, tc_args
+from coding_agent.agents.deep_research.config import ResearchConfig
+from coding_agent.agents.deep_research.schemas import (
     ConductResearch,
     ResearchComplete,
     SupervisorInputState,

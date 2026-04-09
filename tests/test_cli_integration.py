@@ -27,13 +27,13 @@ from langchain_core.messages import (
 )
 from rich.console import Console
 
-from youngs75_a2a.cli.commands import handle_command
-from youngs75_a2a.cli.renderer import CLIRenderer
-from youngs75_a2a.cli.session import CLISession
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.context_manager import ContextManager
-from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-from youngs75_a2a.core.tool_permissions import (
+from coding_agent.cli.commands import handle_command
+from coding_agent.cli.renderer import CLIRenderer
+from coding_agent.cli.session import CLISession
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+from coding_agent.core.tool_permissions import (
     PermissionDecision,
     ToolPermissionManager,
 )
@@ -180,7 +180,7 @@ class TestProjectContextLoaderIntegration:
 
     def test_project_context_loaded_into_session(self, tmp_path: Path) -> None:
         """프로젝트 컨텍스트가 세션에 저장된다."""
-        from youngs75_a2a.core.project_context import ProjectContextLoader
+        from coding_agent.core.project_context import ProjectContextLoader
 
         # 컨텍스트 파일 생성
         agents_md = tmp_path / "AGENTS.md"
@@ -198,7 +198,7 @@ class TestProjectContextLoaderIntegration:
 
     def test_no_context_files_empty(self, tmp_path: Path) -> None:
         """컨텍스트 파일이 없으면 빈 문자열을 반환한다."""
-        from youngs75_a2a.core.project_context import ProjectContextLoader
+        from coding_agent.core.project_context import ProjectContextLoader
 
         loader = ProjectContextLoader(str(tmp_path))
         context_section = loader.build_system_prompt_section()
@@ -285,7 +285,7 @@ class TestContextManagerAllAgents:
 
     def test_simple_react_inherits_context_manager(self) -> None:
         """SimpleMCPReActAgent이 BaseGraphAgent의 context_manager를 상속한다."""
-        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+        from coding_agent.agents.simple_react.agent import SimpleMCPReActAgent
 
         agent = SimpleMCPReActAgent(auto_build=False)
         assert hasattr(agent, "context_manager")
@@ -294,7 +294,7 @@ class TestContextManagerAllAgents:
 
     def test_deep_research_inherits_context_manager(self) -> None:
         """DeepResearchAgent이 BaseGraphAgent의 context_manager를 상속한다."""
-        from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
+        from coding_agent.agents.deep_research.agent import DeepResearchAgent
 
         agent = DeepResearchAgent(auto_build=False)
         assert hasattr(agent, "context_manager")
@@ -303,7 +303,7 @@ class TestContextManagerAllAgents:
 
     def test_simple_react_inherits_project_context(self) -> None:
         """SimpleMCPReActAgent이 project_context를 상속한다."""
-        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+        from coding_agent.agents.simple_react.agent import SimpleMCPReActAgent
 
         agent = SimpleMCPReActAgent(auto_build=False)
         agent.project_context = "# 프로젝트 규칙"
@@ -311,7 +311,7 @@ class TestContextManagerAllAgents:
 
     def test_deep_research_inherits_project_context(self) -> None:
         """DeepResearchAgent이 project_context를 상속한다."""
-        from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
+        from coding_agent.agents.deep_research.agent import DeepResearchAgent
 
         agent = DeepResearchAgent(auto_build=False)
         agent.project_context = "# 프로젝트 규칙"
@@ -506,7 +506,7 @@ class TestAgentPhase10Injection:
 
     async def test_agent_gets_project_context(self) -> None:
         """에이전트 생성 시 project_context가 주입된다."""
-        from youngs75_a2a.cli.app import _get_or_create_agent
+        from coding_agent.cli.app import _get_or_create_agent
 
         session = _make_session()
         session.project_context = "# 테스트 컨텍스트"
@@ -520,7 +520,7 @@ class TestAgentPhase10Injection:
         mock_agent.context_manager = None
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=mock_agent,
         ):
@@ -531,7 +531,7 @@ class TestAgentPhase10Injection:
 
     async def test_agent_gets_permission_manager(self, tmp_path: Path) -> None:
         """에이전트 생성 시 permission_manager가 주입된다."""
-        from youngs75_a2a.cli.app import _get_or_create_agent
+        from coding_agent.cli.app import _get_or_create_agent
 
         session = _make_session()
         mgr = ToolPermissionManager(str(tmp_path))
@@ -545,7 +545,7 @@ class TestAgentPhase10Injection:
         mock_agent.context_manager = None
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=mock_agent,
         ):
@@ -556,7 +556,7 @@ class TestAgentPhase10Injection:
 
     async def test_agent_gets_tool_executor(self) -> None:
         """에이전트 생성 시 tool_executor가 주입된다."""
-        from youngs75_a2a.cli.app import _get_or_create_agent
+        from coding_agent.cli.app import _get_or_create_agent
 
         session = _make_session()
         executor = ParallelToolExecutor()
@@ -570,7 +570,7 @@ class TestAgentPhase10Injection:
         mock_agent.context_manager = None
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=mock_agent,
         ):
@@ -581,7 +581,7 @@ class TestAgentPhase10Injection:
 
     async def test_agent_gets_default_context_manager(self) -> None:
         """context_manager가 없으면 기본 ContextManager가 주입된다."""
-        from youngs75_a2a.cli.app import _get_or_create_agent
+        from coding_agent.cli.app import _get_or_create_agent
 
         session = _make_session()
         renderer = _make_renderer()
@@ -593,7 +593,7 @@ class TestAgentPhase10Injection:
         mock_agent.context_manager = None
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=mock_agent,
         ):
@@ -612,7 +612,7 @@ class TestCodingAssistantToolExecution:
 
     def test_coding_agent_has_phase10_fields(self) -> None:
         """CodingAssistantAgent에 Phase 10 필드가 존재한다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
         assert hasattr(agent, "permission_manager")
@@ -622,7 +622,7 @@ class TestCodingAssistantToolExecution:
 
     async def test_execute_tools_with_parallel_executor(self) -> None:
         """ParallelToolExecutor를 통해 도구가 실행된다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
 
@@ -656,7 +656,7 @@ class TestCodingAssistantToolExecution:
 
     async def test_execute_tools_permission_deny(self, tmp_path: Path) -> None:
         """ToolPermissionManager DENY 시 도구 실행이 차단된다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
 
@@ -693,7 +693,7 @@ class TestCodingAssistantToolExecution:
 
     async def test_execute_tools_fallback_without_executor(self) -> None:
         """ParallelToolExecutor 없이도 기존 순차 실행이 동작한다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
         # tool_executor를 명시적으로 None
@@ -726,7 +726,7 @@ class TestCodingAssistantToolExecution:
         self, tmp_path: Path
     ) -> None:
         """ParallelToolExecutor + ToolPermissionManager가 함께 동작한다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
 
@@ -801,7 +801,7 @@ class TestOptionalIntegration:
 
     async def test_coding_agent_execute_tools_no_tool_calls(self) -> None:
         """도구 호출이 없으면 빈 결과를 반환한다."""
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
         agent = CodingAssistantAgent(auto_build=False)
         agent.tool_executor = ParallelToolExecutor()
@@ -822,7 +822,7 @@ class TestSimpleReActProjectContext:
 
     def test_get_system_prompt_without_context(self) -> None:
         """project_context 없이 기본 프롬프트를 반환한다."""
-        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+        from coding_agent.agents.simple_react.agent import SimpleMCPReActAgent
 
         agent = SimpleMCPReActAgent(auto_build=False)
         prompt = agent._get_system_prompt()
@@ -831,7 +831,7 @@ class TestSimpleReActProjectContext:
 
     def test_get_system_prompt_with_context(self) -> None:
         """project_context가 있으면 시스템 프롬프트에 포함된다."""
-        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
+        from coding_agent.agents.simple_react.agent import SimpleMCPReActAgent
 
         agent = SimpleMCPReActAgent(auto_build=False)
         agent.project_context = "# 프로젝트 규칙\n- Python 3.13 사용"

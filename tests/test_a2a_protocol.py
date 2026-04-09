@@ -63,7 +63,7 @@ class TestAgentCardEntry:
 
     def test_mark_healthy(self):
         """mark_healthy() 호출 시 is_healthy == True."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry
+        from coding_agent.a2a.discovery import AgentCardEntry
 
         entry = AgentCardEntry(card=make_agent_card(), url="http://localhost:8080")
         entry.mark_healthy()
@@ -72,7 +72,7 @@ class TestAgentCardEntry:
 
     def test_mark_failed_increments(self):
         """mark_failed() 호출 시 연속 실패 횟수 증가."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry
+        from coding_agent.a2a.discovery import AgentCardEntry
 
         entry = AgentCardEntry(card=make_agent_card(), url="http://localhost:8080")
         entry.mark_failed()
@@ -81,7 +81,7 @@ class TestAgentCardEntry:
 
     def test_unhealthy_after_timeout(self):
         """60초 경과 후 is_healthy == False."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry
+        from coding_agent.a2a.discovery import AgentCardEntry
 
         entry = AgentCardEntry(card=make_agent_card(), url="http://localhost:8080")
         entry.last_healthy = time.time() - 61
@@ -98,7 +98,7 @@ class TestAgentCardRegistry:
 
     def test_register_and_get(self):
         """에이전트 등록 후 URL로 조회."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(name="agent-1", url="http://localhost:8081")
@@ -110,7 +110,7 @@ class TestAgentCardRegistry:
 
     def test_register_and_unregister(self):
         """등록 후 해제 시 조회 불가."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(url="http://localhost:8081")
@@ -120,7 +120,7 @@ class TestAgentCardRegistry:
 
     def test_get_by_name_exact(self):
         """이름 정확 매칭 조회."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(name="code-agent", url="http://localhost:8081")
@@ -129,7 +129,7 @@ class TestAgentCardRegistry:
 
     def test_get_by_name_partial(self):
         """이름 부분 매칭 조회."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(name="my-code-agent", url="http://localhost:8081")
@@ -138,7 +138,7 @@ class TestAgentCardRegistry:
 
     def test_list_all(self):
         """모든 에이전트 목록."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         registry.register(make_agent_card(name="a1", url="http://localhost:8081"))
@@ -147,7 +147,7 @@ class TestAgentCardRegistry:
 
     def test_list_healthy(self):
         """건강한 에이전트만 반환."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         registry.register(make_agent_card(name="healthy", url="http://localhost:8081"))
@@ -162,7 +162,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_skill_exact(self):
         """스킬 이름 정확 매칭 검색."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(
@@ -178,7 +178,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_skill_partial(self):
         """스킬 이름 부분 매칭 검색."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(
@@ -194,7 +194,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_skill_description(self):
         """스킬 설명 매칭 검색."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(
@@ -209,7 +209,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_tags(self):
         """태그 기반 검��."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         card = make_agent_card(
@@ -225,7 +225,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_tags_empty(self):
         """매칭되는 태그 없을 때 빈 결과."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         registry.register(
@@ -239,7 +239,7 @@ class TestAgentCardRegistry:
 
     def test_find_by_skill_sorted_by_score(self):
         """스킬 검색 결과가 점수순 정렬."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         # 정확 매칭 에이전트 (점수 1.0)
@@ -266,13 +266,13 @@ class TestAgentCardRegistry:
 
     async def test_discover_many_with_mock(self):
         """discover_many() 병렬 디스커버리 (모킹)."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry()
         mock_card = make_agent_card(name="remote-agent")
 
         with patch.object(registry, "discover") as mock_discover:
-            from youngs75_a2a.a2a.discovery import AgentCardEntry
+            from coding_agent.a2a.discovery import AgentCardEntry
 
             mock_entry = AgentCardEntry(card=mock_card, url="http://remote:8080")
             mock_discover.return_value = mock_entry
@@ -282,7 +282,7 @@ class TestAgentCardRegistry:
 
     def test_periodic_health_check_start_stop(self):
         """주기적 헬스체크 시작/중지."""
-        from youngs75_a2a.a2a.discovery import AgentCardRegistry
+        from coding_agent.a2a.discovery import AgentCardRegistry
 
         registry = AgentCardRegistry(health_check_interval=0.1)
 
@@ -302,7 +302,7 @@ class TestRetryPolicy:
 
     def test_compute_delay_exponential(self):
         """지��� 백오프 대기 시간 계산."""
-        from youngs75_a2a.a2a.resilience import RetryPolicy
+        from coding_agent.a2a.resilience import RetryPolicy
 
         policy = RetryPolicy(base_delay=1.0, exponential_base=2.0)
         assert policy.compute_delay(0) == 1.0
@@ -312,14 +312,14 @@ class TestRetryPolicy:
 
     def test_compute_delay_max_cap(self):
         """최대 대기 시간 제��."""
-        from youngs75_a2a.a2a.resilience import RetryPolicy
+        from coding_agent.a2a.resilience import RetryPolicy
 
         policy = RetryPolicy(base_delay=1.0, max_delay=5.0, exponential_base=2.0)
         assert policy.compute_delay(10) == 5.0
 
     def test_is_retryable(self):
         """재시도 가능한 예외 판별."""
-        from youngs75_a2a.a2a.resilience import RetryPolicy
+        from coding_agent.a2a.resilience import RetryPolicy
 
         policy = RetryPolicy()
         assert policy.is_retryable(ConnectionError())
@@ -337,7 +337,7 @@ class TestCircuitBreaker:
 
     def test_initial_state_closed(self):
         """초기 상태 CLOSED."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker()
         assert cb.state == CircuitState.CLOSED
@@ -345,7 +345,7 @@ class TestCircuitBreaker:
 
     def test_open_after_threshold(self):
         """임계치 초과 후 OPEN."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker(failure_threshold=3)
         for _ in range(3):
@@ -355,7 +355,7 @@ class TestCircuitBreaker:
 
     def test_half_open_after_recovery(self):
         """복구 시간 후 HALF_OPEN 전이."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.0)
         cb.record_failure()
@@ -370,7 +370,7 @@ class TestCircuitBreaker:
 
     def test_success_closes_half_open(self):
         """HALF_OPEN 상태에서 성공하면 CLOSED."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.0)
         cb.record_failure()
@@ -381,7 +381,7 @@ class TestCircuitBreaker:
 
     def test_failure_reopens_half_open(self):
         """HALF_OPEN 상태에서 실패하면 다��� OPEN."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.0)
         cb.record_failure()
@@ -392,7 +392,7 @@ class TestCircuitBreaker:
 
     def test_reset(self):
         """reset() 호출 시 CLOSED로 초기화."""
-        from youngs75_a2a.a2a.resilience import CircuitBreaker, CircuitState
+        from coding_agent.a2a.resilience import CircuitBreaker, CircuitState
 
         cb = CircuitBreaker(failure_threshold=1)
         cb.record_failure()
@@ -411,7 +411,7 @@ class TestAgentMonitor:
 
     def test_record_success(self):
         """성공 기록 후 통계 반영."""
-        from youngs75_a2a.a2a.resilience import AgentMonitor
+        from coding_agent.a2a.resilience import AgentMonitor
 
         monitor = AgentMonitor()
         monitor.record_success("http://localhost:8080", 100.0)
@@ -424,7 +424,7 @@ class TestAgentMonitor:
 
     def test_record_failure(self):
         """실패 기록 후 통계 반영."""
-        from youngs75_a2a.a2a.resilience import AgentMonitor
+        from coding_agent.a2a.resilience import AgentMonitor
 
         monitor = AgentMonitor()
         monitor.record_success("http://localhost:8080", 100.0)
@@ -437,7 +437,7 @@ class TestAgentMonitor:
 
     def test_get_healthy_urls(self):
         """건강한 에이전트 URL 조회."""
-        from youngs75_a2a.a2a.resilience import AgentMonitor
+        from coding_agent.a2a.resilience import AgentMonitor
 
         monitor = AgentMonitor()
         monitor.record_success("http://a:8080", 100.0)
@@ -449,7 +449,7 @@ class TestAgentMonitor:
 
     def test_success_rate_no_requests(self):
         """요청 없을 때 성공률 1.0."""
-        from youngs75_a2a.a2a.resilience import AgentHealthStats
+        from coding_agent.a2a.resilience import AgentHealthStats
 
         stats = AgentHealthStats(url="http://localhost:8080")
         assert stats.success_rate == 1.0
@@ -465,13 +465,13 @@ class TestTaskDelegator:
 
     async def test_delegate_success(self):
         """위임 성공 시 DelegationResult.success == True."""
-        from youngs75_a2a.a2a.router import TaskDelegator
+        from coding_agent.a2a.router import TaskDelegator
 
         delegator = TaskDelegator()
         mock_response = MagicMock()
 
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             return_value=mock_response,
         ):
@@ -486,12 +486,12 @@ class TestTaskDelegator:
 
     async def test_delegate_failure(self):
         """위임 실패 시 DelegationResult.success == False."""
-        from youngs75_a2a.a2a.router import TaskDelegator
+        from coding_agent.a2a.router import TaskDelegator
 
         delegator = TaskDelegator()
 
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             side_effect=ConnectionError("연결 실패"),
         ):
@@ -505,13 +505,13 @@ class TestTaskDelegator:
 
     async def test_delegate_parallel(self):
         """병렬 위임 성공."""
-        from youngs75_a2a.a2a.router import TaskDelegator
+        from coding_agent.a2a.router import TaskDelegator
 
         delegator = TaskDelegator()
         mock_response = MagicMock()
 
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             return_value=mock_response,
         ):
@@ -527,13 +527,13 @@ class TestTaskDelegator:
 
     async def test_delegate_with_consensus_success(self):
         """합의 위임 — 최소 성공 충족."""
-        from youngs75_a2a.a2a.router import TaskDelegator
+        from coding_agent.a2a.router import TaskDelegator
 
         delegator = TaskDelegator()
         mock_response = MagicMock()
 
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             return_value=mock_response,
         ):
@@ -549,12 +549,12 @@ class TestTaskDelegator:
 
     async def test_delegate_with_consensus_failure(self):
         """합의 위임 — 최소 성공 미충족 시 RuntimeError."""
-        from youngs75_a2a.a2a.router import TaskDelegator
+        from coding_agent.a2a.router import TaskDelegator
 
         delegator = TaskDelegator()
 
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             side_effect=ConnectionError("fail"),
         ):
@@ -575,7 +575,7 @@ class TestAgentRouter:
     """AgentRouter 라우팅 의사결정 테스트."""
 
     def _make_router(self):
-        from youngs75_a2a.a2a.router import AgentRouter, RoutingMode
+        from coding_agent.a2a.router import AgentRouter, RoutingMode
 
         return AgentRouter(routing_mode=RoutingMode.SKILL_BASED)
 
@@ -626,7 +626,7 @@ class TestAgentRouter:
 
     def test_route_round_robin(self):
         """라운드 로빈 라우팅."""
-        from youngs75_a2a.a2a.router import AgentRouter, RoutingMode
+        from coding_agent.a2a.router import AgentRouter, RoutingMode
 
         router = AgentRouter(routing_mode=RoutingMode.ROUND_ROBIN)
         router.register_agent(make_agent_card(name="a1", url="http://a:8081"))
@@ -642,7 +642,7 @@ class TestAgentRouter:
 
     def test_route_weighted(self):
         """가중치 기반 라우팅."""
-        from youngs75_a2a.a2a.router import AgentRouter, RoutingMode
+        from coding_agent.a2a.router import AgentRouter, RoutingMode
 
         router = AgentRouter(routing_mode=RoutingMode.WEIGHTED)
         router.register_agent(make_agent_card(name="fast", url="http://fast:8080"))
@@ -694,7 +694,7 @@ class TestAgentRouter:
 
         mock_response = MagicMock()
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             return_value=mock_response,
         ):
@@ -728,7 +728,7 @@ class TestAgentRouter:
 
         mock_response = MagicMock()
         with patch(
-            "youngs75_a2a.a2a.resilience.ResilientA2AClient.send_message",
+            "coding_agent.a2a.resilience.ResilientA2AClient.send_message",
             new_callable=AsyncMock,
             return_value=mock_response,
         ):
@@ -747,7 +747,7 @@ class TestExecutorTimeout:
 
     async def test_base_executor_timeout(self):
         """BaseAgentExecutor — 타임아웃 시 failed 상태."""
-        from youngs75_a2a.a2a.executor import BaseAgentExecutor
+        from coding_agent.a2a.executor import BaseAgentExecutor
 
         async def slow_agent(query, ctx):
             await asyncio.sleep(10)
@@ -767,14 +767,14 @@ class TestExecutorTimeout:
         event_queue.enqueue_event = AsyncMock()
 
         # TaskUpdater를 모킹하여 failed 호출 확인
-        with patch("youngs75_a2a.a2a.executor.TaskUpdater") as MockUpdater:
+        with patch("coding_agent.a2a.executor.TaskUpdater") as MockUpdater:
             mock_updater = MagicMock()
             mock_updater.update_status = AsyncMock()
             mock_updater.start_work = AsyncMock()
             mock_updater.failed = AsyncMock()
             MockUpdater.return_value = mock_updater
 
-            with patch("youngs75_a2a.a2a.executor.new_task") as mock_new_task:
+            with patch("coding_agent.a2a.executor.new_task") as mock_new_task:
                 mock_task = MagicMock()
                 mock_task.id = "task-1"
                 mock_task.context_id = "ctx-1"
@@ -787,7 +787,7 @@ class TestExecutorTimeout:
 
     async def test_base_executor_no_timeout(self):
         """BaseAgentExecutor — 타임아웃 None이면 무제한 대기."""
-        from youngs75_a2a.a2a.executor import BaseAgentExecutor
+        from coding_agent.a2a.executor import BaseAgentExecutor
 
         async def fast_agent(query, ctx):
             return "fast result"
@@ -804,7 +804,7 @@ class TestExecutorTimeout:
         event_queue = MagicMock()
         event_queue.enqueue_event = AsyncMock()
 
-        with patch("youngs75_a2a.a2a.executor.TaskUpdater") as MockUpdater:
+        with patch("coding_agent.a2a.executor.TaskUpdater") as MockUpdater:
             mock_updater = MagicMock()
             mock_updater.update_status = AsyncMock()
             mock_updater.start_work = AsyncMock()
@@ -812,7 +812,7 @@ class TestExecutorTimeout:
             mock_updater.complete = AsyncMock()
             MockUpdater.return_value = mock_updater
 
-            with patch("youngs75_a2a.a2a.executor.new_task") as mock_new_task:
+            with patch("coding_agent.a2a.executor.new_task") as mock_new_task:
                 mock_task = MagicMock()
                 mock_task.id = "task-1"
                 mock_task.context_id = "ctx-1"
@@ -834,7 +834,7 @@ class TestStreamChunk:
 
     def test_stream_chunk_fields(self):
         """StreamChunk 필드 초기화."""
-        from youngs75_a2a.a2a.streaming import StreamChunk
+        from coding_agent.a2a.streaming import StreamChunk
 
         chunk = StreamChunk(
             text="hello",
@@ -853,7 +853,7 @@ class TestStreamingResponseCollector:
 
     def test_initial_state(self):
         """초기 상태 확인."""
-        from youngs75_a2a.a2a.streaming import StreamingResponseCollector
+        from coding_agent.a2a.streaming import StreamingResponseCollector
 
         collector = StreamingResponseCollector()
         assert collector.accumulated_text == ""
@@ -862,7 +862,7 @@ class TestStreamingResponseCollector:
 
     def test_final_text_priority(self):
         """_final_text가 있으면 그것을 반환."""
-        from youngs75_a2a.a2a.streaming import StreamingResponseCollector
+        from coding_agent.a2a.streaming import StreamingResponseCollector
 
         collector = StreamingResponseCollector()
         collector._accumulated_text = "partial"
@@ -880,21 +880,21 @@ class TestA2AImports:
 
     def test_all_exports(self):
         """__init__.py의 __all__ 항목이 모두 import 가능."""
-        import youngs75_a2a.a2a as a2a_mod
+        import coding_agent.a2a as a2a_mod
 
         for name in a2a_mod.__all__:
             assert hasattr(a2a_mod, name), f"{name}이(가) a2a 모듈에 없음"
 
     def test_executor_classes(self):
         """Executor 클래스 import."""
-        from youngs75_a2a.a2a import BaseAgentExecutor, LGAgentExecutor
+        from coding_agent.a2a import BaseAgentExecutor, LGAgentExecutor
 
         assert BaseAgentExecutor is not None
         assert LGAgentExecutor is not None
 
     def test_discovery_classes(self):
         """Discovery 클래스 import."""
-        from youngs75_a2a.a2a import AgentCardRegistry, AgentCardEntry, DiscoveryResult
+        from coding_agent.a2a import AgentCardRegistry, AgentCardEntry, DiscoveryResult
 
         assert AgentCardRegistry is not None
         assert AgentCardEntry is not None
@@ -902,7 +902,7 @@ class TestA2AImports:
 
     def test_resilience_classes(self):
         """Resilience 클래스 import."""
-        from youngs75_a2a.a2a import (
+        from coding_agent.a2a import (
             RetryPolicy,
             CircuitBreaker,
         )
@@ -912,7 +912,7 @@ class TestA2AImports:
 
     def test_router_classes(self):
         """Router 클래스 import."""
-        from youngs75_a2a.a2a import (
+        from coding_agent.a2a import (
             AgentRouter,
             RoutingMode,
         )
@@ -922,7 +922,7 @@ class TestA2AImports:
 
     def test_streaming_classes(self):
         """Streaming 클래스 import."""
-        from youngs75_a2a.a2a import (
+        from coding_agent.a2a import (
             StreamingResponseCollector,
             StreamChunk,
             stream_agent_response,
@@ -934,7 +934,7 @@ class TestA2AImports:
 
     def test_server_functions(self):
         """서버 조립 함수 import 및 호출 가능."""
-        from youngs75_a2a.a2a import create_agent_card
+        from coding_agent.a2a import create_agent_card
 
         card = create_agent_card(name="test", url="http://localhost:9999")
         assert card.name == "test"
@@ -951,8 +951,8 @@ class TestMergeResults:
 
     def test_merge_skill_and_tag_results(self):
         """스킬 + 태그 결과 병합."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry, DiscoveryResult
-        from youngs75_a2a.a2a.router import AgentRouter
+        from coding_agent.a2a.discovery import AgentCardEntry, DiscoveryResult
+        from coding_agent.a2a.router import AgentRouter
 
         card = make_agent_card(name="agent-1", url="http://a:8080")
         entry = AgentCardEntry(card=card, url="http://a:8080")
@@ -972,8 +972,8 @@ class TestMergeResults:
 
     def test_merge_different_agents(self):
         """서로 다른 에이전트 결과 병합."""
-        from youngs75_a2a.a2a.discovery import AgentCardEntry, DiscoveryResult
-        from youngs75_a2a.a2a.router import AgentRouter
+        from coding_agent.a2a.discovery import AgentCardEntry, DiscoveryResult
+        from coding_agent.a2a.router import AgentRouter
 
         card_a = make_agent_card(name="a", url="http://a:8080")
         card_b = make_agent_card(name="b", url="http://b:8080")
@@ -1003,7 +1003,7 @@ class TestCircuitOpenError:
 
     def test_error_message(self):
         """에러 메시지에 URL 포함."""
-        from youngs75_a2a.a2a.resilience import CircuitOpenError
+        from coding_agent.a2a.resilience import CircuitOpenError
 
         err = CircuitOpenError("http://localhost:8080")
         assert "http://localhost:8080" in str(err)

@@ -22,8 +22,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from youngs75_a2a.eval_pipeline.observability.langfuse import client, enabled
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.observability.langfuse import client, enabled
+from coding_agent.eval_pipeline.settings import get_settings
 
 _EVAL_RESULT_FILES = {
     "eval_results.json",

@@ -4,7 +4,7 @@ tiktoken 기반 토큰 수 측정, 프롬프트 압축, 토큰 예산 관리를 
 기존 에이전트 코드를 변경하지 않는 opt-in 유틸리티.
 
 사용 예시:
-    from youngs75_a2a.utils.token_optimizer import (
+    from coding_agent.utils.token_optimizer import (
         count_tokens,
         compress_prompt,
         TokenBudget,
@@ -264,7 +264,7 @@ def report_prompt_tokens(
     Returns:
         {"parse": {"tokens": N, "prompt_preview": "..."}, ...}
     """
-    from youngs75_a2a.agents.coding_assistant.prompts import (
+    from coding_agent.agents.coding_assistant.prompts import (
         EXECUTE_SYSTEM_PROMPT,
         PARSE_SYSTEM_PROMPT,
         VERIFY_SYSTEM_PROMPT,

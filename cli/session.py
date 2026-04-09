@@ -17,10 +17,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from youngs75_a2a.core.memory.store import MemoryStore
-from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.tool_permissions import ToolPermissionManager
+from coding_agent.core.memory.store import MemoryStore
+from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.tool_permissions import ToolPermissionManager
 
 
 class SessionInfo(BaseModel):

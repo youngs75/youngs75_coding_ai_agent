@@ -23,7 +23,7 @@ async def _main():
     # ── Loop 1: Dataset ──────────────────────────────────────
     print("\n[Loop 1] Dataset Generation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import (
+    from coding_agent.eval_pipeline.loop1_dataset.golden_builder import (
         build_golden_dataset,
     )
 
@@ -40,7 +40,7 @@ async def _main():
     # ── Loop 2: Evaluation ───────────────────────────────────
     print("[Loop 2] Evaluation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
         evaluate_golden_dataset,
     )
 
@@ -57,7 +57,7 @@ async def _main():
     # ── Loop 3: Remediation ──────────────────────────────────
     print("[Loop 3] Remediation")
     print("-" * 40)
-    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+    from coding_agent.eval_pipeline.loop3_remediation.remediation_agent import (
         run_remediation,
     )
 

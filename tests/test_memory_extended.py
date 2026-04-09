@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from youngs75_a2a.core.memory import MemoryItem, MemoryStore, MemoryType
+from coding_agent.core.memory import MemoryItem, MemoryStore, MemoryType
 
 
 # ── 헬퍼 ──

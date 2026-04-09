@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from youngs75_a2a.core.skills.schemas import (
+from coding_agent.core.skills.schemas import (
     Skill,
     SkillLevel,
     SkillMetadata,

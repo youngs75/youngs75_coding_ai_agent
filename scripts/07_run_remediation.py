@@ -12,7 +12,7 @@ import asyncio
 import json
 
 
-from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+from coding_agent.eval_pipeline.loop3_remediation.remediation_agent import (
     run_remediation,
 )
 
@@ -55,7 +55,7 @@ async def _main():
             print(f"  - {step}")
 
     # JSON 저장
-    from youngs75_a2a.eval_pipeline.settings import get_settings
+    from coding_agent.eval_pipeline.settings import get_settings
 
     settings = get_settings()
     output_path = settings.data_dir / "eval_results" / "remediation_report.json"

@@ -4,7 +4,7 @@
 위상 정렬(topological sort)을 통해 실행 순서를 결정한다.
 
 사용 예시:
-    from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
+    from coding_agent.agents.orchestrator.task_graph import TaskGraph
 
     graph = TaskGraph(subtasks)
     if not graph.validate():

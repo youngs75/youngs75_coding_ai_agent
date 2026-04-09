@@ -1,6 +1,6 @@
 """평가 대상 에이전트 — Coding Assistant Harness.
 
-youngs75_a2a의 CodingAssistantAgent를 래핑하여
+coding_agent의 CodingAssistantAgent를 래핑하여
 DeepEval 평가 파이프라인에서 사용할 수 있는 형태로 제공한다.
 
 동작 모드:
@@ -21,7 +21,7 @@ from langchain_core.messages import HumanMessage  # noqa: E402
 from langfuse import get_client  # noqa: E402
 from langfuse.langchain import CallbackHandler  # noqa: E402
 
-from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config  # noqa: E402
+from coding_agent.eval_pipeline.observability.langfuse import build_langchain_config  # noqa: E402
 
 
 def _run_via_a2a_service(query: str, agent_url: str) -> str:
@@ -59,7 +59,7 @@ def _run_via_a2a_service(query: str, agent_url: str) -> str:
 
 async def _run_in_process_async(query: str) -> str:
     """CodingAssistantAgent를 in-process로 실행한다 (MCP 연동 포함)."""
-    from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+    from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
 
     config = CodingConfig()
     agent = await CodingAssistantAgent.create(config=config)

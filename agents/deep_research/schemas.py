@@ -8,8 +8,8 @@ from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-from youngs75_a2a.core.base_state import BaseGraphState
-from youngs75_a2a.core.reducers import override_reducer
+from coding_agent.core.base_state import BaseGraphState
+from coding_agent.core.reducers import override_reducer
 
 
 # --- 구조화 출력 스키마 ---

@@ -17,7 +17,7 @@ CSV 스키마:
     | reviewer             | str   | Human      | 리뷰어 이름                     |
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
+    from coding_agent.eval_pipeline.loop1_dataset.csv_exporter import export_to_review_csv
     export_to_review_csv(
         synthetic_path=Path("data/synthetic/synthetic_dataset.json"),
         output_path=Path("data/review/review_dataset.csv"),

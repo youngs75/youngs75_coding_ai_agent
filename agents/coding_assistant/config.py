@@ -18,8 +18,8 @@ import os
 from langchain_core.language_models import BaseChatModel
 from pydantic import Field
 
-from youngs75_a2a.core.config import BaseAgentConfig
-from youngs75_a2a.core.model_tiers import (
+from coding_agent.core.config import BaseAgentConfig
+from coding_agent.core.model_tiers import (
     ModelTier,
     TierConfig,
     create_chat_model,

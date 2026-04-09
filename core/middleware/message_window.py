@@ -10,7 +10,7 @@ import logging
 
 from langchain_core.messages import BaseMessage, HumanMessage
 
-from youngs75_a2a.core.middleware.base import (
+from coding_agent.core.middleware.base import (
     AgentMiddleware,
     Handler,
     ModelRequest,

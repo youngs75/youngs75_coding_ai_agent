@@ -3,7 +3,7 @@
 코드 생성/검증 에이전트를 A2A 서버로 노출한다.
 Langfuse 트레이싱이 활성화되면 모든 LLM 호출이 자동으로 기록된다.
 
-실행: python -m youngs75_a2a.tests.run_coding_assistant_server
+실행: python -m coding_agent.tests.run_coding_assistant_server
 포트: 18084 (환경변수 AGENT_PORT로 변경 가능)
 """
 
@@ -26,9 +26,9 @@ import uvicorn
 from starlette.routing import Route
 from starlette.responses import JSONResponse
 
-from youngs75_a2a.a2a import LGAgentExecutor, build_app, create_agent_card
-from youngs75_a2a.agents.coding_assistant import CodingAssistantAgent, CodingConfig
-from youngs75_a2a.eval_pipeline.observability.langfuse import enabled, enrich_trace
+from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
+from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+from coding_agent.eval_pipeline.observability.langfuse import enabled, enrich_trace
 
 
 def extract_coding_result(result: dict[str, Any]) -> str:

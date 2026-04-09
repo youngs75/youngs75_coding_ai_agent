@@ -10,8 +10,8 @@
 
 from __future__ import annotations
 
-from youngs75_a2a.core.skills.loader import SkillLoader
-from youngs75_a2a.core.skills.schemas import Skill, SkillLevel
+from coding_agent.core.skills.loader import SkillLoader
+from coding_agent.core.skills.schemas import Skill, SkillLevel
 
 
 # task_type → 검색할 스킬 태그 매핑

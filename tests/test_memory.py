@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import pytest
 
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.search import (
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.search import (
     ContentBasedSearch,
     TagBasedSearch,
     TwoStageSearch,
     _tokenize,
 )
-from youngs75_a2a.core.memory.state import MemoryAwareState
-from youngs75_a2a.core.memory.store import MemoryStore
+from coding_agent.core.memory.state import MemoryAwareState
+from coding_agent.core.memory.store import MemoryStore
 
 
 # ── 헬퍼 ──
@@ -381,7 +381,7 @@ class TestMemoryAwareStateProcedural:
 class TestCodingStateProcedural:
     def test_procedural_skills_field_exists(self):
         """CodingState에 procedural_skills 필드가 정의되어 있는지 확인."""
-        from youngs75_a2a.agents.coding_assistant.schemas import CodingState
+        from coding_agent.agents.coding_assistant.schemas import CodingState
 
         annotations = CodingState.__annotations__
         assert "procedural_skills" in annotations
@@ -392,7 +392,7 @@ class TestCodingStateProcedural:
 
 class TestCoreImport:
     def test_memory_exports_from_core(self):
-        from youngs75_a2a.core import (
+        from coding_agent.core import (
             MemoryStore,
             MemoryType,
         )
@@ -425,7 +425,7 @@ class TestSemanticMemoryLoader:
             "## 프로젝트 구조\n```\nsrc/\n```\n",
             encoding="utf-8",
         )
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
 
         loader = SemanticMemoryLoader(workspace=workspace, store=store)
         count = loader._load_from_agents_md()
@@ -446,7 +446,7 @@ class TestSemanticMemoryLoader:
             'dependencies = [\n  "langchain>=1.2",\n  "pydantic>=2.0",\n]\n',
             encoding="utf-8",
         )
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
 
         loader = SemanticMemoryLoader(workspace=workspace, store=store)
         count = loader._load_from_pyproject()
@@ -465,7 +465,7 @@ class TestSemanticMemoryLoader:
             "# Repo\n\n## 커밋 및 PR 규칙\nConventional Commits\n",
             encoding="utf-8",
         )
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
 
         loader = SemanticMemoryLoader(workspace=workspace, store=store)
         count = loader.load_all()
@@ -474,7 +474,7 @@ class TestSemanticMemoryLoader:
 
     def test_load_all_no_files(self, store, workspace):
         """AGENTS.md도 pyproject.toml도 없을 때 0건."""
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
 
         loader = SemanticMemoryLoader(workspace=workspace, store=store)
         count = loader.load_all()
@@ -488,7 +488,7 @@ class TestSemanticMemoryLoader:
         if not (project_root / "AGENTS.md").exists():
             pytest.skip("AGENTS.md not found")
 
-        from youngs75_a2a.core.memory.semantic_loader import SemanticMemoryLoader
+        from coding_agent.core.memory.semantic_loader import SemanticMemoryLoader
 
         loader = SemanticMemoryLoader(workspace=project_root, store=store)
         count = loader.load_all()
@@ -501,7 +501,7 @@ class TestSemanticMemoryLoader:
 class TestDeepResearchMemoryState:
     def test_agent_state_has_memory_fields(self):
         """AgentState에 semantic_context, episodic_log 필드 존재 확인."""
-        from youngs75_a2a.agents.deep_research.schemas import AgentState
+        from coding_agent.agents.deep_research.schemas import AgentState
 
         annotations = AgentState.__annotations__
         assert "semantic_context" in annotations
@@ -509,7 +509,7 @@ class TestDeepResearchMemoryState:
 
     def test_hitl_state_inherits_memory_fields(self):
         """HITLAgentState가 AgentState의 메모리 필드를 상속."""
-        from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
+        from coding_agent.agents.deep_research.schemas import HITLAgentState
 
         # 직접 또는 상속으로 보유
         all_fields = {}

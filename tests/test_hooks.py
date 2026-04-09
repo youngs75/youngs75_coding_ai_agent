@@ -11,9 +11,9 @@ import json
 
 import pytest
 
-from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-from youngs75_a2a.core.builtin_hooks import audit_hook, logging_hook, timing_hook
-from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+from coding_agent.core.builtin_hooks import audit_hook, logging_hook, timing_hook
+from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
 
 # ─────────────────────────────────────────────────────────────
@@ -628,7 +628,7 @@ class TestBaseAgentHookIntegration:
 
     def test_base_agent_has_hook_manager(self):
         """BaseGraphAgent가 hook_manager 속성을 가진다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         # auto_build=False (state_schema 없이 빌드 불가)
         agent = BaseGraphAgent(auto_build=False)
@@ -636,7 +636,7 @@ class TestBaseAgentHookIntegration:
 
     def test_base_agent_custom_hook_manager(self):
         """커스텀 HookManager를 전달할 수 있다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         custom_manager = HookManager()
         custom_manager.register(HookEvent.PRE_NODE, _noop_handler)
@@ -647,7 +647,7 @@ class TestBaseAgentHookIntegration:
 
     async def test_wrap_node_emits_pre_and_post(self):
         """_wrap_node가 PRE_NODE와 POST_NODE 훅을 발행한다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         events_emitted: list[str] = []
 
@@ -671,7 +671,7 @@ class TestBaseAgentHookIntegration:
 
     async def test_wrap_node_cancel_skips_execution(self):
         """PRE_NODE 훅에서 cancel 시 노드가 실행되지 않는다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         executed = False
 
@@ -691,7 +691,7 @@ class TestBaseAgentHookIntegration:
 
     async def test_wrap_node_error_emits_on_error(self):
         """노드에서 예외 발생 시 ON_ERROR 훅이 발행된다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         error_captured: list[Exception] = []
 
@@ -716,7 +716,7 @@ class TestBaseAgentHookIntegration:
 
     async def test_wrap_node_async_func(self):
         """비동기 노드 함수도 _wrap_node로 감쌀 수 있다."""
-        from youngs75_a2a.core.base_agent import BaseGraphAgent
+        from coding_agent.core.base_agent import BaseGraphAgent
 
         agent = BaseGraphAgent(auto_build=False)
 
@@ -829,12 +829,12 @@ class TestConfigLoading:
             "hooks": [
                 {
                     "event": "pre_tool_call",
-                    "handler": "youngs75_a2a.core.builtin_hooks.logging_hook",
+                    "handler": "coding_agent.core.builtin_hooks.logging_hook",
                     "priority": 0,
                 },
                 {
                     "event": "post_tool_call",
-                    "handler": "youngs75_a2a.core.builtin_hooks.timing_hook",
+                    "handler": "coding_agent.core.builtin_hooks.timing_hook",
                     "priority": 5,
                 },
             ]
@@ -871,7 +871,7 @@ class TestConfigLoading:
             "hooks": [
                 {
                     "event": "invalid_event",
-                    "handler": "youngs75_a2a.core.builtin_hooks.logging_hook",
+                    "handler": "coding_agent.core.builtin_hooks.logging_hook",
                     "priority": 0,
                 },
             ]

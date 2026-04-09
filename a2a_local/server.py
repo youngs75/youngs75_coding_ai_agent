@@ -93,7 +93,7 @@ def run_server(
 
 # --- 직접 실행 예시 ---
 if __name__ == "__main__":
-    from youngs75_a2a.a2a.executor import BaseAgentExecutor
+    from coding_agent.a2a.executor import BaseAgentExecutor
 
     async def echo_agent(query: str, ctx: dict) -> str:
         return f"에코: {query}"

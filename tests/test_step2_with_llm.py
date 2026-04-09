@@ -4,7 +4,7 @@ Step 2: LLM 연동 테스트 (MCP 서버 불필요)
 - MCP 서버 불필요 (도구 없이 LLM만 사용)
 
 준비: export OPENAI_API_KEY=sk-...
-실행: cd Day-04 && python -m youngs75_a2a.tests.test_step2_with_llm
+실행: cd Day-04 && python -m coding_agent.tests.test_step2_with_llm
 """
 
 import asyncio
@@ -66,7 +66,7 @@ async def test_deep_research_clarify_only():
     연구는 실행하지 않음.
     """
     from langchain_core.messages import HumanMessage
-    from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
+    from coding_agent.agents.deep_research import DeepResearchAgent, ResearchConfig
 
     rc = ResearchConfig(
         allow_clarification=True,
@@ -106,8 +106,8 @@ async def test_deep_research_clarify_only():
 async def test_a2a_server_lifecycle():
     """A2A 서버 기동 → 헬스체크 → 종료 테스트."""
     import httpx
-    from youngs75_a2a.a2a import LGAgentExecutor, build_app, create_agent_card
-    from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
+    from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
+    from coding_agent.agents.deep_research import DeepResearchAgent, ResearchConfig
 
     agent = DeepResearchAgent(
         config=ResearchConfig(default_model="deepseek/deepseek-v3.2")
@@ -177,7 +177,7 @@ async def main():
     print()
     print("다음 단계: Step 3 (MCP + 전체 연구 파이프라인)")
     print("  1. MCP 서버 실행 (Docker 또는 로컬)")
-    print("  2. python -m youngs75_a2a.tests.test_step3_full_pipeline")
+    print("  2. python -m coding_agent.tests.test_step3_full_pipeline")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.calibration_cases import (
+from coding_agent.eval_pipeline.loop2_evaluation.calibration_cases import (
     CalibrationCase,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer import (
+from coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer import (
     CaseScore,
     PromptEvaluation,
     apply_best_prompts_to_file,
@@ -56,11 +56,11 @@ def test_evaluate_prompt_with_mocked_metric(monkeypatch):
     ]
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer.cases_for_metric",
+        "coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer.cases_for_metric",
         lambda metric, max_cases=None: sample_cases,
     )
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer._build_metric",
+        "coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer._build_metric",
         lambda metric, prompt_text: FakeMetric(),
     )
 
@@ -135,11 +135,11 @@ def test_optimize_metric_prompt_accepts_better_candidate(monkeypatch):
         return evaluations.pop(0)
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer.evaluate_prompt",
+        "coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer.evaluate_prompt",
         fake_evaluate_prompt,
     )
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer._request_prompt_update",
+        "coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer._request_prompt_update",
         lambda **kwargs: {
             "updated_prompt": "improved prompt",
             "change_log": ["clarified rubric"],
@@ -238,7 +238,7 @@ def test_optimize_all_prompts_forwards_langfuse_hints(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer.optimize_metric_prompt",
+        "coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer.optimize_metric_prompt",
         fake_optimize_metric_prompt,
     )
 

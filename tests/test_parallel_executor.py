@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from youngs75_a2a.core.parallel_tool_executor import (
+from coding_agent.core.parallel_tool_executor import (
     CONCURRENCY_SAFE_TOOLS,
     BatchToolResult,
     ParallelToolExecutor,
@@ -279,12 +279,12 @@ class TestApplyPatch:
         """테스트용 workspace를 임시 디렉토리로 설정한다."""
         self.workspace = tmp_path
         monkeypatch.setattr(
-            "youngs75_a2a.mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
+            "coding_agent.mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
         )
 
     def test_apply_patch_normal(self):
         """정상적인 unified diff 패치가 올바르게 적용된다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import apply_patch
+        from coding_agent.mcp_servers.code_tools.server import apply_patch
 
         # 원본 파일 생성
         target = self.workspace / "hello.py"
@@ -307,7 +307,7 @@ class TestApplyPatch:
 
     def test_apply_patch_add_lines(self):
         """패치로 새 줄을 추가할 수 있다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import apply_patch
+        from coding_agent.mcp_servers.code_tools.server import apply_patch
 
         target = self.workspace / "add.py"
         target.write_text("line1\nline2\n", encoding="utf-8")
@@ -328,7 +328,7 @@ class TestApplyPatch:
 
     def test_apply_patch_workspace_outside_blocked(self):
         """workspace 밖 경로 접근이 차단된다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import apply_patch
+        from coding_agent.mcp_servers.code_tools.server import apply_patch
 
         patch = (
             "--- a/../../../etc/passwd\n"
@@ -342,7 +342,7 @@ class TestApplyPatch:
 
     def test_apply_patch_invalid_format(self):
         """잘못된 diff 형식에 대해 에러를 반환한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import apply_patch
+        from coding_agent.mcp_servers.code_tools.server import apply_patch
 
         result = apply_patch("이건 유효한 패치가 아닙니다")
         assert "Error" in result
@@ -350,7 +350,7 @@ class TestApplyPatch:
 
     def test_apply_patch_no_hunk(self):
         """hunk 헤더가 없는 패치는 에러를 반환한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import apply_patch
+        from coding_agent.mcp_servers.code_tools.server import apply_patch
 
         target = self.workspace / "nohunk.py"
         target.write_text("hello\n", encoding="utf-8")
@@ -373,12 +373,12 @@ class TestStrReplace:
         """테스트용 workspace를 임시 디렉토리로 설정한다."""
         self.workspace = tmp_path
         monkeypatch.setattr(
-            "youngs75_a2a.mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
+            "coding_agent.mcp_servers.code_tools.server._WORKSPACE", str(tmp_path)
         )
 
     def test_str_replace_normal(self):
         """정상적인 문자열 교체가 동작한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         target = self.workspace / "example.py"
         target.write_text("def hello():\n    return 'world'\n", encoding="utf-8")
@@ -391,7 +391,7 @@ class TestStrReplace:
 
     def test_str_replace_not_found(self):
         """old_str이 파일에 없으면 에러를 반환한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         target = self.workspace / "missing.py"
         target.write_text("hello world\n", encoding="utf-8")
@@ -402,7 +402,7 @@ class TestStrReplace:
 
     def test_str_replace_multiple_matches(self):
         """old_str이 2번 이상 존재하면 모호한 매치 에러를 반환한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         target = self.workspace / "ambiguous.py"
         target.write_text("foo\nbar\nfoo\nbaz\n", encoding="utf-8")
@@ -414,14 +414,14 @@ class TestStrReplace:
 
     def test_str_replace_workspace_outside_blocked(self):
         """workspace 밖 경로 접근이 차단된다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         with pytest.raises(ValueError, match="접근 거부"):
             str_replace("../../../etc/passwd", "root", "hacked")
 
     def test_str_replace_file_not_exists(self):
         """존재하지 않는 파일에 대해 에러를 반환한다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         result = str_replace("no_such_file.py", "old", "new")
         assert "Error" in result
@@ -429,7 +429,7 @@ class TestStrReplace:
 
     def test_str_replace_multiline(self):
         """여러 줄에 걸친 문자열도 교체할 수 있다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         target = self.workspace / "multi.py"
         target.write_text("def foo():\n    x = 1\n    return x\n", encoding="utf-8")
@@ -446,7 +446,7 @@ class TestStrReplace:
 
     def test_str_replace_preserves_rest(self):
         """교체 대상 외의 내용이 보존된다."""
-        from youngs75_a2a.mcp_servers.code_tools.server import str_replace
+        from coding_agent.mcp_servers.code_tools.server import str_replace
 
         original = "aaa\nbbb\nccc\nddd\n"
         target = self.workspace / "preserve.py"

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import HumanMessage
 
-from youngs75_a2a.core.subagent_context import (
+from coding_agent.core.subagent_context import (
     SubagentContextFilter,
     _EXCLUDED_STATE_KEYS,
     get_excluded_state_keys,

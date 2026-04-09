@@ -79,7 +79,7 @@ def step1_generate_synthetic(
     Returns:
         생성된 합성 데이터 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+    from coding_agent.eval_pipeline.loop1_dataset.synthesizer import (
         generate_synthetic_dataset,
     )
 
@@ -100,10 +100,10 @@ def step2_export_csv() -> Path:
     Returns:
         생성된 CSV 파일 경로
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_exporter import (
+    from coding_agent.eval_pipeline.loop1_dataset.csv_exporter import (
         export_to_review_csv,
     )
-    from youngs75_a2a.eval_pipeline.settings import get_settings
+    from coding_agent.eval_pipeline.settings import get_settings
 
     settings = get_settings()
     synthetic_dir = settings.data_dir / "synthetic"
@@ -139,13 +139,13 @@ def step3_import_reviewed(
     Returns:
         가져온 (+ 보강된) 데이터 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import (
+    from coding_agent.eval_pipeline.loop1_dataset.csv_importer import (
         import_reviewed_csv,
     )
-    from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import (
+    from coding_agent.eval_pipeline.loop1_dataset.feedback_augmenter import (
         augment_with_feedback,
     )
-    from youngs75_a2a.eval_pipeline.settings import get_settings
+    from coding_agent.eval_pipeline.settings import get_settings
 
     if csv_path:
         review_path = Path(csv_path)
@@ -198,7 +198,7 @@ def step4_build_golden(
     Returns:
         확정된 Golden Dataset 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import (
+    from coding_agent.eval_pipeline.loop1_dataset.golden_builder import (
         build_golden_dataset,
     )
 
@@ -233,7 +233,7 @@ def step5_run_evaluation(
     Returns:
         평가 결과 딕셔너리 리스트
     """
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
         evaluate_golden_dataset,
     )
 
@@ -290,7 +290,7 @@ def step6_batch_langfuse(
     Returns:
         모니터링 스냅샷 딕셔너리
     """
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
         monitor_langfuse_scores,
     )
 
@@ -325,7 +325,7 @@ async def step7_run_remediation() -> object:
     Returns:
         RecommendationReport Pydantic 모델 인스턴스
     """
-    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+    from coding_agent.eval_pipeline.loop3_remediation.remediation_agent import (
         run_remediation,
     )
 
@@ -353,13 +353,13 @@ def step8_optimize_prompts(
     failure_hints_max: int = 6,
 ) -> dict:
     """Step 8: Evaluation 프롬프트 자동 최적화를 실행합니다."""
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer import (
+    from coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer import (
         apply_best_prompts_to_file,
         load_langfuse_failure_hints,
         optimize_all_prompts,
         save_optimization_artifacts,
     )
-    from youngs75_a2a.eval_pipeline.settings import get_settings
+    from coding_agent.eval_pipeline.settings import get_settings
 
     settings = get_settings()
     default_hints_path = (

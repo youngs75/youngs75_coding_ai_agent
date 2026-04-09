@@ -7,7 +7,7 @@
 호환되며, 독립적으로도 사용 가능하다.
 
 사용 예시:
-    from youngs75_a2a.utils.profiler import Profiler, profile_async
+    from coding_agent.utils.profiler import Profiler, profile_async
 
     # 데코레이터
     @profile_async(name="parse_request")

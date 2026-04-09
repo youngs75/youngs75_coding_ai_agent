@@ -20,8 +20,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.mcp_loader import MCPToolLoader
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.mcp_loader import MCPToolLoader
 
 from .config import VerifierConfig
 from .prompts import REVIEW_SYSTEM_PROMPT

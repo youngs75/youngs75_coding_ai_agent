@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from youngs75_a2a.eval_pipeline.llm.deepeval_model import OpenRouterModel
+from coding_agent.eval_pipeline.llm.deepeval_model import OpenRouterModel
 
 
 class TestOpenRouterModel:

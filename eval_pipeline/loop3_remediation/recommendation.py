@@ -14,7 +14,7 @@ Remediation Agent의 출력을 Pydantic 모델로 정의합니다.
     └── next_steps: list[str]
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import RecommendationReport
+    from coding_agent.eval_pipeline.loop3_remediation.recommendation import RecommendationReport
     report = RecommendationReport(
         summary="에이전트 품질이 임계값 이하입니다",
         failure_analysis=FailureAnalysis(total_evaluated=100, total_failed=30, failure_rate=0.3),
@@ -251,7 +251,7 @@ def save_remediation_report(
         저장된 파일 경로
     """
     if output_dir is None:
-        from youngs75_a2a.eval_pipeline.settings import get_settings
+        from coding_agent.eval_pipeline.settings import get_settings
 
         settings = get_settings()
         output_dir = settings.data_dir / "eval_results"
@@ -279,7 +279,7 @@ def load_remediation_report(
         RecommendationReport 또는 파일이 없으면 None
     """
     if report_path is None:
-        from youngs75_a2a.eval_pipeline.settings import get_settings
+        from coding_agent.eval_pipeline.settings import get_settings
 
         settings = get_settings()
         report_path = settings.data_dir / "eval_results" / "remediation_report.json"

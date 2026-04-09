@@ -1,4 +1,4 @@
-"""youngs75_a2a 전체 테스트 공통 설정."""
+"""coding_agent 전체 테스트 공통 설정."""
 
 from __future__ import annotations
 

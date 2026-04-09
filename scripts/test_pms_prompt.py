@@ -63,9 +63,9 @@ async def run_pms_test():
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.types import Command
 
-    from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
-    from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
-    from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+    from coding_agent.agents.orchestrator.agent import OrchestratorAgent
+    from coding_agent.agents.orchestrator.config import OrchestratorConfig
+    from coding_agent.eval_pipeline.observability.callback_handler import (
         create_langfuse_handler,
         safe_flush,
     )

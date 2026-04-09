@@ -7,8 +7,8 @@ import logging
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, interrupt
 
-from youngs75_a2a.agents.deep_research.config import ResearchConfig
-from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
+from coding_agent.agents.deep_research.config import ResearchConfig
+from coding_agent.agents.deep_research.schemas import HITLAgentState
 
 logger = logging.getLogger(__name__)
 

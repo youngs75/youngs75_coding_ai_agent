@@ -5,7 +5,7 @@ asyncio.gather + 세마포어 기반으로 동시 실행 수를 제한하고,
 일부 실패 시에도 나머지 결과를 반환한다.
 
 사용 예시:
-    from youngs75_a2a.core.batch_executor import BatchExecutor
+    from coding_agent.core.batch_executor import BatchExecutor
 
     executor = BatchExecutor(max_concurrency=5)
 

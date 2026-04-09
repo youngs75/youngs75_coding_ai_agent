@@ -1,7 +1,7 @@
 # 사용자 가이드
 
 **프로젝트**: youngs75-coding-ai-agent  
-**패키지**: youngs75_a2a  
+**패키지**: coding_agent  
 **Python**: 3.13 | **패키지 관리자**: uv
 
 ---
@@ -70,7 +70,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 ```bash
 # Code Tools MCP 서버 실행 (백그라운드)
-python -m youngs75_a2a.mcp_servers.code_tools.server &
+python -m coding_agent.mcp_servers.code_tools.server &
 ```
 
 기본 포트는 3003이다. `CODE_TOOLS_PORT` 환경변수로 변경 가능.
@@ -82,7 +82,7 @@ python -m youngs75_a2a.mcp_servers.code_tools.server &
 youngs75-agent
 
 # 방법 2: 모듈로 실행
-python -m youngs75_a2a.cli
+python -m coding_agent.cli
 ```
 
 실행하면 대화형 프롬프트가 표시된다:
@@ -346,8 +346,8 @@ agents/
 2. `agent.py`에서 `BaseGraphAgent`를 상속한다.
 
 ```python
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.base_state import BaseGraphState
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.base_state import BaseGraphState
 from langgraph.graph import START, END, StateGraph
 from typing import ClassVar
 
@@ -381,7 +381,7 @@ async def async_init(self) -> None:
 
 ```toml
 [tool.setuptools.package-dir]
-"youngs75_a2a.agents.my_agent" = "agents/my_agent"
+"coding_agent.agents.my_agent" = "agents/my_agent"
 ```
 
 ### 4.2 모델 설정 커스터마이징
@@ -449,7 +449,7 @@ class MyConfig(BaseAgentConfig):
 
 ```python
 # 프롬프트 레지스트리 접근
-from youngs75_a2a.agents.coding_assistant.prompts import get_prompt_registry
+from coding_agent.agents.coding_assistant.prompts import get_prompt_registry
 
 registry = get_prompt_registry()
 
@@ -466,7 +466,7 @@ Remediation Agent가 자동으로 프롬프트를 개선할 수도 있다 (`/eva
 ### 4.5 Safety Envelope 설정
 
 ```python
-from youngs75_a2a.core.action_validator import ActionValidator
+from coding_agent.core.action_validator import ActionValidator
 
 validator = ActionValidator(
     allowed_extensions=[".py", ".js", ".ts"],
@@ -529,10 +529,10 @@ Remediation Agent를 시작합니다...
 
 ```bash
 # Langfuse 실험 실행
-python -m youngs75_a2a.scripts.10_run_langfuse_experiment --run-name "test"
+python -m coding_agent.scripts.10_run_langfuse_experiment --run-name "test"
 
 # 코딩 에이전트 직접 테스트
-python -m youngs75_a2a.tests.test_coding_assistant 1
+python -m coding_agent.tests.test_coding_assistant 1
 ```
 
 ### 5.4 온라인 평가 (Langfuse External Evaluation)
@@ -560,14 +560,14 @@ Langfuse 대시보드에서 `deepeval.*` 필터로 평가 결과를 모니터링
 
 ## 6. FAQ
 
-### Q: `youngs75_a2a`와 `a2a_local` 디렉토리의 관계는?
+### Q: `coding_agent`와 `a2a_local` 디렉토리의 관계는?
 
-`a2a_local/` 디렉토리는 `pyproject.toml`의 패키지 매핑에 의해 `youngs75_a2a.a2a`로 임포트된다. 코드에서는 항상 `from youngs75_a2a.a2a import ...`로 사용한다.
+`a2a_local/` 디렉토리는 `pyproject.toml`의 패키지 매핑에 의해 `coding_agent.a2a`로 임포트된다. 코드에서는 항상 `from coding_agent.a2a import ...`로 사용한다.
 
 ```toml
 # pyproject.toml
 [tool.setuptools.package-dir]
-"youngs75_a2a.a2a" = "a2a_local"
+"coding_agent.a2a" = "a2a_local"
 ```
 
 ### Q: MCP 서버가 꺼져 있으면 에이전트가 멈추나?
@@ -596,8 +596,8 @@ STRONG_PROVIDER=openrouter
 ### Q: Docker 없이 에이전트를 A2A 서버로 띄우려면?
 
 ```python
-from youngs75_a2a.a2a import LGAgentExecutor, run_server
-from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
+from coding_agent.a2a import LGAgentExecutor, run_server
+from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
 
 import asyncio
 
@@ -617,8 +617,8 @@ asyncio.run(main())
 ```python
 import asyncio
 from langchain_core.messages import HumanMessage
-from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+from coding_agent.agents.coding_assistant.config import CodingConfig
 
 async def main():
     agent = await CodingAssistantAgent.create(config=CodingConfig())

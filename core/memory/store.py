@@ -23,8 +23,8 @@ from typing import Any
 
 from langgraph.store.memory import InMemoryStore
 
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.search import TwoStageSearch, _tokenize
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.search import TwoStageSearch, _tokenize
 
 logger = logging.getLogger(__name__)
 

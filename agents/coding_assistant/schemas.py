@@ -10,7 +10,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from youngs75_a2a.core.reducers import override_reducer
+from coding_agent.core.reducers import override_reducer
 
 
 class ParseResult(TypedDict, total=False):
@@ -80,6 +80,9 @@ class CodingState(TypedDict, total=False):
 
     # apply_code 출력 — 디스크에 저장된 파일 경로 목록 (재시도 시 누적)
     written_files: Annotated[list[str], override_reducer]
+
+    # Planner가 지정한 Phase별 생성 예정 파일 경로 목록
+    planned_files: list[str]
 
     # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
     env_approved: bool

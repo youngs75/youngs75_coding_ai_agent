@@ -9,7 +9,7 @@ Step 3: 전체 파이프라인 테스트 (MCP + LLM + A2A)
      a) Docker: cd Day-04/a2a/docker && docker compose -f docker-compose.mcp.yml up -d
      b) 로컬:   python Day-04/mcp_server.py  (이미 구현된 MCP 서버가 있다면)
 
-실행: cd Day-04 && python -m youngs75_a2a.tests.test_step3_full_pipeline
+실행: cd Day-04 && python -m coding_agent.tests.test_step3_full_pipeline
 """
 
 import asyncio
@@ -35,7 +35,7 @@ except ImportError:
 
 async def test_mcp_tool_loading():
     """MCP 서버 연결 및 도구 로딩 테스트."""
-    from youngs75_a2a.core.mcp_loader import MCPToolLoader
+    from coding_agent.core.mcp_loader import MCPToolLoader
 
     tavily_url = os.getenv("TAVILY_MCP_URL", "http://localhost:3001/mcp/")
     loader = MCPToolLoader(
@@ -58,7 +58,7 @@ async def test_mcp_tool_loading():
 async def test_simple_react_agent():
     """SimpleMCPReActAgent 전체 실행 테스트."""
     from langchain_core.messages import HumanMessage
-    from youngs75_a2a.agents.simple_react import SimpleMCPReActAgent, SimpleReActConfig
+    from coding_agent.agents.simple_react import SimpleMCPReActAgent, SimpleReActConfig
 
     config = SimpleReActConfig(default_model="deepseek/deepseek-v3.2")
     agent = await SimpleMCPReActAgent.create(config=config)
@@ -87,7 +87,7 @@ async def test_deep_research_full():
     clarify → brief → supervisor(병렬 연구) → final_report
     """
     from langchain_core.messages import HumanMessage
-    from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
+    from coding_agent.agents.deep_research import DeepResearchAgent, ResearchConfig
 
     rc = ResearchConfig(
         allow_clarification=False,  # 명확화 건너뛰고 바로 연구
@@ -134,8 +134,8 @@ async def test_a2a_end_to_end():
     import uvicorn
     from starlette.routing import Route
     from starlette.responses import JSONResponse
-    from youngs75_a2a.a2a import LGAgentExecutor, build_app, create_agent_card
-    from youngs75_a2a.agents.deep_research import DeepResearchAgent, ResearchConfig
+    from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
+    from coding_agent.agents.deep_research import DeepResearchAgent, ResearchConfig
 
     rc = ResearchConfig(
         allow_clarification=False,

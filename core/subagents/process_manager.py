@@ -118,7 +118,7 @@ class SubAgentProcessManager:
         temp_files.append(task_msg_file.name)
 
         cmd = [
-            sys.executable, "-m", "youngs75_a2a.core.subagents.worker",
+            sys.executable, "-m", "coding_agent.core.subagents.worker",
             "--agent-type", agent_type,
             "--task-message-file", task_msg_file.name,
             "--parent-id", parent_id or "",

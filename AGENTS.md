@@ -7,43 +7,29 @@ AI Assistant Coding Agent Harness — MCP 도구 기반 코드 생성/검증/실
 ## 프로젝트 구조
 
 ```
-youngs75_coding_ai_agent/
-├── core/                      # 공통 프레임워크 (BaseGraphAgent, MCP Loader)
-│   ├── memory/                # CoALA 4종 메모리 시스템
-│   ├── skills/                # 3-Level 스킬 시스템 (자동 활성화)
-│   └── subagents/             # SubAgent 동적 선택 레지스트리
-├── agents/                    # 에이전트 구현체
-│   ├── planner/               # Planner (아키텍처 설계 + 태스크 분해, REASONING 티어)
-│   ├── coding_assistant/      # CodingAssistant (코드 생성 + 자동 파일 저장)
-│   ├── deep_research/         # DeepResearch (심층 연구 워크플로우)
-│   ├── orchestrator/          # Orchestrator (기본 에이전트, Planner 경유 라우팅)
-│   └── simple_react/          # SimpleReAct (MCP 도구 루프)
-├── a2a_local/                 # A2A 프로토콜 통합 (a2a-sdk 네이밍 충돌 방지)
-├── mcp_servers/               # MCP 서버
-│   └── code_tools/            # 파일 I/O, 코드 검색, 코드 실행 MCP 서버
-├── eval_pipeline/             # DeepEval 기반 평가 파이프라인 (Langfuse 연동)
-│   ├── llm/                   # LLM 어댑터
-│   ├── loop1_dataset/         # 데이터셋 생성 루프
-│   ├── loop2_evaluation/      # 평가 루프
-│   ├── loop3_remediation/     # 개선 루프
-│   └── observability/         # Langfuse 관측성
-├── data/                      # 입력 소스 및 루프 실행 결과물
-│   ├── corpus/                # 소스 문서
-│   ├── skills/                # 스킬 YAML 정의 (7개)
-│   ├── synthetic/             # 합성 데이터셋
-│   ├── review/                # 리뷰 CSV
-│   ├── golden/                # Golden 데이터셋
-│   ├── eval_results/          # 평가 결과
-│   └── prompt_optimization/   # 프롬프트 최적화 리포트
-├── cli/                       # 대화형 CLI (prompt-toolkit + rich)
-├── scripts/                   # 스텝별 실행 엔트리포인트
-├── tests/                     # 테스트 (750+ passed)
-│   └── eval/                  # 평가 테스트
-├── docs/                      # 문서 (Architecture, API, User Guide)
-├── docker/                    # Docker Compose Harness
-├── pyproject.toml             # 프로젝트 의존성 (uv 기반)
-├── AGENTS.md                  # 이 파일 — AI와 기여자가 따를 규칙 문서
-└── .ai/sessions/              # 세션 인수인계 파일 저장 위치
+youngs75_coding_ai_agent/           # 패키지명: coding_agent
+├── core/                           # 공통 프레임워크 (BaseGraphAgent, MCP Loader)
+│   ├── memory/                     # CoALA 4종 메모리 시스템
+│   ├── skills/                     # 3-Level 스킬 시스템 (자동 활성화)
+│   ├── middleware/                  # LLM 미들웨어 체인
+│   └── subagents/                  # SubAgent 동적 선택 레지스트리
+├── agents/                         # 에이전트 구현체
+│   ├── orchestrator/               # Orchestrator (기본 에이전트, Planner 경유 라우팅)
+│   ├── planner/                    # Planner (아키텍처 설계 + 태스크 분해)
+│   ├── coding_assistant/           # CodingAssistant (코드 생성 + 자동 파일 저장)
+│   └── verifier/                   # VerificationAgent (코드 검증)
+├── a2a_local/                      # A2A 프로토콜 브릿지 (a2a-sdk 충돌 방지)
+├── mcp_servers/                    # MCP 서버
+│   └── code_tools/                 # 파일 I/O, 코드 검색, 코드 실행
+├── eval_pipeline/                  # DeepEval 기반 평가 파이프라인 (Langfuse 연동)
+├── cli/                            # 대화형 CLI (prompt-toolkit + rich)
+├── scripts/                        # 스텝별 실행 엔트리포인트
+├── tests/                          # 테스트 (960+ passed)
+├── docs/                           # 문서 (Architecture, API, User Guide)
+├── docker/                         # Docker Compose Harness (통합 구성)
+├── pyproject.toml                  # 프로젝트 의존성 (uv 기반)
+├── AGENTS.md                       # 이 파일 — AI와 기여자가 따를 규칙 문서
+└── .ai/sessions/                   # 세션 인수인계 파일 저장 위치
 ```
 
 규칙이 여러 곳에 흩어져 있어도 기준 문서는 항상 `AGENTS.md`로 통일합니다.
@@ -105,11 +91,14 @@ python scripts/run_pipeline.py --help
 
 ### Docker 배포
 ```bash
-# 전체 서비스 Harness
-cd docker && docker compose up -d
+# Harness 기동 (LiteLLM + MCP + CodingAssistant + Orchestrator)
+make up
 
-# MCP 서버 단독
-cd docker && docker compose -f docker-compose.mcp.yml up -d
+# 상태 확인
+make ps
+
+# 종료
+make down
 ```
 
 구현 후에는 로그나 실행 결과로 정상 동작을 확인한 뒤에만 완료를 보고합니다.

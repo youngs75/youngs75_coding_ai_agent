@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from youngs75_a2a.core.model_tiers import (
+from coding_agent.core.model_tiers import (
     ModelTier,
     TierConfig,
     build_default_purpose_tiers,
@@ -141,7 +141,7 @@ class TestResolveTierConfig:
 
 class TestBaseAgentConfigTiers:
     def test_get_tier_config(self):
-        from youngs75_a2a.core.config import BaseAgentConfig
+        from coding_agent.core.config import BaseAgentConfig
 
         config = BaseAgentConfig()
         tc = config.get_tier_config("generation")
@@ -149,7 +149,7 @@ class TestBaseAgentConfigTiers:
 
     def test_get_model_uses_tier_config(self):
         """BaseAgentConfig.get_model()은 purpose_tiers → model_tiers를 사용한다."""
-        from youngs75_a2a.core.config import BaseAgentConfig
+        from coding_agent.core.config import BaseAgentConfig
 
         config = BaseAgentConfig()
         tier_config = config.get_tier_config("default")
@@ -157,7 +157,7 @@ class TestBaseAgentConfigTiers:
         assert tier_config.model is not None
 
     def test_legacy_fields_preserved(self):
-        from youngs75_a2a.core.config import BaseAgentConfig
+        from coding_agent.core.config import BaseAgentConfig
 
         config = BaseAgentConfig(
             model_provider="openrouter",
@@ -170,7 +170,7 @@ class TestBaseAgentConfigTiers:
         assert config.get_mcp_endpoint("tavily") == "http://localhost:3001/mcp/"
 
     def test_to_langgraph_configurable_includes_tiers(self):
-        from youngs75_a2a.core.config import BaseAgentConfig
+        from coding_agent.core.config import BaseAgentConfig
 
         config = BaseAgentConfig()
         configurable = config.to_langgraph_configurable()
@@ -184,7 +184,7 @@ class TestBaseAgentConfigTiers:
 
 class TestCodingConfigTiers:
     def test_purpose_tiers_default(self):
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig()
         assert config.purpose_tiers["generation"] == ModelTier.STRONG
@@ -193,7 +193,7 @@ class TestCodingConfigTiers:
         assert config.purpose_tiers["verification"] == ModelTier.DEFAULT
 
     def test_tier_config_for_generation(self):
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig()
         tc = config.get_tier_config("generation")
@@ -201,7 +201,7 @@ class TestCodingConfigTiers:
 
     def test_explicit_override_takes_precedence(self):
         """CODING_GEN_MODEL 환경변수가 티어보다 우선한다."""
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig(generation_model="custom-gen-model")
         assert config._get_explicit_override("generation") == "custom-gen-model"
@@ -209,14 +209,14 @@ class TestCodingConfigTiers:
         assert config._get_explicit_override("default") is None
 
     def test_no_override_when_none(self):
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig(generation_model=None, verification_model=None)
         assert config._get_explicit_override("generation") is None
         assert config._get_explicit_override("verification") is None
 
     def test_budget_config_defaults(self):
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig()
         assert config.diminishing_streak_limit == 3
@@ -224,7 +224,7 @@ class TestCodingConfigTiers:
         assert config.max_llm_calls_per_turn == 15
 
     def test_budget_config_lenient_override(self):
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         config = CodingConfig(
             max_llm_calls_per_turn=20,
@@ -241,7 +241,7 @@ class TestCodingConfigTiers:
 
 class TestResearchConfigBackwardCompat:
     def test_resolve_model_name_still_works(self):
-        from youngs75_a2a.agents.deep_research.config import ResearchConfig
+        from coding_agent.agents.deep_research.config import ResearchConfig
 
         rc = ResearchConfig(
             research_model="research-llm",

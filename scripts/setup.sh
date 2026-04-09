@@ -157,8 +157,8 @@ else
 fi
 
 # 설치 확인
-if uv run python -c "import youngs75_a2a" 2>/dev/null; then
-    ok "패키지 설치 완료 (youngs75_a2a)"
+if uv run python -c "import coding_agent" 2>/dev/null; then
+    ok "패키지 설치 완료 (coding_agent)"
 else
     warn "패키지 임포트 확인 실패 — uv pip install -e . 시도"
     uv pip install -e .

@@ -1,16 +1,16 @@
 # API 레퍼런스
 
-**패키지**: `youngs75_a2a`  
+**패키지**: `coding_agent`  
 **Python**: 3.13  
-**import 경로**: `from youngs75_a2a.{모듈} import {클래스}`
+**import 경로**: `from coding_agent.{모듈} import {클래스}`
 
 ---
 
-## 1. Core 모듈 (`youngs75_a2a.core`)
+## 1. Core 모듈 (`coding_agent.core`)
 
 ### 1.1 BaseGraphAgent
 
-**경로**: `youngs75_a2a.core.base_agent`
+**경로**: `coding_agent.core.base_agent`
 
 LangGraph 그래프 에이전트의 기본 클래스. 모든 에이전트는 이 클래스를 상속한다.
 
@@ -56,7 +56,7 @@ class BaseGraphAgent:
 
 ### 1.2 BaseAgentConfig
 
-**경로**: `youngs75_a2a.core.config`
+**경로**: `coding_agent.core.config`
 
 모든 에이전트 Config의 기본 클래스. Pydantic BaseModel 기반.
 
@@ -89,7 +89,7 @@ class BaseAgentConfig(BaseModel):
 
 ### 1.3 ModelTiers
 
-**경로**: `youngs75_a2a.core.model_tiers`
+**경로**: `coding_agent.core.model_tiers`
 
 멀티티어 모델 해석 시스템.
 
@@ -117,7 +117,7 @@ def create_chat_model(tier_config, *, temperature=0.1, structured=None, **kwargs
 
 ### 1.4 MCPToolLoader
 
-**경로**: `youngs75_a2a.core.mcp_loader`
+**경로**: `coding_agent.core.mcp_loader`
 
 MCP 서버에서 도구를 로딩하고 캐싱하는 클���스.
 
@@ -148,7 +148,7 @@ class MCPToolLoader:
 
 ### 1.5 BaseGraphState
 
-**경로**: `youngs75_a2a.core.base_state`
+**경로**: `coding_agent.core.base_state`
 
 ```python
 class BaseGraphState(TypedDict):
@@ -157,7 +157,7 @@ class BaseGraphState(TypedDict):
 
 ### 1.6 ActionValidator
 
-**경로**: `youngs75_a2a.core.action_validator`
+**경로**: `coding_agent.core.action_validator`
 
 Safety Envelope. 에이전트 출력을 실행 전에 검증한다.
 
@@ -201,7 +201,7 @@ class ValidationStatus(Enum):
 
 ### 1.7 override_reducer
 
-**경로**: `youngs75_a2a.core.reducers`
+**경로**: `coding_agent.core.reducers`
 
 ```python
 def override_reducer(current_value: Any, new_value: Any) -> Any:
@@ -213,7 +213,7 @@ def override_reducer(current_value: Any, new_value: Any) -> Any:
 
 ### 1.8 tool_call_utils
 
-**경로**: `youngs75_a2a.core.tool_call_utils`
+**경로**: `coding_agent.core.tool_call_utils`
 
 LangChain, OpenAI, dict 등 다양한 형태의 tool_call 객체를 안전하게 처리.
 
@@ -225,7 +225,7 @@ def tc_args(tool_call: Any) -> dict[str, Any]: ... # 도구 인자 추출 (JSON 
 
 ### 1.9 Memory 시스템
 
-**경로**: `youngs75_a2a.core.memory`
+**경로**: `coding_agent.core.memory`
 
 #### MemoryItem / MemoryType
 
@@ -289,7 +289,7 @@ class TwoStageSearch:
 
 ### 1.10 Skills 시스템
 
-**경로**: `youngs75_a2a.core.skills`
+**경로**: `coding_agent.core.skills`
 
 #### Skill / SkillMetadata / SkillLevel
 
@@ -347,7 +347,7 @@ class SkillRegistry:
 
 ### 1.11 SubAgents 시스템
 
-**경로**: `youngs75_a2a.core.subagents`
+**경로**: `coding_agent.core.subagents`
 
 ```python
 class SubAgentSpec(BaseModel):
@@ -371,11 +371,11 @@ class SubAgentRegistry:
 
 ---
 
-## 2. Agents 모듈 (`youngs75_a2a.agents`)
+## 2. Agents 모듈 (`coding_agent.agents`)
 
 ### 2.1 CodingAssistantAgent
 
-**경로**: `youngs75_a2a.agents.coding_assistant.agent`
+**경로**: `coding_agent.agents.coding_assistant.agent`
 
 ```python
 class CodingAssistantAgent(BaseGraphAgent):
@@ -396,7 +396,7 @@ class CodingAssistantAgent(BaseGraphAgent):
     ) -> None: ...
 ```
 
-**CodingConfig** (`youngs75_a2a.agents.coding_assistant.config`):
+**CodingConfig** (`coding_agent.agents.coding_assistant.config`):
 
 ```python
 class CodingConfig(BaseAgentConfig):
@@ -409,7 +409,7 @@ class CodingConfig(BaseAgentConfig):
     purpose_tiers: dict[str, str]    # generation->STRONG, verification->DEFAULT, parsing->FAST
 ```
 
-**CodingState** (`youngs75_a2a.agents.coding_assistant.schemas`):
+**CodingState** (`coding_agent.agents.coding_assistant.schemas`):
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
@@ -425,7 +425,7 @@ class CodingConfig(BaseAgentConfig):
 | `iteration` | `int` | 현재 반복 횟수 |
 | `max_iterations` | `int` | 최대 반복 횟수 (기본: 3) |
 
-**PromptRegistry** (`youngs75_a2a.agents.coding_assistant.prompts`):
+**PromptRegistry** (`coding_agent.agents.coding_assistant.prompts`):
 
 ```python
 class PromptRegistry:
@@ -441,7 +441,7 @@ def reset_prompt_registry() -> None: ...            # 초기화 (테스트용)
 
 ### 2.2 DeepResearchAgent
 
-**경로**: `youngs75_a2a.agents.deep_research.agent`
+**경로**: `coding_agent.agents.deep_research.agent`
 
 ```python
 class DeepResearchAgent(BaseGraphAgent):
@@ -453,7 +453,7 @@ class DeepResearchAgent(BaseGraphAgent):
     }
 ```
 
-**ResearchConfig** (`youngs75_a2a.agents.deep_research.config`):
+**ResearchConfig** (`coding_agent.agents.deep_research.config`):
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|----------|--------|------|
@@ -468,14 +468,14 @@ class DeepResearchAgent(BaseGraphAgent):
 
 ### 2.3 SimpleMCPReActAgent
 
-**경로**: `youngs75_a2a.agents.simple_react.agent`
+**경로**: `coding_agent.agents.simple_react.agent`
 
 ```python
 class SimpleMCPReActAgent(BaseGraphAgent):
     NODE_NAMES = {"REACT": "react_agent"}
 ```
 
-**SimpleReActConfig** (`youngs75_a2a.agents.simple_react.config`):
+**SimpleReActConfig** (`coding_agent.agents.simple_react.config`):
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|----------|--------|------|
@@ -484,7 +484,7 @@ class SimpleMCPReActAgent(BaseGraphAgent):
 
 ### 2.4 OrchestratorAgent
 
-**경로**: `youngs75_a2a.agents.orchestrator.agent`
+**경로**: `coding_agent.agents.orchestrator.agent`
 
 ```python
 class OrchestratorAgent(BaseGraphAgent):
@@ -495,7 +495,7 @@ class OrchestratorAgent(BaseGraphAgent):
     }
 ```
 
-**OrchestratorConfig** (`youngs75_a2a.agents.orchestrator.config`):
+**OrchestratorConfig** (`coding_agent.agents.orchestrator.config`):
 
 ```python
 class AgentEndpoint(BaseAgentConfig):
@@ -512,13 +512,13 @@ class OrchestratorConfig(BaseAgentConfig):
 
 ---
 
-## 3. A2A 모듈 (`youngs75_a2a.a2a`)
+## 3. A2A 모듈 (`coding_agent.a2a`)
 
-> import 경로 주의: 패키지 내부에서는 `youngs75_a2a.a2a`로 접근하지만, 실제 디렉토리는 `a2a_local/`이다.
+> import 경로 주의: 패키지 내부에서는 `coding_agent.a2a`로 접근하지만, 실제 디렉토리는 `a2a_local/`이다.
 
 ### 3.1 Executor
 
-**경로**: `youngs75_a2a.a2a.executor`
+**경로**: `coding_agent.a2a.executor`
 
 ```python
 class BaseAgentExecutor(AgentExecutor):
@@ -542,7 +542,7 @@ class LGAgentExecutor(AgentExecutor):
 
 ### 3.2 Server
 
-**경로**: `youngs75_a2a.a2a.server`
+**경로**: `coding_agent.a2a.server`
 
 ```python
 def create_agent_card(
@@ -566,7 +566,7 @@ def run_server(
 
 ### 3.3 Discovery
 
-**경로**: `youngs75_a2a.a2a.discovery`
+**경로**: `coding_agent.a2a.discovery`
 
 ```python
 class AgentCardEntry:
@@ -601,7 +601,7 @@ class AgentCardRegistry:
 
 ### 3.4 Router
 
-**경로**: `youngs75_a2a.a2a.router`
+**경로**: `coding_agent.a2a.router`
 
 ```python
 class RoutingMode(str, Enum):
@@ -644,7 +644,7 @@ class AgentRouter:
 
 ### 3.5 Resilience
 
-**경로**: `youngs75_a2a.a2a.resilience`
+**경로**: `coding_agent.a2a.resilience`
 
 ```python
 class RetryPolicy:
@@ -683,7 +683,7 @@ class ResilientA2AClient:
 
 ### 3.6 Streaming
 
-**경로**: `youngs75_a2a.a2a.streaming`
+**경로**: `coding_agent.a2a.streaming`
 
 ```python
 class StreamChunk:
@@ -703,11 +703,11 @@ async def stream_agent_response(url, content, *, timeout=300.0, on_chunk=None) -
 
 ---
 
-## 4. CLI 모듈 (`youngs75_a2a.cli`)
+## 4. CLI 모듈 (`coding_agent.cli`)
 
 ### 4.1 CLIConfig
 
-**경로**: `youngs75_a2a.cli.config`
+**경로**: `coding_agent.cli.config`
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|----------|--------|------|
@@ -743,7 +743,7 @@ async def stream_agent_response(url, content, *, timeout=300.0, on_chunk=None) -
 
 ### 4.3 CLISession
 
-**경로**: `youngs75_a2a.cli.session`
+**경로**: `coding_agent.cli.session`
 
 ```python
 class CLISession:
@@ -763,7 +763,7 @@ class CLISession:
 
 ### 4.4 CLIRenderer
 
-**경로**: `youngs75_a2a.cli.renderer`
+**경로**: `coding_agent.cli.renderer`
 
 Rich 콘솔 기반 출력 렌더러. 마크다운 렌더링, 토큰 스트리밍, 시스템/에러 메시지를 지원한다.
 
@@ -771,19 +771,19 @@ Rich 콘솔 기반 출력 렌더러. 마크다운 렌더링, 토큰 스트리밍
 
 ```python
 # pyproject.toml [project.scripts]
-youngs75-agent = "youngs75_a2a.cli.app:run_cli"
+youngs75-agent = "coding_agent.cli.app:run_cli"
 
 # 또는 모듈 실행
-python -m youngs75_a2a.cli
+python -m coding_agent.cli
 ```
 
 ---
 
-## 5. 평가 파이프라인 (`youngs75_a2a.eval_pipeline`)
+## 5. 평가 파이프라인 (`coding_agent.eval_pipeline`)
 
 ### 5.1 Settings
 
-**경로**: `youngs75_a2a.eval_pipeline.settings`
+**경로**: `coding_agent.eval_pipeline.settings`
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|----------|--------|------|
@@ -803,7 +803,7 @@ python -m youngs75_a2a.cli
 
 ### 5.2 Loop 1 — Dataset 생성
 
-**경로**: `youngs75_a2a.eval_pipeline.loop1_dataset`
+**경로**: `coding_agent.eval_pipeline.loop1_dataset`
 
 | 모듈 | 역할 |
 |------|------|
@@ -814,7 +814,7 @@ python -m youngs75_a2a.cli
 
 ### 5.3 Loop 2 — 메트릭 평가
 
-**경로**: `youngs75_a2a.eval_pipeline.loop2_evaluation`
+**경로**: `coding_agent.eval_pipeline.loop2_evaluation`
 
 | 모듈 | 역할 |
 |------|------|
@@ -829,7 +829,7 @@ python -m youngs75_a2a.cli
 
 ### 5.4 Loop 3 — Remediation
 
-**경로**: `youngs75_a2a.eval_pipeline.loop3_remediation`
+**경로**: `coding_agent.eval_pipeline.loop3_remediation`
 
 | 모듈 | 역할 |
 |------|------|
@@ -847,7 +847,7 @@ async def run_remediation(
 
 ### 5.5 관측성 (Observability)
 
-**경로**: `youngs75_a2a.eval_pipeline.observability`
+**경로**: `coding_agent.eval_pipeline.observability`
 
 | 모듈 | 역할 |
 |------|------|
@@ -871,11 +871,11 @@ class AgentMetricsCollector:
 
 ---
 
-## 6. MCP 서버 (`youngs75_a2a.mcp_servers`)
+## 6. MCP 서버 (`coding_agent.mcp_servers`)
 
 ### 6.1 Code Tools MCP 서버
 
-**경로**: `youngs75_a2a.mcp_servers.code_tools.server`  
+**경로**: `coding_agent.mcp_servers.code_tools.server`  
 **포트**: 3003 (환경변수 `CODE_TOOLS_PORT`)  
 **워크스페이스**: 현재 디렉토리 (환경변수 `CODE_TOOLS_WORKSPACE`)
 

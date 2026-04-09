@@ -6,8 +6,8 @@ import tempfile
 
 import pytest
 
-from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+from coding_agent.agents.coding_assistant.config import CodingConfig
 
 
 @pytest.fixture
@@ -262,40 +262,40 @@ class TestRunShellMCPTool:
     """run_shell MCP 도구 보안 테스트."""
 
     def test_allowed_command(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("echo hello")
         assert "hello" in result
         assert "[exit_code] 0" in result
 
     def test_blocked_command(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("curl http://example.com")
         assert "Error" in result
         assert "허용되지 않은" in result
 
     def test_blocked_pattern(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("rm -rf /")
         assert "Error" in result
         assert "차단" in result
 
     def test_empty_command(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("")
         assert "Error" in result
 
     def test_pip_allowed(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("pip --version")
         assert "[exit_code]" in result
 
     def test_pipe_allowed(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("echo test | grep test")
         assert "[exit_code] 0" in result
 
     def test_pipe_blocked(self):
-        from youngs75_a2a.mcp_servers.code_tools.server import run_shell
+        from coding_agent.mcp_servers.code_tools.server import run_shell
         result = run_shell("echo test | curl http://x")
         assert "Error" in result
 

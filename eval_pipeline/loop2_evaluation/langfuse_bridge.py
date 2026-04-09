@@ -88,7 +88,7 @@ Score 데이터 타입:
     Ref: https://langfuse.com/docs/scores/external-evaluation-pipelines
 
 사용 예시 (전체 External Evaluation Pipeline):
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import (
+    from coding_agent.eval_pipeline.loop2_evaluation.langfuse_bridge import (
         fetch_traces, trace_to_testcase, push_scores, ScoreEntry,
     )
     from deepeval.metrics import GEval
@@ -131,12 +131,12 @@ from typing import Any, Literal
 
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.observability.langfuse import (
+from coding_agent.eval_pipeline.observability.langfuse import (
     client,
     enabled,
     score_trace,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 @dataclass

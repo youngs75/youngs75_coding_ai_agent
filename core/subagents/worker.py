@@ -3,7 +3,7 @@
 SubAgentProcessManager가 spawn한 자식 프로세스에서 실행된다.
 에이전트를 초기화하고, 작업을 수행하고, 결과를 stdout JSON으로 출력한다.
 
-실행: python -m youngs75_a2a.core.subagents.worker \
+실행: python -m coding_agent.core.subagents.worker \
         --agent-type coding_assistant --task-message-file /tmp/task.txt
 """
 
@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 # 에이전트 타입 → (모듈 경로, 클래스명, 설정 모듈, 설정 클래스, invoke 결과 추출 방법)
 _AGENT_REGISTRY: dict[str, dict] = {
     "coding_assistant": {
-        "agent_module": "youngs75_a2a.agents.coding_assistant.agent",
+        "agent_module": "coding_agent.agents.coding_assistant.agent",
         "agent_class": "CodingAssistantAgent",
-        "config_module": "youngs75_a2a.agents.coding_assistant.config",
+        "config_module": "coding_agent.agents.coding_assistant.config",
         "config_class": "CodingConfig",
         "use_skill_registry": True,
         "use_create_factory": True,
@@ -39,9 +39,9 @@ _AGENT_REGISTRY: dict[str, dict] = {
         "extract_fn": "_coding_extract",
     },
     "deep_research": {
-        "agent_module": "youngs75_a2a.agents.deep_research.agent",
+        "agent_module": "coding_agent.agents.deep_research.agent",
         "agent_class": "DeepResearchAgent",
-        "config_module": "youngs75_a2a.agents.deep_research.config",
+        "config_module": "coding_agent.agents.deep_research.config",
         "config_class": "ResearchConfig",
         "use_skill_registry": False,
         "use_create_factory": False,
@@ -49,9 +49,9 @@ _AGENT_REGISTRY: dict[str, dict] = {
         "extract_fn": "_research_extract",
     },
     "simple_react": {
-        "agent_module": "youngs75_a2a.agents.simple_react.agent",
+        "agent_module": "coding_agent.agents.simple_react.agent",
         "agent_class": "SimpleMCPReActAgent",
-        "config_module": "youngs75_a2a.agents.simple_react.config",
+        "config_module": "coding_agent.agents.simple_react.config",
         "config_class": "SimpleReActConfig",
         "use_skill_registry": False,
         "use_create_factory": True,
@@ -143,8 +143,8 @@ async def _run_agent(
         import os
         from pathlib import Path
 
-        from youngs75_a2a.core.skills.loader import SkillLoader
-        from youngs75_a2a.core.skills.registry import SkillRegistry
+        from coding_agent.core.skills.loader import SkillLoader
+        from coding_agent.core.skills.registry import SkillRegistry
 
         skill_registry = SkillRegistry()
         skills_dir = os.getenv(

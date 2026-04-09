@@ -7,14 +7,14 @@
     - callback_handler: LangChain 콜백 핸들러 팩토리 및 메트릭 수집
 """
 
-from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+from coding_agent.eval_pipeline.observability.callback_handler import (
     AgentMetricsCollector,
     NodeMetrics,
     build_observed_config,
     create_langfuse_handler,
     safe_flush,
 )
-from youngs75_a2a.eval_pipeline.observability.langfuse import (
+from coding_agent.eval_pipeline.observability.langfuse import (
     build_langchain_config,
     client,
     default_metadata,

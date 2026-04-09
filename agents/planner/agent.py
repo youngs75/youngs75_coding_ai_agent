@@ -23,9 +23,9 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.mcp_loader import MCPToolLoader
-from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.tool_call_utils import tc_args, tc_id, tc_name
 
 from .config import PlannerConfig
 from .prompts import (

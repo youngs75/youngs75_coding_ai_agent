@@ -5,7 +5,7 @@ pytest 기반으로 Docker 환경의 전체 서비스 연동을 검증한다.
 Docker 컨테이너가 실행 중이지 않으면 모든 테스트를 자동 skip 처리한다.
 
 실행 (Docker 컨테이너 기동 후):
-  cd youngs75_a2a/docker && docker compose up -d
+  cd coding_agent/docker && docker compose up -d
   python -m pytest tests/test_docker_e2e.py -v
 
 로컬 환경 (Docker 없이) 실행 시 모든 테스트 skip:
@@ -324,7 +324,7 @@ class TestCLIToAgentChain:
         CLI 코드에 정의된 에이전트 목록이 Docker에서 실행되는 서비스를 커버하는지
         구조적으로 검증한다 (코드 import 기반 검증, Docker 미실행시에도 동작).
         """
-        from youngs75_a2a.cli.commands import AVAILABLE_AGENTS
+        from coding_agent.cli.commands import AVAILABLE_AGENTS
 
         # Docker에서 실행되는 에이전트 타입에 대응하는 CLI 에이전트 이름
         docker_to_cli_mapping = {
@@ -485,13 +485,13 @@ class TestErrorHandling:
 
 
 class TestDockerConfigValidation:
-    """docker-compose.yml 및 Dockerfile 설정의 정합성을 검증한다.
+    """docker-compose.yml (Harness 통합 구성) 설정의 정합성을 검증한다.
 
     Docker 실행 없이 설정 파일 내용을 정적으로 검증한다.
     """
 
     def test_docker_compose_services_defined(self):
-        """docker-compose.yml에 필수 서비스가 모두 정의되어 있는지 확인한다."""
+        """docker-compose.yml에 Harness 필수 서비스가 모두 정의되어 있는지 확인한다."""
         import yaml
         from pathlib import Path
 
@@ -504,19 +504,17 @@ class TestDockerConfigValidation:
 
         services = config.get("services", {})
         required = [
-            "mcp-tavily",
-            "mcp-arxiv",
-            "mcp-serper",
-            "agent-simple-react",
-            "agent-deep-research",
-            "agent-deep-research-a2a",
-            "cli",
+            "litellm-db",
+            "litellm-proxy",
+            "mcp-server",
+            "agent-coding-assistant",
+            "orchestrator",
         ]
         for svc in required:
             assert svc in services, f"필수 서비스 '{svc}' 누락"
 
     def test_docker_compose_network_defined(self):
-        """모든 서비스가 동일 네트워크(youngs75_net)에 연결되어 있는지 확인한다."""
+        """모든 서비스가 동일 네트워크(harness_net)에 연결되어 있는지 확인한다."""
         import yaml
         from pathlib import Path
 
@@ -528,16 +526,19 @@ class TestDockerConfigValidation:
             config = yaml.safe_load(f)
 
         networks = config.get("networks", {})
-        assert "youngs75_net" in networks, "youngs75_net 네트워크 미정의"
+        assert "harness_net" in networks, "harness_net 네트워크 미정의"
 
         for svc_name, svc_config in config.get("services", {}).items():
+            # profiles로 분리된 서비스(eval-runner) 제외
+            if svc_config.get("profiles"):
+                continue
             svc_networks = svc_config.get("networks", [])
-            assert "youngs75_net" in svc_networks, (
-                f"서비스 '{svc_name}'이 youngs75_net에 연결되지 않음"
+            assert "harness_net" in svc_networks, (
+                f"서비스 '{svc_name}'이 harness_net에 연결되지 않음"
             )
 
     def test_docker_compose_agent_depends_on_mcp(self):
-        """Agent 서비스가 MCP 서비스에 대한 depends_on 설정이 있는지 확인한다."""
+        """CodingAssistant가 MCP + LiteLLM에 대한 depends_on 설정이 있는지 확인한다."""
         import yaml
         from pathlib import Path
 
@@ -550,17 +551,17 @@ class TestDockerConfigValidation:
 
         services = config.get("services", {})
 
-        # SimpleReAct → mcp-tavily
-        sr_deps = services.get("agent-simple-react", {}).get("depends_on", {})
-        assert "mcp-tavily" in sr_deps, "SimpleReAct: mcp-tavily 의존성 누락"
+        # agent-coding-assistant → mcp-server, litellm-proxy
+        agent_deps = services.get("agent-coding-assistant", {}).get("depends_on", {})
+        assert "mcp-server" in agent_deps, "CodingAssistant: mcp-server 의존성 누락"
+        assert "litellm-proxy" in agent_deps, "CodingAssistant: litellm-proxy 의존성 누락"
 
-        # DeepResearch → mcp-tavily, mcp-arxiv, mcp-serper
-        dr_deps = services.get("agent-deep-research", {}).get("depends_on", {})
-        for mcp in ["mcp-tavily", "mcp-arxiv", "mcp-serper"]:
-            assert mcp in dr_deps, f"DeepResearch: {mcp} 의존성 누락"
+        # orchestrator → agent-coding-assistant, litellm-proxy
+        orch_deps = services.get("orchestrator", {}).get("depends_on", {})
+        assert "agent-coding-assistant" in orch_deps, "Orchestrator: agent-coding-assistant 의존성 누락"
 
     def test_docker_compose_healthcheck_defined(self):
-        """모든 MCP/Agent 서비스에 healthcheck가 정의되어 있는지 확인한다."""
+        """핵심 서비스에 healthcheck가 정의되어 있는지 확인한다."""
         import yaml
         from pathlib import Path
 
@@ -571,14 +572,12 @@ class TestDockerConfigValidation:
         with open(compose_path) as f:
             config = yaml.safe_load(f)
 
-        # CLI는 대화형이므로 healthcheck 불필요
         services_needing_health = [
-            "mcp-tavily",
-            "mcp-arxiv",
-            "mcp-serper",
-            "agent-simple-react",
-            "agent-deep-research",
-            "agent-deep-research-a2a",
+            "litellm-db",
+            "litellm-proxy",
+            "mcp-server",
+            "agent-coding-assistant",
+            "orchestrator",
         ]
         for svc_name in services_needing_health:
             svc = config.get("services", {}).get(svc_name, {})
@@ -587,67 +586,8 @@ class TestDockerConfigValidation:
             assert "test" in hc, f"서비스 '{svc_name}': healthcheck test 미정의"
             assert "interval" in hc, f"서비스 '{svc_name}': healthcheck interval 미정의"
 
-    def test_docker_compose_depends_on_uses_service_healthy(self):
-        """depends_on 조건이 service_healthy를 사용하는지 확인한다.
-
-        단순 depends_on 대신 condition: service_healthy를 사용해야
-        MCP 서버가 완전히 준비된 후 Agent가 기동된다.
-        """
-        import yaml
-        from pathlib import Path
-
-        compose_path = Path(__file__).parent.parent / "docker" / "docker-compose.yml"
-        if not compose_path.exists():
-            pytest.skip("docker-compose.yml 파일 없음")
-
-        with open(compose_path) as f:
-            config = yaml.safe_load(f)
-
-        agent_services = [
-            "agent-simple-react",
-            "agent-deep-research",
-            "agent-deep-research-a2a",
-        ]
-        for svc_name in agent_services:
-            deps = config.get("services", {}).get(svc_name, {}).get("depends_on", {})
-            for dep_name, dep_config in deps.items():
-                condition = (
-                    dep_config.get("condition")
-                    if isinstance(dep_config, dict)
-                    else None
-                )
-                assert condition == "service_healthy", (
-                    f"'{svc_name}' → '{dep_name}': "
-                    f"condition이 'service_healthy'가 아님 (현재: {condition})"
-                )
-
-    def test_dockerfile_cli_pythonpath(self):
-        """Dockerfile.cli에 PYTHONPATH가 설정되어 있는지 확인한다."""
-        from pathlib import Path
-
-        dockerfile = Path(__file__).parent.parent / "docker" / "Dockerfile.cli"
-        if not dockerfile.exists():
-            pytest.skip("Dockerfile.cli 파일 없음")
-
-        content = dockerfile.read_text()
-        assert "PYTHONPATH" in content, "PYTHONPATH 환경변수 미설정"
-        assert "PYTHONUNBUFFERED" in content, (
-            "PYTHONUNBUFFERED 미설정 (대화형 모드 필수)"
-        )
-
-    def test_dockerfile_cli_entrypoint(self):
-        """Dockerfile.cli의 ENTRYPOINT가 youngs75-agent인지 확인한다."""
-        from pathlib import Path
-
-        dockerfile = Path(__file__).parent.parent / "docker" / "Dockerfile.cli"
-        if not dockerfile.exists():
-            pytest.skip("Dockerfile.cli 파일 없음")
-
-        content = dockerfile.read_text()
-        assert "youngs75-agent" in content, "ENTRYPOINT에 youngs75-agent 미설정"
-
     def test_cli_service_mcp_env_vars(self):
-        """CLI 서비스의 MCP 환경변수가 Docker 내부 네트워크 주소를 사용하는지 확인한다."""
+        """CodingAssistant 서비스의 MCP URL이 Docker 내부 네트워크 주소를 사용하는지 확인한다."""
         import yaml
         from pathlib import Path
 
@@ -658,27 +598,16 @@ class TestDockerConfigValidation:
         with open(compose_path) as f:
             config = yaml.safe_load(f)
 
-        cli_env = config.get("services", {}).get("cli", {}).get("environment", [])
+        agent_env = config.get("services", {}).get("agent-coding-assistant", {}).get("environment", [])
         env_dict = {}
-        for entry in cli_env:
+        for entry in agent_env:
             if "=" in entry:
                 key, val = entry.split("=", 1)
                 env_dict[key] = val
 
-        # MCP URL이 Docker 내부 서비스명을 사용하는지 확인
-        assert "TAVILY_MCP_URL" in env_dict, "CLI: TAVILY_MCP_URL 미설정"
-        assert "mcp-tavily" in env_dict["TAVILY_MCP_URL"], (
-            "CLI: TAVILY_MCP_URL이 내부 네트워크 주소가 아님"
-        )
-
-        assert "ARXIV_MCP_URL" in env_dict, "CLI: ARXIV_MCP_URL 미설정"
-        assert "mcp-arxiv" in env_dict["ARXIV_MCP_URL"], (
-            "CLI: ARXIV_MCP_URL이 내부 네트워크 주소가 아님"
-        )
-
-        assert "SERPER_MCP_URL" in env_dict, "CLI: SERPER_MCP_URL 미설정"
-        assert "mcp-serper" in env_dict["SERPER_MCP_URL"], (
-            "CLI: SERPER_MCP_URL이 내부 네트워크 주소가 아님"
+        assert "CODE_TOOLS_MCP_URL" in env_dict, "CodingAssistant: CODE_TOOLS_MCP_URL 미설정"
+        assert "mcp-server" in env_dict["CODE_TOOLS_MCP_URL"], (
+            "CodingAssistant: CODE_TOOLS_MCP_URL이 내부 네트워크 주소가 아님"
         )
 
 

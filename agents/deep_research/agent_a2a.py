@@ -22,19 +22,19 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, StateGraph
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.store import MemoryStore
-from youngs75_a2a.agents.deep_research.config import ResearchConfig
-from youngs75_a2a.agents.deep_research.schemas import HITLAgentState
-from youngs75_a2a.agents.deep_research.nodes.clarify import clarify_with_user
-from youngs75_a2a.agents.deep_research.nodes.brief import write_research_brief
-from youngs75_a2a.agents.deep_research.nodes.report import final_report_generation
-from youngs75_a2a.agents.deep_research.nodes.hitl import (
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.store import MemoryStore
+from coding_agent.agents.deep_research.config import ResearchConfig
+from coding_agent.agents.deep_research.schemas import HITLAgentState
+from coding_agent.agents.deep_research.nodes.clarify import clarify_with_user
+from coding_agent.agents.deep_research.nodes.brief import write_research_brief
+from coding_agent.agents.deep_research.nodes.report import final_report_generation
+from coding_agent.agents.deep_research.nodes.hitl import (
     hitl_final_approval,
     revise_final_report,
 )
-from youngs75_a2a.agents.deep_research.subgraphs.supervisor import (
+from coding_agent.agents.deep_research.subgraphs.supervisor import (
     build_supervisor_subgraph,
 )
 

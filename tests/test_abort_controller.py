@@ -2,7 +2,7 @@
 
 import pytest
 
-from youngs75_a2a.core.abort_controller import (
+from coding_agent.core.abort_controller import (
     AbortController,
     AbortError,
     AbortReason,

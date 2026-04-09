@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from youngs75_a2a.core.project_context import ProjectContextLoader
+from coding_agent.core.project_context import ProjectContextLoader
 
 
 def inject_project_context(

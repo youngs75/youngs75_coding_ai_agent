@@ -1,7 +1,7 @@
 # 아키텍처 문서
 
 **프로젝트**: youngs75-coding-ai-agent
-**패키지**: youngs75_a2a
+**패키지**: coding_agent
 **버전**: 0.1.0
 **참조 아키텍처**: AWS Deep Insight (Strands Agents), DeepAgents CLI (패턴 참조, 의존성 없음)
 

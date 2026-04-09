@@ -8,7 +8,7 @@ Loop 1 (Dataset 생성/보강) 과정에서 LLM에 전달하는 모든 프롬프
       expected_output을 개선하는 프롬프트 템플릿
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop1_dataset.prompts import FEEDBACK_AUGMENT_PROMPT
+    from coding_agent.eval_pipeline.loop1_dataset.prompts import FEEDBACK_AUGMENT_PROMPT
 
     prompt = FEEDBACK_AUGMENT_PROMPT.format(
         input="사용자 질문",

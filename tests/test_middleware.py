@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from youngs75_a2a.core.middleware import (
+from coding_agent.core.middleware import (
     AgentMiddleware,
     MemoryMiddleware,
     MessageWindowMiddleware,

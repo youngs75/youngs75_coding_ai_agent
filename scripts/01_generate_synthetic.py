@@ -11,10 +11,10 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+from coding_agent.eval_pipeline.loop1_dataset.synthesizer import (
     generate_synthetic_dataset,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
     print(f"[Step 1] Model: {settings.openrouter_model_name}")
 
     if args.dry_run:
-        from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
+        from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
 
         model = get_deepeval_model()
         result = model.generate("Say 'OK' if you can hear me.")

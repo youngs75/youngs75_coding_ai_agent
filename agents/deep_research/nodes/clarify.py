@@ -5,9 +5,9 @@ from langchain_core.messages import AIMessage, get_buffer_string
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from youngs75_a2a.agents.deep_research.config import ResearchConfig
-from youngs75_a2a.agents.deep_research.schemas import AgentState, ClarifyWithUser
-from youngs75_a2a.agents.deep_research.prompts import CLARIFY_INSTRUCTIONS
+from coding_agent.agents.deep_research.config import ResearchConfig
+from coding_agent.agents.deep_research.schemas import AgentState, ClarifyWithUser
+from coding_agent.agents.deep_research.prompts import CLARIFY_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 
 Coding Agent Harness에 파일 I/O, 코드 검색, 코드 실행 도구를 제공한다.
 
-실행: python -m youngs75_a2a.tests.run_code_tools_mcp
+실행: python -m coding_agent.tests.run_code_tools_mcp
 포트: 3003 (환경변수 CODE_TOOLS_PORT로 변경 가능)
 """
 
@@ -21,7 +21,7 @@ except ImportError:
 # workspace를 프로젝트 루트로 설정
 os.environ.setdefault("CODE_TOOLS_WORKSPACE", os.getcwd())
 
-from youngs75_a2a.mcp_servers.code_tools.server import mcp  # noqa: E402
+from coding_agent.mcp_servers.code_tools.server import mcp  # noqa: E402
 
 if __name__ == "__main__":
     port = int(os.getenv("CODE_TOOLS_PORT", "3003"))

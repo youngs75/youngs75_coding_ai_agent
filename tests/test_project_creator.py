@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from youngs75_a2a.core.skills.loader import SkillLoader
-from youngs75_a2a.core.skills.registry import TASK_TYPE_TAGS, SkillRegistry
+from coding_agent.core.skills.loader import SkillLoader
+from coding_agent.core.skills.registry import TASK_TYPE_TAGS, SkillRegistry
 
 
 # ── Project Creator MCP 서버 도구 테스트 ──

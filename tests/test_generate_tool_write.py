@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from youngs75_a2a.agents.coding_assistant.prompts import (
+from coding_agent.agents.coding_assistant.prompts import (
     GENERATE_FINAL_SYSTEM_PROMPT,
     VERIFY_SYSTEM_PROMPT,
 )
@@ -105,7 +105,7 @@ class TestApplyCodeSkipGuard:
     @pytest.fixture
     def mock_agent(self):
         """최소한의 CodingAssistantAgent mock."""
-        from youngs75_a2a.agents.coding_assistant.agent import (
+        from coding_agent.agents.coding_assistant.agent import (
             CodingAssistantAgent,
         )
 

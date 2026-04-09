@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from youngs75_a2a.core.middleware.base import (
+from coding_agent.core.middleware.base import (
     AgentMiddleware,
     Handler,
     ModelRequest,

@@ -13,11 +13,11 @@ import pytest
 from deepeval import assert_test
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
-from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+from coding_agent.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
+from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
     create_response_completeness_metric,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def _load_golden_dataset() -> list[dict]:
@@ -42,7 +42,7 @@ def _make_test_cases() -> list[LLMTestCase]:
     run_agent = os.getenv("RUN_AGENT", "0") == "1"
 
     if run_agent:
-        from youngs75_a2a.eval_pipeline.my_agent import run_coding_agent
+        from coding_agent.eval_pipeline.my_agent import run_coding_agent
 
     test_cases = []
     for item in golden_data:

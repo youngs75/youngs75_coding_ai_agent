@@ -15,7 +15,7 @@ import pytest
 from langchain_core.messages import AIMessage
 from rich.console import Console
 
-from youngs75_a2a.cli.app import (
+from coding_agent.cli.app import (
     _EPISODIC_MAX_ITEMS,
     _build_input_state,
     _create_checkpointer,
@@ -24,9 +24,9 @@ from youngs75_a2a.cli.app import (
     _run_agent_turn,
     _save_episodic_memory,
 )
-from youngs75_a2a.cli.commands import handle_command
-from youngs75_a2a.cli.config import CLIConfig
-from youngs75_a2a.cli.eval_runner import (
+from coding_agent.cli.commands import handle_command
+from coding_agent.cli.config import CLIConfig
+from coding_agent.cli.eval_runner import (
     EvalResult,
     RemediationResult,
     format_eval_summary,
@@ -34,12 +34,12 @@ from youngs75_a2a.cli.eval_runner import (
     load_last_eval_results,
     load_last_remediation_report,
 )
-from youngs75_a2a.cli.renderer import CLIRenderer
-from youngs75_a2a.cli.session import CLISession
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.store import MemoryStore
-from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.skills.schemas import Skill, SkillMetadata
+from coding_agent.cli.renderer import CLIRenderer
+from coding_agent.cli.session import CLISession
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.store import MemoryStore
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.skills.schemas import Skill, SkillMetadata
 
 
 def _make_renderer() -> CLIRenderer:
@@ -600,7 +600,7 @@ class TestGetOrCreateAgent:
         fake_agent.context_manager = None
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=fake_agent,
         ):
@@ -615,7 +615,7 @@ class TestGetOrCreateAgent:
         renderer = _make_renderer()
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             side_effect=RuntimeError("연결 실패"),
         ):
@@ -748,7 +748,7 @@ class TestRunAgentTurn:
         renderer = _make_renderer()
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             side_effect=RuntimeError("초기화 실패"),
         ):
@@ -763,7 +763,7 @@ class TestRunAgentTurn:
 
 class TestOrchestratorCLI:
     def test_orchestrator_in_available_agents(self):
-        from youngs75_a2a.cli.commands import AVAILABLE_AGENTS
+        from coding_agent.cli.commands import AVAILABLE_AGENTS
 
         assert "orchestrator" in AVAILABLE_AGENTS
 
@@ -896,7 +896,7 @@ class TestProceduralMemoryCLI:
         fake_agent = MagicMock(spec=["graph"])
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=fake_agent,
         ) as mock_create:
@@ -1291,7 +1291,7 @@ class TestCheckpointerIntegration:
         fake_agent = MagicMock(spec=["graph"])
 
         with patch(
-            "youngs75_a2a.cli.app._create_agent",
+            "coding_agent.cli.app._create_agent",
             new_callable=AsyncMock,
             return_value=fake_agent,
         ) as mock_create:
@@ -1658,7 +1658,7 @@ class TestEvalCommands:
     def test_eval_command_handled(self):
         mock_result = EvalResult(success=False, error_message="테스트 환경")
         with patch(
-            "youngs75_a2a.cli.eval_runner._run_evaluation_sync",
+            "coding_agent.cli.eval_runner._run_evaluation_sync",
             return_value=mock_result,
         ):
             result = handle_command("/eval", CLISession(), _make_renderer())
@@ -1666,7 +1666,7 @@ class TestEvalCommands:
 
     def test_eval_status_command_handled(self):
         with patch(
-            "youngs75_a2a.cli.commands.load_last_eval_results",
+            "coding_agent.cli.commands.load_last_eval_results",
             return_value=EvalResult(success=False, error_message="결과 없음"),
         ):
             result = handle_command("/eval status", CLISession(), _make_renderer())
@@ -1678,7 +1678,7 @@ class TestEvalCommands:
 
     def test_eval_remediate_status_command_handled(self):
         with patch(
-            "youngs75_a2a.cli.commands.load_last_remediation_report",
+            "coding_agent.cli.commands.load_last_remediation_report",
             return_value=RemediationResult(success=False, error_message="리포트 없음"),
         ):
             result = handle_command(
@@ -1719,7 +1719,7 @@ class TestEvalRunner:
 
     def test_load_missing_file(self):
         with patch(
-            "youngs75_a2a.cli.eval_runner._DEFAULT_RESULTS_FILE",
+            "coding_agent.cli.eval_runner._DEFAULT_RESULTS_FILE",
             Path("/nonexistent/eval_results.json"),
         ):
             result = load_last_eval_results()
@@ -1734,7 +1734,7 @@ class TestEvalRunner:
             json.dump(data, f)
             tmp_path = Path(f.name)
         try:
-            with patch("youngs75_a2a.cli.eval_runner._DEFAULT_RESULTS_FILE", tmp_path):
+            with patch("coding_agent.cli.eval_runner._DEFAULT_RESULTS_FILE", tmp_path):
                 result = load_last_eval_results()
             assert result.success
             assert result.total == 2
@@ -1777,7 +1777,7 @@ class TestRemediationRunner:
 
     def test_load_missing_report(self):
         with patch(
-            "youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR", Path("/nonexistent")
+            "coding_agent.cli.eval_runner._EVAL_RESULTS_DIR", Path("/nonexistent")
         ):
             result = load_last_remediation_report()
         assert not result.success
@@ -1800,9 +1800,9 @@ class TestRemediationRunner:
             tmp_path = Path(f.name)
         try:
             report_dir = tmp_path.parent
-            with patch("youngs75_a2a.cli.eval_runner._EVAL_RESULTS_DIR", report_dir):
+            with patch("coding_agent.cli.eval_runner._EVAL_RESULTS_DIR", report_dir):
                 # 파일명을 맞추기 위해 직접 경로로 테스트
-                from youngs75_a2a.cli.eval_runner import (
+                from coding_agent.cli.eval_runner import (
                     load_last_remediation_report as _load,
                 )
 
@@ -1825,7 +1825,7 @@ class TestRemediationRunner:
 
 class TestPromptRegistry:
     def test_initial_prompts_registered(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         assert "parse" in registry.list_prompts()
@@ -1833,47 +1833,47 @@ class TestPromptRegistry:
         assert "verify" in registry.list_prompts()
 
     def test_get_prompt_latest(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("parse")
         assert "요청을 분석" in prompt
 
     def test_get_prompt_v1(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("parse", version="v1")
         assert "요청을 분석" in prompt
 
     def test_get_prompt_invalid_name(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         with pytest.raises(KeyError):
             registry.get_prompt("nonexistent")
 
     def test_get_prompt_invalid_version(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         with pytest.raises(ValueError):
             registry.get_prompt("parse", version="v99")
 
     def test_current_version(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         assert registry.get_current_version("parse") == "v1"
 
     def test_list_versions(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         assert registry.list_versions("execute") == ["v1"]
 
     def test_apply_remediation(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
 
@@ -1899,7 +1899,7 @@ class TestPromptRegistry:
         assert "타입 힌트 필수 규칙 추가" not in v1_prompt
 
     def test_apply_remediation_multiple(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
 
@@ -1923,7 +1923,7 @@ class TestPromptRegistry:
         assert registry.get_current_version("execute") == "v3"
 
     def test_apply_remediation_unknown_target(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
 
@@ -1939,7 +1939,7 @@ class TestPromptRegistry:
         assert updated == []
 
     def test_apply_remediation_name_mapping(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
 
@@ -1956,7 +1956,7 @@ class TestPromptRegistry:
         assert registry.get_current_version("verify") == "v2"
 
     def test_execute_prompt_contains_file_save_guide(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("execute")
@@ -1964,7 +1964,7 @@ class TestPromptRegistry:
         assert "filepath:" in prompt
 
     def test_verify_prompt_contains_quality_check(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import PromptRegistry
+        from coding_agent.agents.coding_assistant.prompts import PromptRegistry
 
         registry = PromptRegistry()
         prompt = registry.get_prompt("verify")
@@ -1973,7 +1973,7 @@ class TestPromptRegistry:
         assert "write_file" in prompt
 
     def test_deep_research_prompts_contain_citation_rules(self):
-        from youngs75_a2a.agents.deep_research.prompts import (
+        from coding_agent.agents.deep_research.prompts import (
             RESEARCHER_SYSTEM_PROMPT,
             FINAL_REPORT_PROMPT,
         )
@@ -1983,7 +1983,7 @@ class TestPromptRegistry:
         assert "참고 자료" in FINAL_REPORT_PROMPT
 
     def test_citation_quality_eval_prompt_includes_code_policy(self):
-        from youngs75_a2a.eval_pipeline.loop2_evaluation.prompts import (
+        from coding_agent.eval_pipeline.loop2_evaluation.prompts import (
             CITATION_QUALITY_PROMPT,
         )
 
@@ -1991,7 +1991,7 @@ class TestPromptRegistry:
         assert "file path and line number" in CITATION_QUALITY_PROMPT
 
     def test_singleton_registry(self):
-        from youngs75_a2a.agents.coding_assistant.prompts import (
+        from coding_agent.agents.coding_assistant.prompts import (
             get_prompt_registry,
             reset_prompt_registry,
         )

@@ -2,7 +2,7 @@
 
 import pytest
 
-from youngs75_a2a.agents.verifier.agent import (
+from coding_agent.agents.verifier.agent import (
     VerificationAgent,
     _build_lint_command,
     _build_test_command,
@@ -10,8 +10,8 @@ from youngs75_a2a.agents.verifier.agent import (
     _find_tool,
     _skip_result,
 )
-from youngs75_a2a.agents.verifier.config import VerifierConfig
-from youngs75_a2a.agents.verifier.schemas import (
+from coding_agent.agents.verifier.config import VerifierConfig
+from coding_agent.agents.verifier.schemas import (
     CheckResult,
     VerificationResult,
     VerificationState,
@@ -251,21 +251,21 @@ class TestDetectLanguage:
     """orchestrator의 _detect_language 테스트."""
 
     def test_detect_python(self):
-        from youngs75_a2a.agents.orchestrator.agent import _detect_language
+        from coding_agent.agents.orchestrator.agent import _detect_language
         assert _detect_language(["app.py", "models.py"]) == "python"
 
     def test_detect_go(self):
-        from youngs75_a2a.agents.orchestrator.agent import _detect_language
+        from coding_agent.agents.orchestrator.agent import _detect_language
         assert _detect_language(["main.go", "handler.go"]) == "go"
 
     def test_detect_mixed_majority(self):
-        from youngs75_a2a.agents.orchestrator.agent import _detect_language
+        from coding_agent.agents.orchestrator.agent import _detect_language
         assert _detect_language(["app.py", "index.js", "utils.py"]) == "python"
 
     def test_detect_empty_defaults_python(self):
-        from youngs75_a2a.agents.orchestrator.agent import _detect_language
+        from coding_agent.agents.orchestrator.agent import _detect_language
         assert _detect_language([]) == "python"
 
     def test_detect_rust(self):
-        from youngs75_a2a.agents.orchestrator.agent import _detect_language
+        from coding_agent.agents.orchestrator.agent import _detect_language
         assert _detect_language(["main.rs", "lib.rs"]) == "rust"

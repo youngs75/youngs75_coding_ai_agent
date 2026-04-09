@@ -6,8 +6,8 @@ Dataset → Task → Evaluator 파이프라인을 실행하고,
 결과를 Langfuse Experiments UI에 자동 등록한다.
 
 실행:
-    python -m youngs75_a2a.scripts.10_run_langfuse_experiment
-    python -m youngs75_a2a.scripts.10_run_langfuse_experiment --run-name "v1-baseline"
+    python -m coding_agent.scripts.10_run_langfuse_experiment
+    python -m coding_agent.scripts.10_run_langfuse_experiment --run-name "v1-baseline"
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ _package_root = Path(__file__).resolve().parent.parent
 load_dotenv(_package_root / ".env", override=True)
 
 from langfuse import Evaluation, Langfuse  # noqa: E402
-from youngs75_a2a.eval_pipeline.settings import get_settings  # noqa: E402
-from youngs75_a2a.eval_pipeline.observability.langfuse import enabled  # noqa: E402
+from coding_agent.eval_pipeline.settings import get_settings  # noqa: E402
+from coding_agent.eval_pipeline.observability.langfuse import enabled  # noqa: E402
 
 _settings = get_settings()
 
 
 def _task(*, item, **kwargs) -> str:
     """각 dataset item에 대해 Coding Agent를 실행한다."""
-    from youngs75_a2a.eval_pipeline.my_agent import run_coding_agent
+    from coding_agent.eval_pipeline.my_agent import run_coding_agent
 
     query = (
         item.input.get("query", "") if isinstance(item.input, dict) else str(item.input)
@@ -54,7 +54,7 @@ def _response_completeness_evaluator(
 ) -> Evaluation:
     """DeepEval의 response_completeness 메트릭으로 평가한다."""
     from deepeval.test_case import LLMTestCase
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+    from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
         create_response_completeness_metric,
     )
 

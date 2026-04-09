@@ -21,20 +21,20 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
-from youngs75_a2a.cli.commands import handle_command
-from youngs75_a2a.cli.config import CLIConfig
-from youngs75_a2a.cli.renderer import CLIRenderer
-from youngs75_a2a.cli.session import CLISession
-from youngs75_a2a.core.abort_controller import AbortController, AbortReason
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.context_manager import ContextManager
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-from youngs75_a2a.core.project_context import ProjectContextLoader
-from youngs75_a2a.core.skills.loader import SkillLoader
-from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.tool_permissions import ToolPermissionManager
-from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+from coding_agent.cli.commands import handle_command
+from coding_agent.cli.config import CLIConfig
+from coding_agent.cli.renderer import CLIRenderer
+from coding_agent.cli.session import CLISession
+from coding_agent.core.abort_controller import AbortController, AbortReason
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+from coding_agent.core.project_context import ProjectContextLoader
+from coding_agent.core.skills.loader import SkillLoader
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.tool_permissions import ToolPermissionManager
+from coding_agent.eval_pipeline.observability.callback_handler import (
     AgentMetricsCollector,
     build_observed_config,
     create_langfuse_handler,
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 def _build_node_labels() -> dict[str, str]:
     """실제 사용 모델명을 포함한 노드 레이블을 생성한다."""
     try:
-        from youngs75_a2a.core.model_tiers import ModelTier, build_default_tiers
+        from coding_agent.core.model_tiers import ModelTier, build_default_tiers
 
         tiers = build_default_tiers()
         fast_model = tiers.get(ModelTier.FAST)
@@ -252,8 +252,8 @@ async def _create_agent(
 ) -> BaseGraphAgent:
     """에이전트를 비동기로 생성한다."""
     if name == "coding_assistant":
-        from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-        from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+        from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+        from coding_agent.agents.coding_assistant.config import CodingConfig
 
         return await CodingAssistantAgent.create(
             config=CodingConfig(),
@@ -263,24 +263,24 @@ async def _create_agent(
         )
 
     if name == "deep_research":
-        from youngs75_a2a.agents.deep_research.agent import DeepResearchAgent
-        from youngs75_a2a.agents.deep_research.config import ResearchConfig
+        from coding_agent.agents.deep_research.agent import DeepResearchAgent
+        from coding_agent.agents.deep_research.config import ResearchConfig
 
         return await DeepResearchAgent.create(
             config=ResearchConfig(), checkpointer=checkpointer
         )
 
     if name == "simple_react":
-        from youngs75_a2a.agents.simple_react.agent import SimpleMCPReActAgent
-        from youngs75_a2a.agents.simple_react.config import SimpleReActConfig
+        from coding_agent.agents.simple_react.agent import SimpleMCPReActAgent
+        from coding_agent.agents.simple_react.config import SimpleReActConfig
 
         return await SimpleMCPReActAgent.create(
             config=SimpleReActConfig(), checkpointer=checkpointer
         )
 
     if name == "orchestrator":
-        from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
-        from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
+        from coding_agent.agents.orchestrator.agent import OrchestratorAgent
+        from coding_agent.agents.orchestrator.config import OrchestratorConfig
 
         return await OrchestratorAgent.create(
             config=OrchestratorConfig(), checkpointer=checkpointer
@@ -732,7 +732,7 @@ async def _sync_mcp_workspace(workspace: str, renderer: CLIRenderer) -> None:
     import subprocess
     import time
 
-    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+    from coding_agent.agents.coding_assistant.config import CodingConfig
 
     config = CodingConfig()
     mcp_url = config.mcp_servers.get("code_tools", "")
@@ -741,7 +741,7 @@ async def _sync_mcp_workspace(workspace: str, renderer: CLIRenderer) -> None:
 
     # 1차: 기존 MCP 서버에 set_workspace 시도
     try:
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.mcp_loader import MCPToolLoader
 
         loader = MCPToolLoader({"code_tools": mcp_url})
         tools = await loader.load()

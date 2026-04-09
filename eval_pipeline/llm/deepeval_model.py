@@ -5,7 +5,7 @@ DeepEvalBaseLLM 인스턴스를 받습니다. 이 모듈은 OpenAI API를
 DeepEval이 이해할 수 있는 형태로 감싸는 어댑터 패턴을 구현합니다.
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
+    from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
     model = get_deepeval_model()
 
     # Metric에 전달

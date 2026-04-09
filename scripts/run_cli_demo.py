@@ -14,15 +14,15 @@ os.environ.setdefault("SKILLS_DIR", "./data/skills")
 
 from rich.console import Console  # noqa: E402
 
-from youngs75_a2a.cli.app import (  # noqa: E402
+from coding_agent.cli.app import (  # noqa: E402
     _init_skill_registry,
     _run_agent_turn,
 )
-from youngs75_a2a.cli.renderer import CLIRenderer  # noqa: E402
-from youngs75_a2a.cli.session import CLISession  # noqa: E402
-from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor  # noqa: E402
-from youngs75_a2a.core.project_context import ProjectContextLoader  # noqa: E402
-from youngs75_a2a.core.tool_permissions import ToolPermissionManager  # noqa: E402
+from coding_agent.cli.renderer import CLIRenderer  # noqa: E402
+from coding_agent.cli.session import CLISession  # noqa: E402
+from coding_agent.core.parallel_tool_executor import ParallelToolExecutor  # noqa: E402
+from coding_agent.core.project_context import ProjectContextLoader  # noqa: E402
+from coding_agent.core.tool_permissions import ToolPermissionManager  # noqa: E402
 
 
 async def main():

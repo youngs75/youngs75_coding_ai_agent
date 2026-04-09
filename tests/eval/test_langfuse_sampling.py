@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
     _run_metrics_on_testcase,
     batch_evaluate_langfuse,
     monitor_langfuse_scores,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import fetch_traces
+from coding_agent.eval_pipeline.loop2_evaluation.langfuse_bridge import fetch_traces
 
 
 class _FakeScore:
@@ -64,11 +64,11 @@ def test_fetch_traces_applies_sampling_and_skip_prefix(monkeypatch):
     ]
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge.enabled",
+        "coding_agent.eval_pipeline.loop2_evaluation.langfuse_bridge.enabled",
         lambda _settings: True,
     )
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge.client",
+        "coding_agent.eval_pipeline.loop2_evaluation.langfuse_bridge.client",
         lambda: _FakeLangfuseClient(traces),
     )
 
@@ -109,7 +109,7 @@ def test_batch_evaluate_langfuse_forwards_sampling_options(monkeypatch, tmp_path
         return []
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
         fake_fetch_traces,
     )
 
@@ -198,7 +198,7 @@ def test_monitor_langfuse_scores_extracts_failed_samples(monkeypatch, tmp_path):
     ]
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
         lambda **_kwargs: traces,
     )
 
@@ -226,7 +226,7 @@ def test_monitor_langfuse_scores_metric_threshold_override(monkeypatch, tmp_path
         ),
     ]
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator.fetch_traces",
         lambda **_kwargs: traces,
     )
 

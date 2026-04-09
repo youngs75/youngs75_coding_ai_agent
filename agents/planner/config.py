@@ -6,8 +6,8 @@ import os
 
 from pydantic import Field
 
-from youngs75_a2a.core.config import BaseAgentConfig
-from youngs75_a2a.core.model_tiers import ModelTier
+from coding_agent.core.config import BaseAgentConfig
+from coding_agent.core.model_tiers import ModelTier
 
 
 class PlannerConfig(BaseAgentConfig):
@@ -59,7 +59,7 @@ class PlannerConfig(BaseAgentConfig):
         if purpose in ("planning", "default"):
             tier_config = self.model_tiers.get(ModelTier.REASONING)
             if tier_config:
-                from youngs75_a2a.core.model_tiers import create_chat_model
+                from coding_agent.core.model_tiers import create_chat_model
 
                 return create_chat_model(
                     tier_config,

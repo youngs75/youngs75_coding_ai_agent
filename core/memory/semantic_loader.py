@@ -17,8 +17,8 @@ import logging
 import re
 from pathlib import Path
 
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.store import MemoryStore
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 

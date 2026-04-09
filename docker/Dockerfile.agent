@@ -1,4 +1,4 @@
-# A2A 에이전트 서버 + 샌드박스 개발 환경
+# Coding Agent Harness — 샌드박스 개발 환경
 #
 # 빌드 컨텍스트: 프로젝트 루트 (..)
 # 에이전트가 코드를 생성/테스트하는 격리된 환경을 제공한다.
@@ -49,4 +49,4 @@ ENV SKILLS_DIR=/app/data/skills
 
 EXPOSE 18080
 
-CMD ["python", "-m", "youngs75_a2a.tests.run_agent_server"]
+CMD ["python", "-m", "coding_agent.tests.run_coding_assistant_server"]

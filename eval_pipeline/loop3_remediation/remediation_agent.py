@@ -9,7 +9,7 @@ deepagents 의존성 없이 OpenAI API를 직접 사용하여 구현합니다.
     3. 구조화된 RecommendationReport JSON 출력
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import run_remediation
+    from coding_agent.eval_pipeline.loop3_remediation.remediation_agent import run_remediation
     report = await run_remediation()
     print(report.summary)
     for rec in report.recommendations:
@@ -20,17 +20,17 @@ from __future__ import annotations
 
 import json
 
-from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
-from youngs75_a2a.eval_pipeline.llm.json_utils import extract_json_object
-from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
+from coding_agent.eval_pipeline.llm.json_utils import extract_json_object
+from coding_agent.eval_pipeline.loop3_remediation.analysis_tools import (
     read_eval_results,
 )
-from youngs75_a2a.eval_pipeline.loop3_remediation.prompts import (
+from coding_agent.eval_pipeline.loop3_remediation.prompts import (
     ANALYZER_PROMPT,
     OPTIMIZER_PROMPT,
     RECOMMENDER_PROMPT,
 )
-from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
     RecommendationReport,
 )
 

@@ -9,7 +9,7 @@ Claude Code의 Agent 팀 패턴 참고.
     → synthesize (결과 통합)
 
 사용 예시:
-    from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
+    from coding_agent.agents.orchestrator.coordinator import CoordinatorMode
 
     coordinator = CoordinatorMode(registry=registry, context_manager=ctx_mgr)
     result = await coordinator.run(task="...", context=messages, llm=llm)
@@ -27,10 +27,10 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from youngs75_a2a.core.batch_executor import BatchExecutor
-from youngs75_a2a.core.context_manager import ContextManager
-from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-from youngs75_a2a.core.subagents.schemas import SubAgentSpec, SubAgentStatus
+from coding_agent.core.batch_executor import BatchExecutor
+from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.subagents.registry import SubAgentRegistry
+from coding_agent.core.subagents.schemas import SubAgentSpec, SubAgentStatus
 
 from .schemas import CoordinatorResult, SubTask, WorkerResult
 from .task_graph import TaskGraph
@@ -298,7 +298,7 @@ class CoordinatorMode:
             return await self._execute_wave_in_process(wave, context)
 
         # ProcessManager 방식: 각 서브태스크를 별도 프로세스로 spawn
-        from youngs75_a2a.core.subagents.process_manager import SubAgentProcessManager
+        from coding_agent.core.subagents.process_manager import SubAgentProcessManager
 
         manager = SubAgentProcessManager(
             registry=self._registry,

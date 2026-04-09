@@ -16,9 +16,9 @@ os.environ.setdefault("SKILLS_DIR", "./data/skills")
 
 from langchain_core.messages import HumanMessage  # noqa: E402
 
-from youngs75_a2a.core.memory.store import MemoryStore  # noqa: E402
-from youngs75_a2a.core.skills.loader import SkillLoader  # noqa: E402
-from youngs75_a2a.core.skills.registry import SkillRegistry  # noqa: E402
+from coding_agent.core.memory.store import MemoryStore  # noqa: E402
+from coding_agent.core.skills.loader import SkillLoader  # noqa: E402
+from coding_agent.core.skills.registry import SkillRegistry  # noqa: E402
 
 
 async def test_1_skill_auto_activation():
@@ -48,8 +48,8 @@ async def test_2_two_stage_pipeline():
     print("테스트 2: 2단계 파이프라인 (단순 코드 생성)")
     print("=" * 60)
 
-    from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+    from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+    from coding_agent.agents.coding_assistant.config import CodingConfig
 
     loader = SkillLoader("./data/skills")
     skill_registry = SkillRegistry(loader=loader)
@@ -99,8 +99,8 @@ async def test_3_tool_call_with_mcp():
     print("테스트 3: MCP 도구 호출 (파일 분석)")
     print("=" * 60)
 
-    from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
+    from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+    from coding_agent.agents.coding_assistant.config import CodingConfig
 
     loader = SkillLoader("./data/skills")
     skill_registry = SkillRegistry(loader=loader)
@@ -141,8 +141,8 @@ async def test_4_subagent_orchestrator():
     print("테스트 4: Subagent (Orchestrator)")
     print("=" * 60)
 
-    from youngs75_a2a.agents.orchestrator.agent import OrchestratorAgent
-    from youngs75_a2a.agents.orchestrator.config import OrchestratorConfig
+    from coding_agent.agents.orchestrator.agent import OrchestratorAgent
+    from coding_agent.agents.orchestrator.config import OrchestratorConfig
 
     config = OrchestratorConfig()
     print(f"  등록된 에이전트: {[ep.name for ep in config.agent_endpoints]}")

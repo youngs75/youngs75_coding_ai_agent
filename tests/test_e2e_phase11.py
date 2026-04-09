@@ -71,9 +71,9 @@ class TestHookSystemE2E:
     @_skip_no_mcp
     async def test_hooks_fire_on_mcp_tool_execution(self):
         """MCP 도구 실행 시 PRE/POST_TOOL_CALL 훅이 발행된다."""
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+        from coding_agent.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
         # 훅 이벤트 기록
         events: list[str] = []
@@ -122,8 +122,8 @@ class TestHookSystemE2E:
     @_skip_no_mcp
     async def test_hook_cancellation_prevents_execution(self):
         """PRE_TOOL_CALL 훅에서 cancel=True 설정 시 도구 실행이 스킵된다."""
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
         executed = []
 
@@ -153,14 +153,14 @@ class TestHookSystemE2E:
     @_skip_no_mcp
     async def test_builtin_hooks_with_real_tools(self):
         """내장 훅(logging, timing, audit)이 실제 도구와 동작한다."""
-        from youngs75_a2a.core.builtin_hooks import (
+        from coding_agent.core.builtin_hooks import (
             audit_hook,
             logging_hook,
             timing_hook,
         )
-        from youngs75_a2a.core.hooks import HookEvent, HookManager
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.hooks import HookEvent, HookManager
+        from coding_agent.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
         hook_mgr = HookManager()
         hook_mgr.register(HookEvent.PRE_TOOL_CALL, logging_hook, priority=0)
@@ -203,7 +203,7 @@ class TestPermissionManagerE2E:
     @_skip_no_mcp
     async def test_deny_sensitive_file_access(self):
         """민감 파일(.env) 접근 시 ASK 이상 권한이 필요하다."""
-        from youngs75_a2a.core.tool_permissions import (
+        from coding_agent.core.tool_permissions import (
             PermissionDecision,
             ToolPermissionManager,
         )
@@ -218,7 +218,7 @@ class TestPermissionManagerE2E:
     @_skip_no_mcp
     async def test_allow_safe_tool(self):
         """안전한 도구(list_directory)는 허용된다."""
-        from youngs75_a2a.core.tool_permissions import (
+        from coding_agent.core.tool_permissions import (
             PermissionDecision,
             ToolPermissionManager,
         )
@@ -230,10 +230,10 @@ class TestPermissionManagerE2E:
     @_skip_no_mcp
     async def test_permission_integrated_with_executor(self):
         """권한 훅이 ParallelToolExecutor와 통합되어 동작한다."""
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-        from youngs75_a2a.core.tool_permissions import (
+        from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+        from coding_agent.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.tool_permissions import (
             PermissionDecision,
             ToolPermissionManager,
         )
@@ -289,8 +289,8 @@ class TestParallelToolExecutorE2E:
     @_skip_no_mcp
     async def test_parallel_read_operations(self):
         """읽기 전용 도구가 병렬로 실행된다."""
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
         loader = MCPToolLoader(
             servers={"code_tools": "http://localhost:3003/mcp/"},
@@ -327,8 +327,8 @@ class TestParallelToolExecutorE2E:
     @_skip_no_mcp
     async def test_batch_result_order_preserved(self):
         """결과 순서가 요청 순서와 동일하다."""
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
         loader = MCPToolLoader(
             servers={"code_tools": "http://localhost:3003/mcp/"},
@@ -365,16 +365,16 @@ class TestCoordinatorModeE2E:
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_task_decomposition_with_real_llm(self):
         """실제 LLM이 복합 작업을 서브태스크로 분해한다."""
-        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
-        from youngs75_a2a.core.context_manager import ContextManager
-        from youngs75_a2a.core.model_tiers import (
+        from coding_agent.agents.orchestrator.coordinator import CoordinatorMode
+        from coding_agent.core.context_manager import ContextManager
+        from coding_agent.core.model_tiers import (
             build_default_purpose_tiers,
             build_default_tiers,
             create_chat_model,
             resolve_tier_config,
         )
-        from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-        from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+        from coding_agent.core.subagents.registry import SubAgentRegistry
+        from coding_agent.core.subagents.schemas import SubAgentSpec
 
         # 에이전트 등록
         agents = [
@@ -427,7 +427,7 @@ class TestCoordinatorModeE2E:
 
     async def test_task_graph_with_decomposed_tasks(self):
         """분해된 서브태스크로 TaskGraph를 구성하고 실행 웨이브를 계산한다."""
-        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
+        from coding_agent.agents.orchestrator.task_graph import TaskGraph
 
         subtasks = [
             {
@@ -479,16 +479,16 @@ class TestCoordinatorModeE2E:
     @pytest.mark.flaky(reruns=3, reruns_delay=5)
     async def test_coordinator_full_pipeline_with_mock_workers(self):
         """Coordinator 전체 파이프라인: decompose → execute → synthesize."""
-        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
-        from youngs75_a2a.core.context_manager import ContextManager
-        from youngs75_a2a.core.model_tiers import (
+        from coding_agent.agents.orchestrator.coordinator import CoordinatorMode
+        from coding_agent.core.context_manager import ContextManager
+        from coding_agent.core.model_tiers import (
             build_default_purpose_tiers,
             build_default_tiers,
             create_chat_model,
             resolve_tier_config,
         )
-        from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-        from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+        from coding_agent.core.subagents.registry import SubAgentRegistry
+        from coding_agent.core.subagents.schemas import SubAgentSpec
 
         agents = [
             SubAgentSpec(
@@ -558,13 +558,13 @@ class TestCodingAssistantE2E:
         """CodingAssistant가 훅+권한+MCP로 코드를 생성한다."""
         from langchain_core.messages import HumanMessage
 
-        from youngs75_a2a.agents.coding_assistant import (
+        from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
         )
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-        from youngs75_a2a.core.tool_permissions import ToolPermissionManager
+        from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.tool_permissions import ToolPermissionManager
 
         # Phase 11 기능 초기화
         hook_events: list[str] = []
@@ -623,7 +623,7 @@ class TestCodingAssistantE2E:
     @_skip_no_mcp
     async def test_project_context_loading(self):
         """프로젝트 컨텍스트가 로드된다."""
-        from youngs75_a2a.core.project_context import ProjectContextLoader
+        from coding_agent.core.project_context import ProjectContextLoader
 
         loader = ProjectContextLoader(workspace=Path.cwd())
         context = loader.load()  # sync method
@@ -642,7 +642,7 @@ class TestContextManagerE2E:
     async def test_should_compact_with_large_messages(self):
         """큰 메시지 시퀀스에서 컴팩션 필요 여부를 정확히 판단한다."""
         from langchain_core.messages import AIMessage, HumanMessage
-        from youngs75_a2a.core.context_manager import ContextManager
+        from coding_agent.core.context_manager import ContextManager
 
         mgr = ContextManager(max_tokens=1000, compact_threshold=0.8)
 
@@ -662,7 +662,7 @@ class TestContextManagerE2E:
     async def test_truncate_for_subagent(self):
         """서브에이전트용 히스토리 전파가 동작한다."""
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-        from youngs75_a2a.core.context_manager import ContextManager
+        from coding_agent.core.context_manager import ContextManager
 
         mgr = ContextManager(max_tokens=128000)
         msgs = [
@@ -693,7 +693,7 @@ class TestFullSystemIntegration:
     @_skip_no_mcp
     async def test_mcp_tool_loading_all_servers(self):
         """모든 MCP 서버에서 도구가 로드된다."""
-        from youngs75_a2a.core.mcp_loader import MCPToolLoader
+        from coding_agent.core.mcp_loader import MCPToolLoader
 
         servers = {}
         import socket
@@ -724,22 +724,22 @@ class TestFullSystemIntegration:
     async def test_all_phase11_modules_importable(self):
         """Phase 11 모든 모듈이 정상 임포트된다."""
         # Hook system
-        from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-        from youngs75_a2a.core.builtin_hooks import (
+        from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+        from coding_agent.core.builtin_hooks import (
             audit_hook,
             logging_hook,
             timing_hook,
         )
 
         # Coordinator
-        from youngs75_a2a.agents.orchestrator.coordinator import CoordinatorMode
-        from youngs75_a2a.agents.orchestrator.task_graph import TaskGraph
+        from coding_agent.agents.orchestrator.coordinator import CoordinatorMode
+        from coding_agent.agents.orchestrator.task_graph import TaskGraph
 
         # Phase 10 integration
-        from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
-        from youngs75_a2a.core.tool_permissions import ToolPermissionManager
-        from youngs75_a2a.core.context_manager import ContextManager
-        from youngs75_a2a.core.project_context import ProjectContextLoader
+        from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
+        from coding_agent.core.tool_permissions import ToolPermissionManager
+        from coding_agent.core.context_manager import ContextManager
+        from coding_agent.core.project_context import ProjectContextLoader
 
         # 임포트 검증 — 모듈이 callable이거나 인스턴스화 가능한지 확인
         assert callable(logging_hook)
@@ -761,11 +761,11 @@ class TestFullSystemIntegration:
     async def test_smoke_simple_react_with_phase11(self):
         """SimpleReActAgent가 Phase 11 기능과 함께 동작한다."""
         from langchain_core.messages import HumanMessage
-        from youngs75_a2a.agents.simple_react import (
+        from coding_agent.agents.simple_react import (
             SimpleMCPReActAgent,
             SimpleReActConfig,
         )
-        from youngs75_a2a.core.context_manager import ContextManager
+        from coding_agent.core.context_manager import ContextManager
 
         config = SimpleReActConfig(default_model="deepseek/deepseek-v3.2")
         agent = await SimpleMCPReActAgent.create(config=config)

@@ -39,15 +39,15 @@ def test_generate_synthetic_dataset_uses_contexts_api(tmp_path, monkeypatch):
 
     fake_synth = FakeSynthesizer(model=MagicMock())
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer.get_deepeval_model",
+        "coding_agent.eval_pipeline.loop1_dataset.synthesizer.get_deepeval_model",
         lambda: MagicMock(),
     )
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer.Synthesizer",
+        "coding_agent.eval_pipeline.loop1_dataset.synthesizer.Synthesizer",
         lambda model: fake_synth,
     )
 
-    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import (
+    from coding_agent.eval_pipeline.loop1_dataset.synthesizer import (
         generate_synthetic_dataset,
     )
 

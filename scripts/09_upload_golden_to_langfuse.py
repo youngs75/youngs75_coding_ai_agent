@@ -5,7 +5,7 @@ golden_dataset.json의 각 항목을 Langfuse Dataset Item으로 업로드.
 이미 동일 id가 존재하면 upsert(덮어쓰기)된다.
 
 실행:
-    python -m youngs75_a2a.scripts.09_upload_golden_to_langfuse
+    python -m coding_agent.scripts.09_upload_golden_to_langfuse
 
 옵션:
     --dataset-name NAME   Langfuse 데이터셋 이름 (기본: coding-assistant-golden)
@@ -24,8 +24,8 @@ load_dotenv()
 
 from langfuse import Langfuse  # noqa: E402
 
-from youngs75_a2a.eval_pipeline.settings import get_settings  # noqa: E402
-from youngs75_a2a.eval_pipeline.observability.langfuse import enabled  # noqa: E402
+from coding_agent.eval_pipeline.settings import get_settings  # noqa: E402
+from coding_agent.eval_pipeline.observability.langfuse import enabled  # noqa: E402
 
 
 def upload_golden_dataset(

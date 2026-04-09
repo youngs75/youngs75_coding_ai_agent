@@ -142,6 +142,15 @@ class SubagentContextFilter:
         else:
             parts.append(str(instructions))
 
+        # 생성 예정 파일 체크리스트 (Planner가 지정한 파일 목록)
+        planned_files = phase.get("files", [])
+        if planned_files:
+            parts.append("")
+            parts.append("### 생성 필수 파일 체크리스트")
+            parts.append("아래 파일을 **모두** `write_file` 도구로 생성해야 합니다:")
+            for fpath in planned_files:
+                parts.append(f"- [ ] `{fpath}`")
+
         # 이전 페이즈에서 생성된 파일 경로 나열
         if prior_written_files:
             parts.append("")

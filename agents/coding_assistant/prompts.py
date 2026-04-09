@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from youngs75_a2a.core.project_context import ProjectContextLoader
+from coding_agent.core.project_context import ProjectContextLoader
 
 
 def inject_project_context(
@@ -194,6 +194,11 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - 코드를 생성할 때 **반드시 해당 코드에 대한 테스트 파일도 함께 생성**하세요
 - 테스트는 핵심 로직(모델, API, 유틸 함수)에 대해 작성하세요
 - 테스트는 **실제 실행 가능한 상태**여야 합니다
+
+## ⚠️ 계획된 파일 전수 생성 (필수)
+- Phase 지시사항의 **"생성 필수 파일 체크리스트"**에 나열된 파일은 **모두** `write_file`로 생성해야 합니다
+- 체크리스트에 테스트 파일이 포함되어 있으면 **반드시** 테스트 파일도 생성하세요
+- 일부 파일만 생성하고 중단하지 마세요 — 체크리스트의 모든 파일을 빠짐없이 생성한 뒤 요약하세요
 """
 
 VERIFY_SYSTEM_PROMPT = """\

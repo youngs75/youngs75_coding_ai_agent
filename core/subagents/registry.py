@@ -14,7 +14,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from youngs75_a2a.core.subagents.schemas import (
+from coding_agent.core.subagents.schemas import (
     VALID_TRANSITIONS,
     SelectionResult,
     SubAgentEvent,

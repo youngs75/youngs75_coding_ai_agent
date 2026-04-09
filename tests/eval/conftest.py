@@ -11,7 +11,7 @@ os.environ.setdefault("LANGFUSE_TRACING_ENABLED", "0")
 
 @pytest.fixture
 def settings():
-    from youngs75_a2a.eval_pipeline.settings import Settings
+    from coding_agent.eval_pipeline.settings import Settings
 
     return Settings(
         openrouter_api_key="test-key",

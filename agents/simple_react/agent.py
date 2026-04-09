@@ -23,9 +23,9 @@ from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph import StateGraph
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.base_state import BaseGraphState
-from youngs75_a2a.core.mcp_loader import MCPToolLoader
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.base_state import BaseGraphState
+from coding_agent.core.mcp_loader import MCPToolLoader
 from .config import SimpleReActConfig
 
 

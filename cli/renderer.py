@@ -73,7 +73,7 @@ class CLIRenderer:
         self.console.print(
             Panel(
                 table,
-                title="[bold cyan]youngs75_a2a[/]",
+                title="[bold cyan]coding_agent[/]",
                 border_style="cyan",
                 padding=(0, 1),
             )

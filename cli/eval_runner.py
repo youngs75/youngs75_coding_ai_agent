@@ -67,7 +67,7 @@ def _run_evaluation_sync(
     DeepEval 의존성이 없거나 Golden Dataset이 없을 경우 에러를 반환합니다.
     """
     try:
-        from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+        from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
             evaluate_golden_dataset,
         )
     except ImportError as exc:
@@ -241,10 +241,10 @@ async def run_remediation_async(
     결과 리포트를 파일로 저장합니다.
     """
     try:
-        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+        from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
             save_remediation_report,
         )
-        from youngs75_a2a.eval_pipeline.loop3_remediation.remediation_agent import (
+        from coding_agent.eval_pipeline.loop3_remediation.remediation_agent import (
             run_remediation,
         )
     except ImportError as exc:
@@ -284,7 +284,7 @@ def load_last_remediation_report() -> RemediationResult:
     try:
         with open(report_path, encoding="utf-8") as f:
             data = json.load(f)
-        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+        from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
             RecommendationReport,
         )
 

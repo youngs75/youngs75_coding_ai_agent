@@ -21,7 +21,7 @@ Retrieval-Augmented Generation(RAG) 시스템의 품질을 측정하는
        - 핵심 정보가 누락되면 재현율이 낮아짐
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
+    from coding_agent.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
     metrics = create_rag_metrics(relevancy_threshold=0.7)
     # → [AnswerRelevancyMetric, FaithfulnessMetric, ContextualPrecisionMetric, ContextualRecallMetric]
 """
@@ -35,7 +35,7 @@ from deepeval.metrics import (
     FaithfulnessMetric,
 )
 
-from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
+from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
 
 
 def create_rag_metrics(

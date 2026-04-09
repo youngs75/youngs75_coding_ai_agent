@@ -30,9 +30,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, END, StateGraph
 from langgraph.types import interrupt
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.context_manager import ContextManager
-from youngs75_a2a.core.subagents.registry import SubAgentRegistry
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.subagents.registry import SubAgentRegistry
 from .config import OrchestratorConfig
 from .coordinator import CoordinatorMode
 from .schemas import OrchestratorState
@@ -110,8 +110,8 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
         (task_plan_structured, plan_text): 구조화된 TaskPlan dict와 마크다운 텍스트
     """
     try:
-        from youngs75_a2a.agents.planner.agent import PlannerAgent
-        from youngs75_a2a.agents.planner.config import PlannerConfig
+        from coding_agent.agents.planner.agent import PlannerAgent
+        from coding_agent.agents.planner.config import PlannerConfig
 
         planner = await PlannerAgent.create(config=PlannerConfig())
         result = await planner.graph.ainvoke(
@@ -130,7 +130,7 @@ def _get_process_manager() -> "SubAgentProcessManager":
     """싱글턴 SubAgentProcessManager를 반환한다."""
     global _process_manager
     if _process_manager is None:
-        from youngs75_a2a.core.subagents.process_manager import SubAgentProcessManager
+        from coding_agent.core.subagents.process_manager import SubAgentProcessManager
         _process_manager = SubAgentProcessManager(
             registry=_local_registry,
             timeout_s=300.0,
@@ -437,11 +437,11 @@ async def _execute_phases_sequentially(
     import os as _os
     from pathlib import Path as _Path
 
-    from youngs75_a2a.agents.coding_assistant.agent import CodingAssistantAgent
-    from youngs75_a2a.agents.coding_assistant.config import CodingConfig
-    from youngs75_a2a.core.skills.loader import SkillLoader
-    from youngs75_a2a.core.skills.registry import SkillRegistry
-    from youngs75_a2a.core.subagent_context import SubagentContextFilter
+    from coding_agent.agents.coding_assistant.agent import CodingAssistantAgent
+    from coding_agent.agents.coding_assistant.config import CodingConfig
+    from coding_agent.core.skills.loader import SkillLoader
+    from coding_agent.core.skills.registry import SkillRegistry
+    from coding_agent.core.subagent_context import SubagentContextFilter
 
     # 스킬 레지스트리 초기화 (_invoke_local_agent와 동일)
     skill_registry = SkillRegistry()
@@ -518,6 +518,7 @@ async def _execute_phases_sequentially(
                 task_message=phase_message,
                 max_iterations=11,
                 env_approved=True,
+                extra_state={"planned_files": phase.get("files", [])},
             )
 
             result = await agent.graph.ainvoke(
@@ -567,8 +568,8 @@ async def _execute_phases_sequentially(
     verification_result = None
     if all_written_files:
         try:
-            from youngs75_a2a.agents.verifier.agent import VerificationAgent
-            from youngs75_a2a.agents.verifier.config import VerifierConfig
+            from coding_agent.agents.verifier.agent import VerificationAgent
+            from coding_agent.agents.verifier.config import VerifierConfig
 
             # 생성된 파일 확장자에서 주요 언어 감지
             detected_lang = _detect_language(all_written_files)
@@ -654,7 +655,7 @@ async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     # SubAgentRegistry 구성 — 등록된 에이전트 엔드포인트를 SubAgentSpec으로 변환
     registry = SubAgentRegistry()
-    from youngs75_a2a.core.subagents.schemas import SubAgentSpec
+    from coding_agent.core.subagents.schemas import SubAgentSpec
 
     for ep in oc.agent_endpoints:
         registry.register(

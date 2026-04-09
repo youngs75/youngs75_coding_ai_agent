@@ -11,13 +11,13 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.prompt_optimizer import (
+from coding_agent.eval_pipeline.loop2_evaluation.prompt_optimizer import (
     apply_best_prompts_to_file,
     load_langfuse_failure_hints,
     optimize_all_prompts,
     save_optimization_artifacts,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def main():

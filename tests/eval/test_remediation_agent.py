@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
     FailureAnalysis,
     FailureCategory,
     PromptOptimization,
@@ -208,7 +208,7 @@ class TestSaveLoadReport:
     """리포트 저장/로드 테스트."""
 
     def test_save_and_load(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+        from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
             load_remediation_report,
             save_remediation_report,
         )
@@ -232,7 +232,7 @@ class TestSaveLoadReport:
         assert loaded.failure_analysis.total_evaluated == 50
 
     def test_load_nonexistent(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.recommendation import (
+        from coding_agent.eval_pipeline.loop3_remediation.recommendation import (
             load_remediation_report,
         )
 
@@ -242,7 +242,7 @@ class TestSaveLoadReport:
 
 class TestAnalysisTools:
     def test_read_eval_results_empty_dir(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+        from coding_agent.eval_pipeline.loop3_remediation.analysis_tools import (
             read_eval_results,
         )
 
@@ -250,7 +250,7 @@ class TestAnalysisTools:
         assert result == []
 
     def test_read_eval_results_with_data(self, tmp_path):
-        from youngs75_a2a.eval_pipeline.loop3_remediation.analysis_tools import (
+        from coding_agent.eval_pipeline.loop3_remediation.analysis_tools import (
             read_eval_results,
         )
 

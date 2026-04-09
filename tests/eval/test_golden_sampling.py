@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
     evaluate_golden_dataset,
     sample_golden_items,
 )
@@ -82,11 +82,11 @@ def test_evaluate_golden_dataset_applies_sampling_options(monkeypatch, tmp_path)
             return ["mock_metric"]
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator.get_registry",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator.get_registry",
         lambda: _FakeRegistry(),
     )
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator._run_metrics_on_testcase",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator._run_metrics_on_testcase",
         lambda _test_case, _metrics: ({"mock_metric": 0.9}, []),
     )
 
@@ -108,7 +108,7 @@ def test_evaluate_golden_dataset_applies_sampling_options(monkeypatch, tmp_path)
 
 
 def test_step5_run_evaluation_forwards_sampling_options(monkeypatch):
-    from youngs75_a2a.scripts.run_pipeline import step5_run_evaluation
+    from coding_agent.scripts.run_pipeline import step5_run_evaluation
 
     captured: dict = {}
 
@@ -117,7 +117,7 @@ def test_step5_run_evaluation_forwards_sampling_options(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator.evaluate_golden_dataset",
+        "coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator.evaluate_golden_dataset",
         fake_evaluate_golden_dataset,
     )
 

@@ -13,7 +13,7 @@ Langfuse 클라이언트 초기화, 활성화 여부 확인, 그리고
     모두 지원하는 유틸리티를 제공합니다.
 
 기본 기능 (기존):
-    from youngs75_a2a.eval_pipeline.observability.langfuse import enabled, client
+    from coding_agent.eval_pipeline.observability.langfuse import enabled, client
 
     if enabled():
         lf = client()
@@ -26,7 +26,7 @@ Langfuse 클라이언트 초기화, 활성화 여부 확인, 그리고
         모든 하위 span에 속성을 자동 전파합니다.
         Ref: https://langfuse.com/docs/sdk/python/decorators
 
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enrich_trace
+        from coding_agent.eval_pipeline.observability.langfuse import enrich_trace
 
         with enrich_trace(user_id="user-123", session_id="sess-abc",
                           tags=["prod", "rag-v2"]):
@@ -37,7 +37,7 @@ Langfuse 클라이언트 초기화, 활성화 여부 확인, 그리고
         콜백 핸들러가 Langfuse 트레이스 속성으로 변환합니다.
         Ref: https://langfuse.com/docs/integrations/langchain/tracing
 
-        from youngs75_a2a.eval_pipeline.observability.langfuse import build_langchain_config
+        from coding_agent.eval_pipeline.observability.langfuse import build_langchain_config
 
         config = build_langchain_config(user_id="user-123", callbacks=[handler])
         result = agent.invoke(input_state, config=config)
@@ -46,7 +46,7 @@ Langfuse 클라이언트 초기화, 활성화 여부 확인, 그리고
         Langfuse는 NUMERIC, BOOLEAN, CATEGORICAL 세 가지 스코어 타입을 지원합니다.
         Ref: https://langfuse.com/docs/scores/custom
 
-        from youngs75_a2a.eval_pipeline.observability.langfuse import score_trace
+        from coding_agent.eval_pipeline.observability.langfuse import score_trace
 
         score_trace(trace_id, name="metric", value=0.85)
         score_trace(trace_id, name="passed", value=True, data_type="BOOLEAN")
@@ -60,7 +60,7 @@ from typing import Any, Literal
 
 from langfuse import get_client, propagate_attributes
 
-from youngs75_a2a.eval_pipeline.settings import Settings, get_settings
+from coding_agent.eval_pipeline.settings import Settings, get_settings
 
 
 def enabled(settings: Settings | None = None) -> bool:

@@ -11,7 +11,7 @@ LLM이 기존 답변을 개선하여 더 나은 Golden Dataset을 만듭니다.
     4. augmented=True 플래그와 개선 노트를 추가
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import augment_with_feedback
+    from coding_agent.eval_pipeline.loop1_dataset.feedback_augmenter import augment_with_feedback
     improved_items = augment_with_feedback(golden_items)
 """
 
@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import json
 
-from youngs75_a2a.eval_pipeline.llm.openrouter import get_openrouter_client
-from youngs75_a2a.eval_pipeline.loop1_dataset.prompts import FEEDBACK_AUGMENT_PROMPT
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.llm.openrouter import get_openrouter_client
+from coding_agent.eval_pipeline.loop1_dataset.prompts import FEEDBACK_AUGMENT_PROMPT
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def augment_with_feedback(items: list[dict]) -> list[dict]:

@@ -10,7 +10,7 @@ DeepEval의 Synthesizer를 사용하여 소스 문서(corpus)에서
     4. 결과를 JSON 파일로 저장
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop1_dataset.synthesizer import generate_synthetic_dataset
+    from coding_agent.eval_pipeline.loop1_dataset.synthesizer import generate_synthetic_dataset
     items = generate_synthetic_dataset(num_goldens=10)
     # → data/synthetic/synthetic_dataset.json 생성
 
@@ -29,8 +29,8 @@ from uuid import uuid4
 from deepeval.dataset import EvaluationDataset
 from deepeval.synthesizer import Synthesizer
 
-from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def _load_corpus_documents(corpus_dir: Path) -> tuple[list[list[str]], list[str]]:

@@ -17,7 +17,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
-from youngs75_a2a.core.context_manager import (
+from coding_agent.core.context_manager import (
     ContextManager,
     _extract_stop_reason,
     _get_content,

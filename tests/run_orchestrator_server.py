@@ -2,7 +2,7 @@
 
 사용자 요청을 분석하여 적합한 하위 에이전트로 라우팅한다.
 
-실행: python -m youngs75_a2a.tests.run_orchestrator_server
+실행: python -m coding_agent.tests.run_orchestrator_server
 포트: 18080 (환경변수 ORCH_PORT로 변경 가능)
 
 의존: 하위 에이전트 서버가 먼저 실행되어 있어야 한다.
@@ -25,9 +25,9 @@ import uvicorn
 from starlette.routing import Route
 from starlette.responses import JSONResponse
 
-from youngs75_a2a.a2a import LGAgentExecutor, build_app, create_agent_card
-from youngs75_a2a.agents.orchestrator import OrchestratorAgent, OrchestratorConfig
-from youngs75_a2a.agents.orchestrator.config import AgentEndpoint
+from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
+from coding_agent.agents.orchestrator import OrchestratorAgent, OrchestratorConfig
+from coding_agent.agents.orchestrator.config import AgentEndpoint
 
 
 async def main():

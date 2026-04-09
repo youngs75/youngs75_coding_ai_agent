@@ -4,7 +4,7 @@ Pydantic BaseSettings를 사용하여 환경변수 기반 설정을 관리합니
 패키지 루트의 .env 파일에서 자동으로 값을 읽어오며, 환경변수가 우선합니다.
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.settings import get_settings
+    from coding_agent.eval_pipeline.settings import get_settings
     settings = get_settings()
 """
 

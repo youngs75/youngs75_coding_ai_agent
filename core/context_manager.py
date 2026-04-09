@@ -4,7 +4,7 @@ Claude Code의 자동 컴팩션 패턴을 LangGraph에 맞게 구현한다.
 토큰 사용량 추적, 임계치 초과 시 자동 컴팩션, 서브에이전트용 히스토리 필터링을 제공한다.
 
 사용 예시:
-    from youngs75_a2a.core.context_manager import ContextManager
+    from coding_agent.core.context_manager import ContextManager
 
     ctx = ContextManager(max_tokens=128000, compact_threshold=0.8)
 
@@ -28,7 +28,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
-from youngs75_a2a.utils.token_optimizer import count_messages_tokens
+from coding_agent.utils.token_optimizer import count_messages_tokens
 
 logger = logging.getLogger(__name__)
 

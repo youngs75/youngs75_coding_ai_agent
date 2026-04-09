@@ -100,7 +100,7 @@ External Evaluation Pipeline (온라인 평가):
     특징: DeepEval 호출 없이 Langfuse 평가 지표 기반으로 실패 샘플 추출
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+    from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
         evaluate_golden_dataset, batch_evaluate_langfuse, monitor_langfuse_scores,
     )
 
@@ -126,13 +126,13 @@ from typing import Any
 
 from deepeval.test_case import LLMTestCase
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.langfuse_bridge import (
+from coding_agent.eval_pipeline.loop2_evaluation.langfuse_bridge import (
     fetch_traces,
     push_scores,
     trace_to_testcase,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.metrics_registry import get_registry
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.loop2_evaluation.metrics_registry import get_registry
+from coding_agent.eval_pipeline.settings import get_settings
 
 _REQUIRED_FIELDS_BY_METRIC: dict[str, tuple[str, ...]] = {
     "faithfulness": ("retrieval_context",),

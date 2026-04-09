@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from youngs75_a2a.core.subagents.registry import SubAgentRegistry
-from youngs75_a2a.core.subagents.schemas import (
+from coding_agent.core.subagents.registry import SubAgentRegistry
+from coding_agent.core.subagents.schemas import (
     SubAgentSpec,
     SubAgentStatus,
     SubAgentUsageRecord,

@@ -137,4 +137,4 @@ if [[ -n "$AGENT" ]]; then
 fi
 
 docker exec -it "${env_args[@]}" "$CONTAINER" \
-    python -m youngs75_a2a.cli
+    python -m coding_agent.cli

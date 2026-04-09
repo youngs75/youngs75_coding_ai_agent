@@ -18,7 +18,7 @@ RAG, Agent, Custom 메트릭을 한곳에서 생성하고 관리합니다.
     └─────────────────────┘
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.metrics_registry import get_registry
+    from coding_agent.eval_pipeline.loop2_evaluation.metrics_registry import get_registry
 
     registry = get_registry()
     rag = registry.rag_metrics            # RAG 메트릭 4개
@@ -28,10 +28,10 @@ RAG, Agent, Custom 메트릭을 한곳에서 생성하고 관리합니다.
 
 from __future__ import annotations
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.agent_metrics import (
+from coding_agent.eval_pipeline.loop2_evaluation.agent_metrics import (
     create_agent_metrics,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
     SafetyMetric,
     create_bias_metric,
     create_citation_quality_metric,
@@ -40,7 +40,7 @@ from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
     create_response_completeness_metric,
     create_toxicity_metric,
 )
-from youngs75_a2a.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
+from coding_agent.eval_pipeline.loop2_evaluation.rag_metrics import create_rag_metrics
 
 
 class MetricsRegistry:

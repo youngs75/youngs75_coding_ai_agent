@@ -11,7 +11,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint format test test-eval build up down logs clean mcp-up mcp-down up-harness down-harness logs-harness ps-harness health-check cli
+.PHONY: help setup lint format test test-eval build up down logs ps health-check cli sync clean
 
 # ── 초기 설정 ──
 
@@ -39,61 +39,28 @@ test-eval: ## eval 파이프라인 테스트 실행
 test-all: ## 전체 테스트 실행
 	uv run pytest tests/ -v
 
-# ── Docker ──
+# ── Docker (Harness 통합) ──
 
-build: ## Docker Compose 이미지 빌드
+build: ## Docker 이미지 빌드
 	cd docker && docker compose build
 
-up: ## Docker Compose 전체 기동 (백그라운드)
-	cd docker && docker compose up -d
+up: ## 전체 Harness 기동 (MCP + LiteLLM + Agent + Orchestrator)
+	cd docker && docker compose up -d --build
 
-down: ## Docker Compose 종료 및 컨테이너 제거
+down: ## 전체 Harness 종료 및 컨테이너 제거
 	cd docker && docker compose down
 
-logs: ## Docker Compose 로그 스트리밍
+logs: ## Docker 로그 스트리밍
 	cd docker && docker compose logs -f
 
-ps: ## Docker Compose 서비스 상태 확인
+ps: ## Docker 서비스 상태 확인
 	cd docker && docker compose ps
 
-# ── MCP 서버 ──
-
-mcp-up: ## MCP 도구 서버 기동
-	cd docker && docker compose -f docker-compose.mcp.yml up -d
-
-mcp-down: ## MCP 도구 서버 종료
-	cd docker && docker compose -f docker-compose.mcp.yml down
-
-# ── Harness (전체 에이전트 하니스) ──
-
-up-harness: ## 전체 하니스 기동 (MCP + 에이전트 + 오케스트레이터)
-	cd docker && docker compose -f docker-compose.harness.yml up -d --build
-
-down-harness: ## 전체 하니스 종료
-	cd docker && docker compose -f docker-compose.harness.yml down
-
-logs-harness: ## 하니스 로그 스트리밍
-	cd docker && docker compose -f docker-compose.harness.yml logs -f
-
-ps-harness: ## 하니스 서비스 상태 확인
-	cd docker && docker compose -f docker-compose.harness.yml ps
-
-health-check: ## 모든 하니스 서비스 헬스체크
+health-check: ## 모든 서비스 헬스체크
 	@bash scripts/health_check.sh
 
 cli: ## 대화형 CLI 실행 (Docker 우선, 로컬 폴백)
 	@bash youngs75-agent.sh
-
-# ── 환경별 Docker 기동 ──
-
-up-dev: ## 개발 환경으로 Docker 기동
-	cd docker && docker compose --env-file ../config/settings.dev.env up -d
-
-up-staging: ## 스테이징 환경으로 Docker 기동
-	cd docker && docker compose --env-file ../config/settings.staging.env up -d
-
-up-prod: ## 프로덕션 환경으로 Docker 기동
-	cd docker && docker compose --env-file ../config/settings.prod.env up -d
 
 # ── 유틸리티 ──
 

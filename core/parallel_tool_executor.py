@@ -5,7 +5,7 @@
 결과는 항상 원래 요청 순서대로 반환된다.
 
 사용 예시:
-    from youngs75_a2a.core.parallel_tool_executor import ParallelToolExecutor
+    from coding_agent.core.parallel_tool_executor import ParallelToolExecutor
 
     executor = ParallelToolExecutor()
     results = await executor.execute_batch(tool_calls, tool_executor_fn)
@@ -21,8 +21,8 @@ from typing import Any, Callable
 
 from langchain_core.messages import ToolMessage
 
-from youngs75_a2a.core.hooks import HookContext, HookEvent, HookManager
-from youngs75_a2a.core.tool_call_utils import tc_args, tc_id, tc_name
+from coding_agent.core.hooks import HookContext, HookEvent, HookManager
+from coding_agent.core.tool_call_utils import tc_args, tc_id, tc_name
 
 logger = logging.getLogger(__name__)
 

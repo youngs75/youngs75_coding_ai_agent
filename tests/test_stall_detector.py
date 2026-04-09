@@ -1,6 +1,6 @@
 """StallDetector 단위 테스트."""
 
-from youngs75_a2a.core.stall_detector import StallAction, StallDetector
+from coding_agent.core.stall_detector import StallAction, StallDetector
 
 
 class TestStallDetectorBasic:

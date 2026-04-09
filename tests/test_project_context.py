@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from youngs75_a2a.core.project_context import (
+from coding_agent.core.project_context import (
     ProjectContextLoader,
     _estimate_tokens,
 )
-from youngs75_a2a.core.tool_permissions import (
+from coding_agent.core.tool_permissions import (
     PermissionDecision,
     ToolPermissionManager,
     _is_sensitive_path,
@@ -422,7 +422,7 @@ class TestIntegration:
 
     def test_context_loader_with_prompt_injection(self, tmp_path: Path) -> None:
         """컨텍스트 로더가 프롬프트에 올바르게 주입된다."""
-        from youngs75_a2a.agents.coding_assistant.prompts import (
+        from coding_agent.agents.coding_assistant.prompts import (
             PARSE_SYSTEM_PROMPT,
             inject_project_context,
         )
@@ -438,7 +438,7 @@ class TestIntegration:
 
     def test_context_injection_no_workspace(self) -> None:
         """workspace가 None이면 원본 프롬프트를 그대로 반환한다."""
-        from youngs75_a2a.agents.coding_assistant.prompts import (
+        from coding_agent.agents.coding_assistant.prompts import (
             PARSE_SYSTEM_PROMPT,
             inject_project_context,
         )

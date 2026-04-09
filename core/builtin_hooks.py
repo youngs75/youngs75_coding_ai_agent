@@ -3,8 +3,8 @@
 로깅, 타이밍, 감사(audit) 등 일반적으로 유용한 훅을 제공한다.
 
 사용 예시:
-    from youngs75_a2a.core.hooks import HookManager, HookEvent
-    from youngs75_a2a.core.builtin_hooks import logging_hook, timing_hook
+    from coding_agent.core.hooks import HookManager, HookEvent
+    from coding_agent.core.builtin_hooks import logging_hook, timing_hook
 
     manager = HookManager()
     manager.register(HookEvent.PRE_TOOL_CALL, logging_hook)
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 
-from youngs75_a2a.core.hooks import HookContext, HookEvent
+from coding_agent.core.hooks import HookContext, HookEvent
 
 logger = logging.getLogger(__name__)
 

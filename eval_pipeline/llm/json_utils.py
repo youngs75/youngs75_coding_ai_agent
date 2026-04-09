@@ -5,7 +5,7 @@ LLM은 JSON을 반환할 때 종종 markdown code fence(```json ... ```)로
 LLM 응답에서 JSON 객체를 안전하게 추출합니다.
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.llm.json_utils import extract_json_object
+    from coding_agent.eval_pipeline.llm.json_utils import extract_json_object
 
     raw = '```json\\n{"score": 0.85, "reason": "good"}\\n```'
     parsed = extract_json_object(raw)

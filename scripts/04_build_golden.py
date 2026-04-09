@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
+from coding_agent.eval_pipeline.loop1_dataset.golden_builder import build_golden_dataset
 
 
 def main():

@@ -19,7 +19,7 @@ RAG 메트릭이 "답변의 품질"을 평가한다면, Agent 메트릭은
     평가할 수 없으며, 실제 에이전트 실행 기록이 있어야 합니다.
 
 사용 예시:
-    from youngs75_a2a.eval_pipeline.loop2_evaluation.agent_metrics import create_agent_metrics
+    from coding_agent.eval_pipeline.loop2_evaluation.agent_metrics import create_agent_metrics
     metrics = create_agent_metrics(task_completion_threshold=0.7)
 """
 
@@ -30,7 +30,7 @@ from deepeval.metrics import (
     ToolCorrectnessMetric,
 )
 
-from youngs75_a2a.eval_pipeline.llm.deepeval_model import get_deepeval_model
+from coding_agent.eval_pipeline.llm.deepeval_model import get_deepeval_model
 
 
 def create_agent_metrics(

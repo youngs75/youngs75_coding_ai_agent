@@ -19,7 +19,7 @@ import pytest
 #  token_optimizer 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.utils.token_optimizer import (
+from coding_agent.utils.token_optimizer import (
     TokenBudget,
     compress_prompt,
     count_messages_tokens,
@@ -174,7 +174,7 @@ class TestPromptReport:
 #  llm_cache 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.utils.llm_cache import LLMCache, get_llm_cache, reset_llm_cache  # noqa: E402
+from coding_agent.utils.llm_cache import LLMCache, get_llm_cache, reset_llm_cache  # noqa: E402
 
 
 class TestLLMCache:
@@ -312,7 +312,7 @@ class TestGlobalCache:
 #  profiler 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.utils.profiler import (  # noqa: E402
+from coding_agent.utils.profiler import (  # noqa: E402
     NodeProfile,
     Profiler,
     profile_async,
@@ -466,7 +466,7 @@ class TestProfileDecorators:
 #  batch_executor 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.core.batch_executor import BatchExecutor, BatchResult, TaskResult  # noqa: E402
+from coding_agent.core.batch_executor import BatchExecutor, BatchResult, TaskResult  # noqa: E402
 
 
 class TestTaskResult:
@@ -614,7 +614,7 @@ class TestBatchExecutor:
 #  model_tiers 비용/성능 분석 테스트
 # ══════════════════════════════════════════════════════════════════
 
-from youngs75_a2a.core.model_tiers import (  # noqa: E402
+from coding_agent.core.model_tiers import (  # noqa: E402
     ModelCostInfo,
     ModelTier,
     TierConfig,

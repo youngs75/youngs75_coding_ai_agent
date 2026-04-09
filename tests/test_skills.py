@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from youngs75_a2a.core.skills.loader import SkillLoader
-from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.skills.schemas import (
+from coding_agent.core.skills.loader import SkillLoader
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.skills.schemas import (
     Skill,
     SkillLevel,
     SkillMetadata,

@@ -7,7 +7,7 @@ parse 노드처럼 결정적(deterministic) 결과가 예상되는 곳에 적용
 TTL 기반 자동 만료, 캐시 히트율 메트릭 제공.
 
 사용 예시:
-    from youngs75_a2a.utils.llm_cache import LLMCache
+    from coding_agent.utils.llm_cache import LLMCache
 
     cache = LLMCache(max_size=256, ttl_seconds=600)
 

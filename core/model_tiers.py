@@ -677,7 +677,7 @@ def build_fallback_chain(
     Returns:
         ModelFallbackChain 인스턴스
     """
-    from youngs75_a2a.core.resilience import ModelFallbackChain
+    from coding_agent.core.resilience import ModelFallbackChain
 
     # fallback 순서 결정
     tier_order = [ModelTier.STRONG, ModelTier.DEFAULT, ModelTier.FAST]

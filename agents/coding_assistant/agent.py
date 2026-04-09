@@ -28,24 +28,24 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
-from youngs75_a2a.core.base_agent import BaseGraphAgent
-from youngs75_a2a.core.context_manager import (
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.context_manager import (
     ContextManager,
     invoke_with_max_tokens_recovery,
 )
-from youngs75_a2a.core.mcp_loader import MCPToolLoader
-from youngs75_a2a.core.memory.schemas import MemoryItem, MemoryType
-from youngs75_a2a.core.memory.store import MemoryStore
-from youngs75_a2a.core.skills.registry import SkillRegistry
-from youngs75_a2a.core.stall_detector import StallAction, StallDetector
-from youngs75_a2a.core.turn_budget import BudgetVerdict, TurnBudgetTracker
-from youngs75_a2a.core.tool_call_utils import (
+from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.store import MemoryStore
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.stall_detector import StallAction, StallDetector
+from coding_agent.core.turn_budget import BudgetVerdict, TurnBudgetTracker
+from coding_agent.core.tool_call_utils import (
     sanitize_messages_for_llm,
     tc_args,
     tc_id,
     tc_name,
 )
-from youngs75_a2a.core.tool_permissions import PermissionDecision
+from coding_agent.core.tool_permissions import PermissionDecision
 
 from .config import CodingConfig
 from .prompts import (
@@ -251,7 +251,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         )
 
         # 미들웨어 체인 — LLM 호출 전후 메시지/컨텍스트 자동 관리
-        from youngs75_a2a.core.middleware import (
+        from coding_agent.core.middleware import (
             MessageWindowMiddleware,
             MiddlewareChain,
             SummarizationMiddleware,
@@ -569,10 +569,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         iteration = state.get("iteration", 0)
         log = state.get("execution_log", [])
 
-        # generate/scaffold 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
+        # generate/scaffold/analyze 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
         # generate_final(STRONG)이 직접 코드를 생성한다.
         # scaffold도 FAST 모델이 도구를 호출하지 않고 저품질 코드를 생성하므로 STRONG 직행.
-        if task_type in ("generate", "scaffold") and iteration == 0:
+        # analyze도 FAST 모델이 read_file 도구를 호출하지 않는 문제 → STRONG 직행.
+        if task_type in ("generate", "scaffold", "analyze") and iteration == 0:
             log.append(f"[execute] {task_type} 태스크 — FAST 스킵, STRONG으로 직행")
             return {"execution_log": log}
 
@@ -587,7 +588,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             llm_with_tools = llm_with_tools.bind_tools(self._tools)
 
         # 미들웨어 체인으로 메시지 관리 (윈도우 + 컴팩션)
-        from youngs75_a2a.core.middleware import ModelRequest as MWRequest
+        from coding_agent.core.middleware import ModelRequest as MWRequest
 
         sanitized = sanitize_messages_for_llm(state["messages"])
         sanitized.append(context_msg)
@@ -664,6 +665,14 @@ class CodingAssistantAgent(BaseGraphAgent):
             system_prompt += "\n\n## 수집된 프로젝트 파일 컨텍스트\n"
             system_prompt += "\n".join(project_context[:10])
 
+        # Planner가 지정한 생성 예정 파일 목록 주입
+        planned_files = state.get("planned_files", [])
+        if planned_files:
+            system_prompt += "\n\n## 생성 필수 파일 체크리스트\n"
+            system_prompt += "아래 파일을 **모두** write_file로 생성해야 합니다. 누락 시 검증 실패합니다:\n"
+            for fp in planned_files:
+                system_prompt += f"- [ ] `{fp}`\n"
+
         context_msg = self._build_context_message(state)
 
         # STRONG 모델 + write_file 도구 바인딩
@@ -677,7 +686,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         if write_tools:
             gen_model = gen_model.bind_tools(write_tools)
 
-        from youngs75_a2a.core.middleware import ModelRequest as MWRequest
+        from coding_agent.core.middleware import ModelRequest as MWRequest
         from langchain_core.messages import AIMessage, ToolMessage
 
         sanitized = sanitize_messages_for_llm(state["messages"])
@@ -685,6 +694,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         log = list(state.get("execution_log", []))
         written_files: list[str] = []
+        total_tool_calls = 0
         tools_by_name = _get_tools_by_name(write_tools)
         loop_messages = list(sanitized)
         response = None
@@ -743,6 +753,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 )
                 responded_ids.add(call_id)
 
+            total_tool_calls += len(tool_calls)
             log.append(
                 f"[generate_final] 루프 {loop_idx}: "
                 f"도구 {len(tool_calls)}회 호출, "
@@ -772,6 +783,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             "generated_code": content,
             "written_files": written_files,
             "execution_log": log,
+            "tool_call_count": state.get("tool_call_count", 0) + total_tool_calls,
         }
 
     async def _execute_tools(self, state: CodingState) -> dict[str, Any]:
@@ -946,7 +958,6 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "verify_result": {"passed": True, "issues": [], "suggestions": []},
                 "execution_log": log,
                 "iteration": state.get("iteration", 0) + 1,
-                "tool_call_count": 0,
             }
 
         # 코드 truncation — 검증에 전문 대신 요약만 전달
@@ -1008,7 +1019,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             "verify_result": verify_result,
             "execution_log": log,
             "iteration": state.get("iteration", 0) + 1,
-            "tool_call_count": 0,
         }
 
         # 검증 실패 시 written_files 초기화 (재생성 시 새로 쓰도록)
@@ -1224,6 +1234,31 @@ class CodingAssistantAgent(BaseGraphAgent):
         """
         written_files = state.get("written_files", [])
         log = list(state.get("execution_log", []))
+
+        # ── planned vs written 비교 검증 ──
+        planned_files = state.get("planned_files", [])
+        if planned_files:
+            written_paths = {
+                f.split(" (")[0].strip() for f in written_files
+            }
+            missing = [f for f in planned_files if f not in written_paths]
+            if missing:
+                missing_str = ", ".join(missing)
+                log.append(
+                    f"[run_tests] 계획 대비 누락 파일 {len(missing)}개: {missing_str}"
+                )
+                return {
+                    "test_passed": False,
+                    "test_output": (
+                        f"계획된 파일 중 {len(missing)}개가 생성되지 않았습니다: {missing_str}\n"
+                        "누락된 파일을 write_file로 생성하세요."
+                    ),
+                    "execution_log": log,
+                    "iteration": state.get("iteration", 0) + 1,
+                }
+            log.append(
+                f"[run_tests] 계획 파일 전수 확인 완료 ({len(planned_files)}개)"
+            )
 
         if not written_files:
             log.append("[run_tests] 저장된 파일 없음 — 스킵")
@@ -1569,6 +1604,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         test_paths = [os.path.join(workspace, f) for f in fe_test_files]
         cmd = [*runner_cmd, *test_paths]
 
+        log.append(f"[run_tests] 프론트엔드 테스트 러너 감지: {runner_label}")
+
         # npm install 확인 — node_modules 없으면 설치
         node_modules = os.path.join(workspace, "node_modules")
         if not os.path.isdir(node_modules):
@@ -1853,10 +1890,10 @@ class CodingAssistantAgent(BaseGraphAgent):
         if exit_reason:
             return self.get_node_name("GENERATE_FINAL")
 
-        # generate/scaffold 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
+        # generate/scaffold/analyze 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
         parse_result = state.get("parse_result", {})
         task_type = parse_result.get("task_type", "generate")
-        if task_type in ("generate", "scaffold"):
+        if task_type in ("generate", "scaffold", "analyze"):
             return self.get_node_name("GENERATE_FINAL")
 
         tool_call_count = state.get("tool_call_count", 0)

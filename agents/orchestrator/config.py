@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pydantic import Field
-from youngs75_a2a.core.config import BaseAgentConfig
+from coding_agent.core.config import BaseAgentConfig
 
 
 class AgentEndpoint(BaseAgentConfig):

@@ -11,11 +11,11 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
-from youngs75_a2a.eval_pipeline.loop1_dataset.feedback_augmenter import (
+from coding_agent.eval_pipeline.loop1_dataset.csv_importer import import_reviewed_csv
+from coding_agent.eval_pipeline.loop1_dataset.feedback_augmenter import (
     augment_with_feedback,
 )
-from youngs75_a2a.eval_pipeline.settings import get_settings
+from coding_agent.eval_pipeline.settings import get_settings
 
 
 def main():

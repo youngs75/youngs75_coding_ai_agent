@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 
 
-from youngs75_a2a.eval_pipeline.loop2_evaluation.batch_evaluator import (
+from coding_agent.eval_pipeline.loop2_evaluation.batch_evaluator import (
     evaluate_golden_dataset,
 )
 

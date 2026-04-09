@@ -13,10 +13,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rich.console import Console
 
-from youngs75_a2a.cli.config import CLIConfig
-from youngs75_a2a.cli.renderer import CLIRenderer
-from youngs75_a2a.cli.session import CLISession
-from youngs75_a2a.eval_pipeline.observability.callback_handler import (
+from coding_agent.cli.config import CLIConfig
+from coding_agent.cli.renderer import CLIRenderer
+from coding_agent.cli.session import CLISession
+from coding_agent.eval_pipeline.observability.callback_handler import (
     AgentMetricsCollector,
     NodeMetrics,
     build_observed_config,
@@ -161,7 +161,7 @@ class TestAgentMetricsCollector:
         c.finalize()
 
         with patch(
-            "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+            "coding_agent.eval_pipeline.observability.callback_handler.enabled",
             return_value=False,
         ):
             # 예외 없이 실행되어야 함
@@ -175,11 +175,11 @@ class TestAgentMetricsCollector:
 
         with (
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+                "coding_agent.eval_pipeline.observability.callback_handler.enabled",
                 return_value=True,
             ),
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.score_trace",
+                "coding_agent.eval_pipeline.observability.callback_handler.score_trace",
             ) as mock_score,
         ):
             c.push_to_langfuse(trace_id="tr-xxx")
@@ -216,7 +216,7 @@ class TestCreateLangfuseHandler:
     def test_disabled(self):
         """Langfuse 비활성화 시 None 반환."""
         with patch(
-            "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+            "coding_agent.eval_pipeline.observability.callback_handler.enabled",
             return_value=False,
         ):
             handler = create_langfuse_handler()
@@ -226,11 +226,11 @@ class TestCreateLangfuseHandler:
         """CallbackHandler import 실패 시 None 반환 (graceful)."""
         with (
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+                "coding_agent.eval_pipeline.observability.callback_handler.enabled",
                 return_value=True,
             ),
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.create_langfuse_handler",
+                "coding_agent.eval_pipeline.observability.callback_handler.create_langfuse_handler",
                 return_value=None,
             ) as mock_create,
         ):
@@ -242,7 +242,7 @@ class TestCreateLangfuseHandler:
         mock_handler = MagicMock()
         with (
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+                "coding_agent.eval_pipeline.observability.callback_handler.enabled",
                 return_value=True,
             ),
             patch(
@@ -304,7 +304,7 @@ class TestSafeFlush:
     def test_disabled(self):
         """Langfuse 비활성화 시 flush 스킵."""
         with patch(
-            "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+            "coding_agent.eval_pipeline.observability.callback_handler.enabled",
             return_value=False,
         ):
             # 예외 없이 실행
@@ -314,11 +314,11 @@ class TestSafeFlush:
         """flush 중 예외 발생 시 무시."""
         with (
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.enabled",
+                "coding_agent.eval_pipeline.observability.callback_handler.enabled",
                 return_value=True,
             ),
             patch(
-                "youngs75_a2a.eval_pipeline.observability.callback_handler.client",
+                "coding_agent.eval_pipeline.observability.callback_handler.client",
                 side_effect=ConnectionError("서버 연결 실패"),
             ),
         ):
@@ -361,7 +361,7 @@ class TestRunAgentTurnLangfuse:
     @pytest.mark.asyncio
     async def test_run_agent_turn_without_handler(self):
         """langfuse_handler=None 시 기존과 동일하게 동작."""
-        from youngs75_a2a.cli.app import _run_agent_turn
+        from coding_agent.cli.app import _run_agent_turn
 
         session = CLISession()
         renderer = _make_renderer()
@@ -383,7 +383,7 @@ class TestRunAgentTurnLangfuse:
     @pytest.mark.asyncio
     async def test_run_agent_turn_with_handler(self):
         """langfuse_handler 제공 시 safe_flush가 호출됨."""
-        from youngs75_a2a.cli.app import _run_agent_turn
+        from coding_agent.cli.app import _run_agent_turn
 
         session = CLISession()
         renderer = _make_renderer()
@@ -400,7 +400,7 @@ class TestRunAgentTurnLangfuse:
         mock_handler = MagicMock()
 
         with patch(
-            "youngs75_a2a.cli.app.safe_flush",
+            "coding_agent.cli.app.safe_flush",
         ) as mock_flush:
             await _run_agent_turn(
                 "hello",
@@ -413,7 +413,7 @@ class TestRunAgentTurnLangfuse:
     @pytest.mark.asyncio
     async def test_run_agent_turn_metrics_on_error(self):
         """에이전트 실행 오류 시에도 safe_flush가 호출됨."""
-        from youngs75_a2a.cli.app import _run_agent_turn
+        from coding_agent.cli.app import _run_agent_turn
 
         session = CLISession()
         renderer = _make_renderer()
@@ -430,7 +430,7 @@ class TestRunAgentTurnLangfuse:
         mock_handler = MagicMock()
 
         with patch(
-            "youngs75_a2a.cli.app.safe_flush",
+            "coding_agent.cli.app.safe_flush",
         ) as mock_flush:
             await _run_agent_turn(
                 "hello",
@@ -448,8 +448,8 @@ class TestRunAgentTurnLangfuse:
 class TestLangfuseModule:
     def test_enabled_returns_false_when_disabled(self):
         """LANGFUSE_TRACING_ENABLED=0 시 False 반환."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=False,
@@ -461,8 +461,8 @@ class TestLangfuseModule:
 
     def test_enabled_returns_false_when_keys_missing(self):
         """키가 비어있으면 False 반환."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=True,
@@ -474,8 +474,8 @@ class TestLangfuseModule:
 
     def test_enabled_returns_true_when_configured(self):
         """모든 키가 설정되면 True 반환."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=True,
@@ -487,8 +487,8 @@ class TestLangfuseModule:
 
     def test_default_metadata(self):
         """default_metadata가 Settings 값을 반영."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import default_metadata
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import default_metadata
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(ENV="prod", SERVICE_NAME="my-agent", APP_VERSION="1.0.0")
         meta = default_metadata(settings)
@@ -498,8 +498,8 @@ class TestLangfuseModule:
 
     def test_default_tags(self):
         """default_tags가 Settings 값을 반영."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import default_tags
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import default_tags
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(ENV="prod", SERVICE_NAME="my-agent", APP_VERSION="1.0.0")
         tags = default_tags(settings)
@@ -509,8 +509,8 @@ class TestLangfuseModule:
 
     def test_score_trace_disabled(self):
         """Langfuse 비활성화 시 score_trace는 아무 작업도 수행하지 않음."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import score_trace
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import score_trace
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(LANGFUSE_TRACING_ENABLED=False)
         # 예외 없이 실행
@@ -518,7 +518,7 @@ class TestLangfuseModule:
 
     def test_build_langchain_config_basic(self):
         """build_langchain_config 기본 동작."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import (
+        from coding_agent.eval_pipeline.observability.langfuse import (
             build_langchain_config,
         )
 
@@ -534,7 +534,7 @@ class TestLangfuseModule:
 
     def test_build_langchain_config_no_callbacks(self):
         """콜백 미지정 시 callbacks 키 없음."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import (
+        from coding_agent.eval_pipeline.observability.langfuse import (
             build_langchain_config,
         )
 
@@ -543,8 +543,8 @@ class TestLangfuseModule:
 
     def test_enabled_with_base_url_only(self):
         """LANGFUSE_BASE_URL만 설정 시 enabled()=True 반환."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=True,
@@ -557,8 +557,8 @@ class TestLangfuseModule:
 
     def test_enabled_with_host_only(self):
         """LANGFUSE_HOST만 설정 시 enabled()=True 반환 (하위 호환)."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=True,
@@ -571,8 +571,8 @@ class TestLangfuseModule:
 
     def test_enabled_with_neither_host_nor_base_url(self):
         """LANGFUSE_HOST와 LANGFUSE_BASE_URL 둘 다 비어있으면 enabled()=False."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enabled
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enabled
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(
             LANGFUSE_TRACING_ENABLED=True,
@@ -585,8 +585,8 @@ class TestLangfuseModule:
 
     def test_enrich_trace_disabled(self):
         """Langfuse 비활성화 시 enrich_trace는 패스스루."""
-        from youngs75_a2a.eval_pipeline.observability.langfuse import enrich_trace
-        from youngs75_a2a.eval_pipeline.settings import Settings
+        from coding_agent.eval_pipeline.observability.langfuse import enrich_trace
+        from coding_agent.eval_pipeline.settings import Settings
 
         settings = Settings(LANGFUSE_TRACING_ENABLED=False)
         with enrich_trace(user_id="u1", settings=settings):

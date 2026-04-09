@@ -19,17 +19,17 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from youngs75_a2a.core.mcp_loader import MCPToolLoader
-from youngs75_a2a.core.tool_call_utils import tc_name, tc_id, tc_args
-from youngs75_a2a.agents.deep_research.config import ResearchConfig
-from youngs75_a2a.agents.deep_research.schemas import (
+from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.tool_call_utils import tc_name, tc_id, tc_args
+from coding_agent.agents.deep_research.config import ResearchConfig
+from coding_agent.agents.deep_research.schemas import (
     ConductResearch,
     ResearchComplete,
     ResearcherInputState,
     ResearcherOutputState,
     ResearcherState,
 )
-from youngs75_a2a.agents.deep_research.prompts import (
+from coding_agent.agents.deep_research.prompts import (
     RESEARCHER_SYSTEM_PROMPT,
     COMPRESS_RESEARCH_PROMPT,
     get_today_str,

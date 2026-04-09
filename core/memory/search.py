@@ -11,7 +11,7 @@ import re
 from abc import ABC, abstractmethod
 from collections import Counter
 
-from youngs75_a2a.core.memory.schemas import MemoryItem
+from coding_agent.core.memory.schemas import MemoryItem
 
 
 def _tokenize(text: str) -> list[str]:

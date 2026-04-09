@@ -15,10 +15,10 @@ class TestGEvalMetrics:
 
     def test_response_completeness_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_response_completeness_metric,
             )
 
@@ -27,10 +27,10 @@ class TestGEvalMetrics:
 
     def test_response_completeness_override(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_response_completeness_metric,
             )
 
@@ -42,10 +42,10 @@ class TestGEvalMetrics:
 
     def test_citation_quality_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_citation_quality_metric,
             )
 
@@ -54,10 +54,10 @@ class TestGEvalMetrics:
 
     def test_citation_quality_override(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_citation_quality_metric,
             )
 
@@ -69,10 +69,10 @@ class TestGEvalMetrics:
 
     def test_bias_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_bias_metric,
             )
 
@@ -81,10 +81,10 @@ class TestGEvalMetrics:
 
     def test_toxicity_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_toxicity_metric,
             )
 
@@ -93,10 +93,10 @@ class TestGEvalMetrics:
 
     def test_pii_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_pii_metric,
             )
 
@@ -105,10 +105,10 @@ class TestGEvalMetrics:
 
     def test_disclaimer_creation(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model_fn.return_value = MagicMock(spec=DeepEvalBaseLLM)
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 create_disclaimer_metric,
             )
 
@@ -119,7 +119,7 @@ class TestGEvalMetrics:
 class TestSafetyMetric:
     def test_safe_response(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model = MagicMock()
             mock_model.generate.return_value = (
@@ -127,7 +127,7 @@ class TestSafetyMetric:
             )
             mock_model_fn.return_value = mock_model
 
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 SafetyMetric,
             )
 
@@ -144,7 +144,7 @@ class TestSafetyMetric:
 
     def test_json_code_fence_response(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model = MagicMock()
             mock_model.generate.return_value = (
@@ -152,7 +152,7 @@ class TestSafetyMetric:
             )
             mock_model_fn.return_value = mock_model
 
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 SafetyMetric,
             )
 
@@ -169,13 +169,13 @@ class TestSafetyMetric:
 
     def test_evaluation_error(self):
         with patch(
-            "youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
+            "coding_agent.eval_pipeline.loop2_evaluation.custom_metrics.get_deepeval_model"
         ) as mock_model_fn:
             mock_model = MagicMock()
             mock_model.generate.side_effect = Exception("API error")
             mock_model_fn.return_value = mock_model
 
-            from youngs75_a2a.eval_pipeline.loop2_evaluation.custom_metrics import (
+            from coding_agent.eval_pipeline.loop2_evaluation.custom_metrics import (
                 SafetyMetric,
             )
 

@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from youngs75_a2a.core.resilience import (
+from coding_agent.core.resilience import (
     FailureMatrix,
     FailurePolicy,
     FailureType,

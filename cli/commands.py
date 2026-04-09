@@ -8,18 +8,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from youngs75_a2a.cli.eval_runner import (
+from coding_agent.cli.eval_runner import (
     format_eval_summary,
     format_remediation_summary,
     load_last_eval_results,
     load_last_remediation_report,
     run_evaluation_async,
 )
-from youngs75_a2a.core.tool_permissions import PermissionDecision
+from coding_agent.core.tool_permissions import PermissionDecision
 
 if TYPE_CHECKING:
-    from youngs75_a2a.cli.renderer import CLIRenderer
-    from youngs75_a2a.cli.session import CLISession
+    from coding_agent.cli.renderer import CLIRenderer
+    from coding_agent.cli.session import CLISession
 
 
 @dataclass
@@ -362,7 +362,7 @@ def _show_tools(session: CLISession, renderer: CLIRenderer) -> None:
     # 병렬 실행기 상태
     executor = session.tool_executor
     if executor:
-        from youngs75_a2a.core.parallel_tool_executor import CONCURRENCY_SAFE_TOOLS
+        from coding_agent.core.parallel_tool_executor import CONCURRENCY_SAFE_TOOLS
 
         lines.append("")
         lines.append("병렬 실행 가능 도구:")
@@ -410,7 +410,7 @@ def _eval_run(renderer: CLIRenderer) -> CommandResult:
         loop = None
 
     if loop and loop.is_running():
-        from youngs75_a2a.cli.eval_runner import _run_evaluation_sync
+        from coding_agent.cli.eval_runner import _run_evaluation_sync
 
         result = _run_evaluation_sync()
     else:
@@ -442,7 +442,7 @@ def _eval_remediate(renderer: CLIRenderer) -> CommandResult:
     """Remediation Agent를 실행한다 (Loop 3)."""
     import asyncio
 
-    from youngs75_a2a.cli.eval_runner import run_remediation_async
+    from coding_agent.cli.eval_runner import run_remediation_async
 
     renderer.system_message(
         "Remediation Agent를 시작합니다... (시간이 걸릴 수 있습니다)"
@@ -473,7 +473,7 @@ def _eval_remediate(renderer: CLIRenderer) -> CommandResult:
             changes = result.report.get_prompt_changes()
             if changes:
                 try:
-                    from youngs75_a2a.agents.coding_assistant.prompts import (
+                    from coding_agent.agents.coding_assistant.prompts import (
                         get_prompt_registry,
                     )
 
