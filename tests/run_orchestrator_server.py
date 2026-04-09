@@ -21,6 +21,8 @@ except ImportError:
     pass
 
 import asyncio
+from pathlib import Path
+
 import uvicorn
 from starlette.routing import Route
 from starlette.responses import JSONResponse
@@ -28,6 +30,7 @@ from starlette.responses import JSONResponse
 from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
 from coding_agent.agents.orchestrator import OrchestratorAgent, OrchestratorConfig
 from coding_agent.agents.orchestrator.config import AgentEndpoint
+from coding_agent.core.memory.store import MemoryStore
 
 
 async def main():
@@ -70,11 +73,17 @@ async def main():
         ),
     ]
 
+    # 메모리 시스템 초기화 (SubAgent에 전달)
+    memory_dir = Path(os.getenv("MEMORY_DIR", ".ai/memory"))
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_store = MemoryStore(persist_dir=memory_dir)
+    print(f"   메모리: {memory_dir} ({len(list(memory_dir.glob('*.jsonl')))}개 JSONL)")
+
     config = OrchestratorConfig(
         default_model=model,
         agent_endpoints=endpoints,
     )
-    agent = OrchestratorAgent(config=config)
+    agent = OrchestratorAgent(config=config, memory_store=memory_store)
 
     # 결과 추출기
     def extract_result(result: dict) -> str:

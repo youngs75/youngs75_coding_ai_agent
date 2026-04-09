@@ -477,8 +477,15 @@ def create_chat_model(
         )
 
     if structured:
+        # OpenRouter의 일부 모델(qwen3.5-flash 등)이 tool_choice를 지원하지 않아
+        # function_calling 요청 시 404 → cooldown → 429 폭주가 발생함.
+        # 해당 모델은 json_mode를 사용하여 tool_choice 전송을 회피한다.
+        _no_tool_choice_patterns = ("flash", "turbo", "lite", "mini")
+        so_method = "function_calling"
+        if any(p in litellm_model.lower() for p in _no_tool_choice_patterns):
+            so_method = "json_mode"
         llm = llm.with_structured_output(
-            structured, method="function_calling", include_raw=True
+            structured, method=so_method, include_raw=True
         )
 
     return llm

@@ -55,6 +55,7 @@ _orchestrator_context_manager = ContextManager()
 # 모듈 레벨 미들웨어/중단 제어기 (OrchestratorAgent.__init__에서 초기화)
 _abort_controller: AbortController | None = None
 _middleware_chain: MiddlewareChain | None = None
+_memory_store: Any | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -619,6 +620,7 @@ async def _execute_phases_sequentially(
             agent = await CodingAssistantAgent.create(
                 config=config,
                 skill_registry=skill_registry,
+                memory_store=_memory_store,
             )
             _init_state = SubagentContextFilter.build_init_state(
                 task_message=phase_message,
@@ -916,11 +918,13 @@ class OrchestratorAgent(BaseGraphAgent):
         self,
         *,
         config: OrchestratorConfig | None = None,
+        memory_store: Any | None = None,
         **kwargs: Any,
     ) -> None:
-        global _abort_controller, _middleware_chain
+        global _abort_controller, _middleware_chain, _memory_store
 
         self._orch_config = config or OrchestratorConfig()
+        _memory_store = memory_store
 
         # AbortController — 턴 시작 시 reset
         _abort_controller = AbortController()
@@ -928,7 +932,7 @@ class OrchestratorAgent(BaseGraphAgent):
         # 미들웨어 체인: ResilienceMiddleware(가장 바깥) + MemoryMiddleware
         _middleware_chain = MiddlewareChain([
             ResilienceMiddleware(abort_controller=_abort_controller),
-            MemoryMiddleware(),
+            MemoryMiddleware(memory_store=memory_store),
         ])
 
         super().__init__(

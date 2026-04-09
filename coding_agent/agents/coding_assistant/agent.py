@@ -380,11 +380,11 @@ class CodingAssistantAgent(BaseGraphAgent):
             )
 
         # Structured Output으로 파싱 결과를 Pydantic 모델로 강제
-        # method="function_calling": response_format(json_schema) 대신 tool_calls 사용
-        # → OpenAI SDK의 ParsedChatCompletionMessage.parsed 직렬화 경고 방지
+        # method="json_mode": FAST 모델(OpenRouter qwen3.5-flash)이 tool_choice를
+        # 지원하지 않으므로 function_calling 대신 json_mode 사용
         try:
             structured_model = self._get_parse_model().with_structured_output(
-                ParseResultModel, method="function_calling"
+                ParseResultModel, method="json_mode"
             )
             response = await structured_model.ainvoke(messages)
             parse_result = response.model_dump()
@@ -736,7 +736,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         "당신은 소프트웨어 아키텍트입니다. "
         "요구사항과 파일 목록을 받아, 파일 간 공유되는 함수와 객체의 계약을 선언하세요. "
         "특히 팩토리 함수(create_app 등)의 매개변수와, "
-        "공유 객체(db, config 등)의 정의 위치를 명확히 지정하세요."
+        "공유 객체(db, config 등)의 정의 위치를 명확히 지정하세요. "
+        "응답은 반드시 JSON 형식으로 반환하세요."
     )
 
     async def _plan_file_manifest(self, state: CodingState) -> dict[str, Any]:
@@ -763,7 +764,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         try:
             manifest_model = self._get_parse_model().with_structured_output(
-                FileManifest, method="function_calling"
+                FileManifest, method="json_mode"
             )
             response = await manifest_model.ainvoke([
                 SystemMessage(content=self._MANIFEST_SYSTEM_PROMPT),
@@ -1164,9 +1165,15 @@ class CodingAssistantAgent(BaseGraphAgent):
         parse_result = state.get("parse_result", {})
         log = state.get("execution_log", [])
 
-        # simple 태스크는 검증 스킵
+        # simple 태스크는 검증 스킵 (단, HTML/프론트엔드 코드는 항상 검증)
         task_type = parse_result.get("task_type", "generate")
-        if task_type == "generate" and len(generated_code) < 500:
+        language = parse_result.get("language", "").lower()
+        _frontend_langs = {"html", "css", "javascript", "typescript", "vue", "react", "svelte"}
+        is_frontend = language in _frontend_langs or any(
+            ext in generated_code[:200].lower()
+            for ext in ("<!doctype", "<html", "<head", "<body")
+        )
+        if task_type == "generate" and len(generated_code) < 500 and not is_frontend:
             log.append("[verify] simple 태스크 — 검증 스킵")
             return {
                 "verify_result": {"passed": True, "issues": [], "suggestions": []},
@@ -1534,7 +1541,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         if py_files:
             needed_langs.append("python")
         js_files = [f for f in real_files if f.endswith((".js", ".ts", ".jsx", ".tsx", ".vue"))]
-        if js_files:
+        html_detect = any(f.endswith((".html", ".htm")) for f in real_files)
+        if js_files or html_detect:
             needed_langs.append("node")
 
         runtimes = await self._detect_runtimes(needed_langs, log)
@@ -1640,6 +1648,25 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
+        # 1.2단계: HTML 구조 + 임베디드 JS 검증
+        html_files = [f for f in real_files if f.endswith((".html", ".htm"))]
+        if html_files:
+            html_errors = await self._validate_html_files(
+                html_files, workspace, runtimes, log,
+            )
+            if html_errors:
+                errors.extend(html_errors)
+
+        if errors:
+            output = "\n".join(errors)
+            log.append(f"[run_tests] HTML 검증 오류 {len(errors)}건")
+            return {
+                "test_passed": False,
+                "test_output": output,
+                "execution_log": log,
+                "iteration": state.get("iteration", 0) + 1,
+            }
+
         # 1.5단계: JS/TS/Vue 문법 검증 (node --check)
         js_check_files = [f for f in real_files if f.endswith((".js", ".mjs", ".cjs"))]
         ts_files = [f for f in real_files if f.endswith((".ts", ".tsx"))]
@@ -1697,7 +1724,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             }
 
         # 2단계: 프론트엔드 테스트 실행 (jest / vitest)
-        frontend_only = not py_files and (js_check_files or ts_files or vue_files)
+        frontend_only = not py_files and (js_check_files or ts_files or vue_files or html_files)
         fe_test_result = None
         if fe_test_files and runtimes.get("node"):
             fe_test_result = await self._run_frontend_tests(
@@ -1781,6 +1808,160 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "execution_log": log,
                 "iteration": state.get("iteration", 0) + 1,
             }
+
+    # ── HTML 구조 + 임베디드 스크립트 검증 ─────────────────────
+
+    async def _validate_html_files(
+        self,
+        html_files: list[str],
+        workspace: str,
+        runtimes: dict[str, bool],
+        log: list[str],
+    ) -> list[str]:
+        """HTML 파일의 구조적 유효성 + 임베디드 JS를 검증한다.
+
+        검증 항목:
+        1. HTML 파싱 오류 (미닫힌 태그, 잘못된 중첩)
+        2. 필수 요소 존재 여부 (<!DOCTYPE>, <html>, <head>, <body>)
+        3. 임베디드 <script> 블록의 JS 문법 검증 (node --check)
+        """
+        import html.parser
+        import tempfile
+
+        errors: list[str] = []
+
+        class _HTMLStructureValidator(html.parser.HTMLParser):
+            """HTML 구조 검증 파서."""
+
+            _VOID_ELEMENTS = frozenset({
+                "area", "base", "br", "col", "embed", "hr", "img", "input",
+                "link", "meta", "param", "source", "track", "wbr",
+            })
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.tag_stack: list[str] = []
+                self.parse_errors: list[str] = []
+                self.found_tags: set[str] = set()
+                self.scripts: list[str] = []
+                self._in_script = False
+                self._script_buf: list[str] = []
+                self.has_doctype = False
+
+            def handle_decl(self, decl: str) -> None:
+                if decl.lower().startswith("doctype"):
+                    self.has_doctype = True
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                tag = tag.lower()
+                self.found_tags.add(tag)
+                if tag not in self._VOID_ELEMENTS:
+                    self.tag_stack.append(tag)
+                if tag == "script":
+                    # 외부 스크립트(src 속성)는 건너뜀
+                    attr_dict = dict(attrs)
+                    if not attr_dict.get("src"):
+                        self._in_script = True
+                        self._script_buf = []
+
+            def handle_endtag(self, tag: str) -> None:
+                tag = tag.lower()
+                if tag in self._VOID_ELEMENTS:
+                    return
+                if tag == "script" and self._in_script:
+                    self._in_script = False
+                    content = "".join(self._script_buf).strip()
+                    if content:
+                        self.scripts.append(content)
+                if self.tag_stack and self.tag_stack[-1] == tag:
+                    self.tag_stack.pop()
+                elif self.tag_stack:
+                    self.parse_errors.append(
+                        f"태그 불일치: </{tag}> (예상: </{self.tag_stack[-1]}>)"
+                    )
+
+            def handle_data(self, data: str) -> None:
+                if self._in_script:
+                    self._script_buf.append(data)
+
+        for filepath in html_files:
+            full_path = os.path.join(workspace, filepath)
+            if not os.path.exists(full_path):
+                continue
+
+            try:
+                with open(full_path, encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            except OSError as e:
+                errors.append(f"[html] {filepath}: 읽기 실패 — {e}")
+                continue
+
+            validator = _HTMLStructureValidator()
+            try:
+                validator.feed(content)
+            except Exception as e:
+                errors.append(f"[html] {filepath}: 파싱 실패 — {e}")
+                continue
+
+            # 구조 오류
+            for err in validator.parse_errors:
+                errors.append(f"[html] {filepath}: {err}")
+
+            # 미닫힌 태그
+            if validator.tag_stack:
+                unclosed = ", ".join(f"<{t}>" for t in validator.tag_stack)
+                errors.append(f"[html] {filepath}: 미닫힌 태그 — {unclosed}")
+
+            # 필수 요소 확인
+            if not validator.has_doctype:
+                errors.append(f"[html] {filepath}: <!DOCTYPE html> 누락")
+            for required in ("html", "head", "body"):
+                if required not in validator.found_tags:
+                    errors.append(f"[html] {filepath}: <{required}> 태그 누락")
+
+            # 임베디드 JS 문법 검증 (node --check)
+            if validator.scripts and runtimes.get("node"):
+                for idx, script_content in enumerate(validator.scripts):
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", suffix=".js", delete=False,
+                            dir=workspace,
+                        ) as tmp:
+                            tmp.write(script_content)
+                            tmp_path = tmp.name
+
+                        proc = await asyncio.wait_for(
+                            asyncio.create_subprocess_exec(
+                                "node", "--check", tmp_path,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            ),
+                            timeout=10,
+                        )
+                        _, stderr_out = await proc.communicate()
+                        if proc.returncode != 0:
+                            err_msg = stderr_out.decode()[:300]
+                            errors.append(
+                                f"[html-js] {filepath} <script#{idx+1}>: {err_msg}"
+                            )
+                    except (TimeoutError, Exception) as e:
+                        log.append(
+                            f"[run_tests] HTML 임베디드 JS 검증 실패 "
+                            f"({filepath} #{idx+1}): {e}"
+                        )
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+
+            log.append(
+                f"[run_tests] HTML 검증 완료: {filepath} "
+                f"(구조오류={len(validator.parse_errors)}, "
+                f"스크립트={len(validator.scripts)}개)"
+            )
+
+        return errors
 
     # ── 프론트엔드 테스트 실행 ─────────────────────────────────
 

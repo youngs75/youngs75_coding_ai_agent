@@ -94,6 +94,7 @@ model_list:
     litellm_params:
       model: openrouter/qwen/qwen3.5-flash-02-23
       api_key: os.environ/OPENROUTER_API_KEY
+      drop_params: true
 
   - model_name: openrouter/deepseek/deepseek-v3.2
     litellm_params:

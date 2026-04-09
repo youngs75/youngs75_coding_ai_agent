@@ -26,8 +26,11 @@ import uvicorn
 from starlette.routing import Route
 from starlette.responses import JSONResponse
 
+from pathlib import Path
+
 from coding_agent.a2a import LGAgentExecutor, build_app, create_agent_card
 from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+from coding_agent.core.memory.store import MemoryStore
 from coding_agent.eval_pipeline.observability.langfuse import enabled, enrich_trace
 
 
@@ -84,9 +87,18 @@ async def main():
     else:
         # 4-Tier 체계: .env의 STRONG_MODEL, DEFAULT_MODEL, FAST_MODEL 사용
         config = CodingConfig()
+
+    # 메모리 시스템 초기화 (CoALA 4종 메모리)
+    memory_dir = Path(os.getenv("MEMORY_DIR", ".ai/memory"))
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_store = MemoryStore(persist_dir=memory_dir)
+    print(f"   메모리: {memory_dir} ({len(list(memory_dir.glob('*.jsonl')))}개 JSONL)")
+
     # 비동기 팩토리: MCP 로딩 + graph 빌드
     base_model = config.get_model("default")
-    agent = await CodingAssistantAgent.create(config=config, model=base_model)
+    agent = await CodingAssistantAgent.create(
+        config=config, model=base_model, memory_store=memory_store,
+    )
 
     model = legacy_model or os.getenv("STRONG_MODEL", "qwen3-coder-next")
     langfuse_active = enabled()

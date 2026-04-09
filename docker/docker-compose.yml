@@ -126,6 +126,7 @@ services:
       - COORDINATOR_MODE=${COORDINATOR_MODE:-false}
     volumes:
       - workspace_data:/workspace
+      - memory_data:/app/.ai/memory
     command: ["python", "tests/run_coding_assistant_server.py"]
     depends_on:
       mcp-server:
@@ -165,6 +166,7 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-harness-local-dev}
     volumes:
       - workspace_data:/workspace
+      - memory_data:/app/.ai/memory
     command: ["python", "tests/run_orchestrator_server.py"]
     depends_on:
       mcp-server:
@@ -211,6 +213,8 @@ volumes:
   litellm_db_data:
     driver: local
   workspace_data:
+    driver: local
+  memory_data:
     driver: local
 
 networks:
