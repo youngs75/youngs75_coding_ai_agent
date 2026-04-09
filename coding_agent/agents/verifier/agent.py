@@ -17,7 +17,7 @@ import logging
 from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
 from coding_agent.core.abort_controller import AbortController

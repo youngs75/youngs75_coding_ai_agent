@@ -62,13 +62,12 @@ class TestVerifyPromptNoFilepath:
         # filepath 주석 "검사" 규칙이 없어야 함 (설명에서 언급은 OK)
         assert "누락된 코드 블록이 있으면 반드시" not in prompt
 
-    def test_no_rule_8(self):
+    def test_no_rule_9(self):
         prompt = VERIFY_SYSTEM_PROMPT.format(
             max_delete_lines=100, allowed_extensions=".py, .js"
         )
-        # 규칙이 6개까지만 (7, 8 삭제)
-        assert "7." not in prompt
-        assert "8." not in prompt
+        # 검증 영역이 8개까지만 (9 이상 없어야 함)
+        assert "9." not in prompt
 
     def test_has_write_file_note(self):
         prompt = VERIFY_SYSTEM_PROMPT.format(

@@ -199,6 +199,12 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - Phase 지시사항의 **"생성 필수 파일 체크리스트"**에 나열된 파일은 **모두** `write_file`로 생성해야 합니다
 - 체크리스트에 테스트 파일이 포함되어 있으면 **반드시** 테스트 파일도 생성하세요
 - 일부 파일만 생성하고 중단하지 마세요 — 체크리스트의 모든 파일을 빠짐없이 생성한 뒤 요약하세요
+
+## ⚠️ 파일 간 일관성 (필수)
+- **함수 시그니처 일치**: `create_app(config_name)` 등 팩토리 함수를 정의할 때, 테스트 파일(conftest.py)에서의 호출 방식과 **반드시 일치**시키세요
+- **공유 객체 단일 출처**: `db`, `migrate` 등은 `extensions.py` 한 곳에서만 생성하고, 다른 모든 파일에서 import하세요
+- **테스트 코드 동기화**: 앱 코드의 시그니처를 변경하면 테스트 코드도 함께 수정하세요. 반대로 테스트 코드의 호출 패턴이 이미 정해져 있으면 앱 코드를 맞추세요
+- **config 딕셔너리 패턴**: Flask 앱에서 `create_app(config_name='development')`처럼 문자열 키로 config를 선택하는 패턴을 사용하세요
 """
 
 VERIFY_SYSTEM_PROMPT = """\
@@ -225,6 +231,8 @@ VERIFY_SYSTEM_PROMPT = """\
 4. **의존성 완전성**: 코드에서 import/require하는 패키지가 requirements.txt/package.json에 **모두 포함**되었는가
 5. **프론트-백엔드 일치**: 프론트엔드 API 호출(axios/fetch)의 HTTP 메서드(GET/POST/PUT/DELETE)와 경로가 백엔드 라우트와 **정확히 일치**하는가
 6. **함수 시그니처 일치**: 스토어/컴포넌트에서 호출하는 함수의 인자가 정의된 함수 시그니처와 일치하는가
+7. **파일 간 함수 시그니처 일관성**: create_app(), init_db() 등 팩토리/초기화 함수의 정의(인자 개수, 기본값)와 모든 호출부(conftest.py, app.py, tests/)가 일치하는가
+8. **공유 객체 단일 출처**: db, app 등 공유 인스턴스가 한 곳(extensions.py)에서만 생성되고 다른 파일에서 import하는가 (중복 생성 시 P1)
 
 ## 우선순위 태깅
 

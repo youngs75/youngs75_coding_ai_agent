@@ -21,8 +21,9 @@ A2A 프로토콜로 위임한 결과를 반환한다.
 from __future__ import annotations
 
 import logging
+import re as _re
 import uuid
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 from langchain_core.messages import AIMessage, HumanMessage
@@ -44,6 +45,9 @@ from coding_agent.core.subagents.registry import SubAgentRegistry
 from .config import OrchestratorConfig
 from .coordinator import CoordinatorMode
 from .schemas import OrchestratorState
+
+if TYPE_CHECKING:
+    from coding_agent.core.subagents.process_manager import SubAgentProcessManager
 
 # 오케스트레이터용 컨텍스트 매니저 (서브에이전트 호출 시 히스토리 필터링)
 _orchestrator_context_manager = ContextManager()
@@ -69,9 +73,6 @@ CLASSIFY_SYSTEM_PROMPT = """\
 5. "coordinate"는 서로 다른 종류의 에이전트가 순차적으로 필요한 경우에만 사용하세요.
    예시: "기술을 조사한 뒤 그 결과로 코드를 작성해줘" (research → coding 순차 협업)
 """
-
-
-import re as _re
 
 # 복잡 요청 감지 키워드 패턴 (multi-file, fullstack, multi-step 등)
 _COMPLEX_PATTERNS = _re.compile(

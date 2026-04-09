@@ -867,8 +867,93 @@ def search_recent_papers(query: str, max_results: int = 5) -> str:
     return "\n".join(output) if output else "검색 결과가 없습니다."
 
 
+@mcp.tool()
+def validate_consistency(target_dir: str = ".") -> str:
+    """workspace 내 Python 파일들의 import/함수 시그니처 일관성을 검증한다.
+
+    코드 생성 후 파일 간 불일치를 감지하는 AST 기반 정적 분석 도구.
+
+    검증 항목:
+    1. 함수 정의 vs 호출 시그니처 불일치 (인자 개수)
+    2. import 대상 파일/모듈 존재 여부
+    3. SyntaxError 감지
+
+    Args:
+        target_dir: 검증할 디렉토리 (workspace 기준 상대경로, 기본 ".")
+    """
+    import ast
+
+    target = _safe_path(_normalize_to_relative(target_dir))
+    issues: list[str] = []
+
+    # 함수 정의/호출/import 수집
+    definitions: dict[str, dict] = {}
+    calls: list[tuple[str, int, str, int]] = []
+    imports: list[tuple[str, str]] = []
+
+    workspace_root = Path(_WORKSPACE).resolve()
+
+    for py_file in target.rglob("*.py"):
+        if any(p in py_file.parts for p in (".venv", "__pycache__", "node_modules")):
+            continue
+        rel = str(py_file.relative_to(workspace_root))
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError as e:
+            issues.append(f"[SYNTAX] {rel}:{e.lineno}: {e.msg}")
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                args = node.args
+                params = [a.arg for a in args.args if a.arg not in ("self", "cls")]
+                defaults_count = len(args.defaults)
+                required = max(0, len(params) - defaults_count)
+                definitions[node.name] = {
+                    "file": rel, "required": required,
+                    "total": len(params), "line": node.lineno,
+                }
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                calls.append((node.func.id, len(node.args), rel, node.lineno))
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append((node.module, rel))
+
+    # 시그니처 불일치 검출
+    for func_name, arg_count, call_file, call_line in calls:
+        if func_name not in definitions or func_name.startswith("_"):
+            continue
+        defn = definitions[func_name]
+        if arg_count < defn["required"]:
+            issues.append(
+                f"[SIGNATURE] {call_file}:{call_line}: {func_name}() "
+                f"인자 {arg_count}개, 정의({defn['file']}:{defn['line']})는 "
+                f"필수 {defn['required']}개"
+            )
+        elif arg_count > defn["total"]:
+            issues.append(
+                f"[SIGNATURE] {call_file}:{call_line}: {func_name}() "
+                f"인자 {arg_count}개, 정의({defn['file']}:{defn['line']})는 "
+                f"최대 {defn['total']}개"
+            )
+
+    # import 대상 존재 확인 (프로젝트 내부 모듈만)
+    for module_path, imp_file in imports:
+        parts = module_path.split(".")
+        top_dir = workspace_root / parts[0]
+        if not (top_dir.exists() or top_dir.with_suffix(".py").exists()):
+            continue  # 외부 패키지
+        candidate = workspace_root / "/".join(parts)
+        if not (candidate.exists() or candidate.with_suffix(".py").exists()
+                or (candidate / "__init__.py").exists()):
+            issues.append(f"[IMPORT] {imp_file}: '{module_path}' 모듈 미존재")
+
+    if not issues:
+        return "✓ 일관성 검증 통과: 문제 없음"
+    return f"⚠ {len(issues)}건의 일관성 문제 발견:\n" + "\n".join(issues)
+
+
 if __name__ == "__main__":
     print(f"통합 MCP 서버 시작: http://0.0.0.0:{_PORT}/mcp")
     print(f"Workspace: {_WORKSPACE}")
-    print("도구: 코드(11) + 검색(4) = 15개")
+    print("도구: 코드(12) + 검색(4) = 16개")
     mcp.run(transport="streamable-http")

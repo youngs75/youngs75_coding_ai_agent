@@ -2,15 +2,26 @@
 
 parse → execute(ReAct) → verify 간 데이터를 전달하는 상태 정의.
 CoALA 메모리 체계 통합: semantic_context로 프로젝트 규칙/컨벤션 주입.
+
+Structured Output용 Pydantic 모델도 함께 정의:
+- ParseResultModel: _parse_request 노드의 LLM 응답 강제
+- VerifyResultModel: _verify_result 노드의 LLM 응답 강제
+- FileManifest: _plan_file_manifest 노드의 파일 간 인터페이스 선언
 """
 
-from typing import Annotated
+from __future__ import annotations
+
+from typing import Annotated, Literal
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from coding_agent.core.reducers import override_reducer
+
+
+# ── TypedDict (그래프 상태 전달용) ──
 
 
 class ParseResult(TypedDict, total=False):
@@ -29,6 +40,71 @@ class VerifyResult(TypedDict, total=False):
     passed: bool
     issues: list[str]  # 발견된 문제 목록
     suggestions: list[str]  # 개선 제안
+
+
+# ── Pydantic BaseModel (Structured Output 강제용) ──
+
+
+class ParseResultModel(BaseModel):
+    """LLM 파싱 결과 — with_structured_output으로 강제."""
+
+    task_type: Literal[
+        "generate", "fix", "refactor", "analyze", "scaffold", "explain"
+    ] = "generate"
+    language: str = "python"
+    framework: str = ""
+    description: str = ""
+    target_files: list[str] = Field(default_factory=list)
+    requirements: list[str] = Field(default_factory=list)
+
+
+class VerifyResultModel(BaseModel):
+    """코드 검증 결과 — with_structured_output으로 강제."""
+
+    passed: bool = True
+    issues: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class FunctionContract(BaseModel):
+    """파일 간 공유되는 함수의 계약."""
+
+    name: str = Field(description="함수명 (예: create_app)")
+    defined_in: str = Field(description="정의 파일 경로 (예: backend/__init__.py)")
+    params: list[str] = Field(
+        default_factory=list,
+        description="매개변수 목록 (예: [\"config_name='development'\"])",
+    )
+    called_from: list[str] = Field(
+        default_factory=list,
+        description="호출 파일 경로 목록 (예: [\"tests/conftest.py\"])",
+    )
+
+
+class SharedObject(BaseModel):
+    """파일 간 공유되는 객체."""
+
+    name: str = Field(description="객체명 (예: db)")
+    defined_in: str = Field(description="정의 파일 경로 (예: backend/extensions.py)")
+    imported_by: list[str] = Field(
+        default_factory=list,
+        description="import하는 파일 목록",
+    )
+
+
+class FileManifest(BaseModel):
+    """코드 생성 전 파일 간 인터페이스 선언 — with_structured_output으로 강제."""
+
+    files: list[str] = Field(description="생성할 파일 경로 목록")
+    contracts: list[FunctionContract] = Field(
+        default_factory=list,
+        description="파일 간 공유 함수 계약 목록",
+    )
+    shared_objects: list[SharedObject] = Field(
+        default_factory=list,
+        description="파일 간 공유 객체 목록",
+    )
+    entry_point: str = Field(default="", description="앱 진입점 파일 경로")
 
 
 class CodingState(TypedDict, total=False):
@@ -83,6 +159,9 @@ class CodingState(TypedDict, total=False):
 
     # Planner가 지정한 Phase별 생성 예정 파일 경로 목록
     planned_files: list[str]
+
+    # FileManifest — 코드 생성 전 파일 간 인터페이스 선언 (Structured Output)
+    file_manifest: dict
 
     # 환경 승인 HITL — venv/의존성 설치 전 사용자 승인 여부
     env_approved: bool

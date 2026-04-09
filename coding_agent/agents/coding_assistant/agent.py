@@ -28,6 +28,35 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+from coding_agent.core.abort_controller import AbortController
+from coding_agent.core.base_agent import BaseGraphAgent
+from coding_agent.core.context_manager import (
+    ContextManager,
+    invoke_with_max_tokens_recovery,
+)
+from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.memory.schemas import MemoryItem, MemoryType
+from coding_agent.core.memory.store import MemoryStore
+from coding_agent.core.skills.registry import SkillRegistry
+from coding_agent.core.stall_detector import StallAction, StallDetector
+from coding_agent.core.turn_budget import BudgetVerdict, TurnBudgetTracker
+from coding_agent.core.tool_call_utils import (
+    sanitize_messages_for_llm,
+    tc_args,
+    tc_id,
+    tc_name,
+)
+from coding_agent.core.tool_permissions import PermissionDecision
+
+from .config import CodingConfig
+from .prompts import (
+    EXECUTE_SYSTEM_PROMPT,
+    GENERATE_FINAL_SYSTEM_PROMPT,
+    PARSE_SYSTEM_PROMPT,
+    VERIFY_SYSTEM_PROMPT,
+)
+from .schemas import CodingState, FileManifest, ParseResultModel, VerifyResultModel
+
 
 def _normalize_file_path(path: str, workspace: str | None = None) -> str:
     """파일 경로를 workspace 기준 상대 경로로 정규화한다.
@@ -51,36 +80,6 @@ def _normalize_file_path(path: str, workspace: str | None = None) -> str:
 
     # "./" 제거, ".." 정규화
     return os.path.normpath(raw)
-
-from coding_agent.core.abort_controller import AbortController
-from coding_agent.core.base_agent import BaseGraphAgent
-from coding_agent.core.context_manager import (
-    ContextManager,
-    invoke_with_max_tokens_recovery,
-)
-from coding_agent.core.exceptions import ToolCallError
-from coding_agent.core.mcp_loader import MCPToolLoader
-from coding_agent.core.memory.schemas import MemoryItem, MemoryType
-from coding_agent.core.memory.store import MemoryStore
-from coding_agent.core.skills.registry import SkillRegistry
-from coding_agent.core.stall_detector import StallAction, StallDetector
-from coding_agent.core.turn_budget import BudgetVerdict, TurnBudgetTracker
-from coding_agent.core.tool_call_utils import (
-    sanitize_messages_for_llm,
-    tc_args,
-    tc_id,
-    tc_name,
-)
-from coding_agent.core.tool_permissions import PermissionDecision
-
-from .config import CodingConfig
-from .prompts import (
-    EXECUTE_SYSTEM_PROMPT,
-    GENERATE_FINAL_SYSTEM_PROMPT,
-    PARSE_SYSTEM_PROMPT,
-    VERIFY_SYSTEM_PROMPT,
-)
-from .schemas import CodingState
 
 
 def _similarity_ratio(a: str, b: str) -> float:
@@ -244,6 +243,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         "RETRIEVE_MEMORY": "retrieve_memory",
         "EXECUTE": "execute_code",
         "EXECUTE_TOOLS": "execute_tools",
+        "PLAN_MANIFEST": "plan_file_manifest",
         "GENERATE_FINAL": "generate_final",
         "VERIFY": "verify_result",
         "RUN_TESTS": "run_tests",
@@ -373,28 +373,37 @@ class CodingAssistantAgent(BaseGraphAgent):
             SystemMessage(content=PARSE_SYSTEM_PROMPT),
             *state["messages"],
         ]
-        # 컨텍스트 컴팩션 + max_tokens 복구 적용
+        # 컨텍스트 컴팩션
         if self._context_manager.should_compact(messages):
             messages = await self._context_manager.compact(
                 messages, self._get_parse_model()
             )
-        response = await invoke_with_max_tokens_recovery(
-            self._get_parse_model(),
-            messages,
-            self._context_manager,
-            **self._get_recovery_limits("parsing"),
-        )
 
+        # Structured Output으로 파싱 결과를 Pydantic 모델로 강제
         try:
-            parse_result = json.loads(response.content)
-        except (json.JSONDecodeError, TypeError):
-            parse_result = {
-                "task_type": "generate",
-                "language": "python",
-                "description": response.content,
-                "target_files": [],
-                "requirements": [],
-            }
+            structured_model = self._get_parse_model().with_structured_output(
+                ParseResultModel
+            )
+            response = await structured_model.ainvoke(messages)
+            parse_result = response.model_dump()
+        except Exception:
+            # Structured Output 미지원 모델이거나 파싱 실패 시 기존 방식으로 폴백
+            response = await invoke_with_max_tokens_recovery(
+                self._get_parse_model(),
+                messages,
+                self._context_manager,
+                **self._get_recovery_limits("parsing"),
+            )
+            try:
+                parse_result = json.loads(response.content)
+            except (json.JSONDecodeError, TypeError):
+                parse_result = {
+                    "task_type": "generate",
+                    "language": "python",
+                    "description": getattr(response, "content", str(response)),
+                    "target_files": [],
+                    "requirements": [],
+                }
 
         result: dict[str, Any] = {
             "parse_result": parse_result,
@@ -704,6 +713,85 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return result
 
+    # ── FileManifest (Structured Output) ──
+
+    _MANIFEST_SYSTEM_PROMPT = (
+        "당신은 소프트웨어 아키텍트입니다. "
+        "요구사항과 파일 목록을 받아, 파일 간 공유되는 함수와 객체의 계약을 선언하세요. "
+        "특히 팩토리 함수(create_app 등)의 매개변수와, "
+        "공유 객체(db, config 등)의 정의 위치를 명확히 지정하세요."
+    )
+
+    async def _plan_file_manifest(self, state: CodingState) -> dict[str, Any]:
+        """코드 생성 전 파일 간 인터페이스를 Structured Output으로 선언한다.
+
+        FAST(SLM) 모델로 FileManifest Pydantic 모델을 생성하여
+        _generate_final에서 참조할 수 있도록 state에 저장.
+        """
+        log = list(state.get("execution_log", []))
+        planned_files = state.get("planned_files", [])
+        parse_result = state.get("parse_result", {})
+
+        # planned_files가 없으면 스킵
+        if not planned_files or len(planned_files) < 2:
+            log.append("[manifest] 파일 2개 미만 — 매니페스트 스킵")
+            return {"execution_log": log}
+
+        prompt = (
+            f"요구사항: {parse_result.get('description', '')}\n\n"
+            f"생성할 파일 목록:\n"
+            + "\n".join(f"- {f}" for f in planned_files)
+            + "\n\n각 파일에서 다른 파일이 사용할 함수와 공유 객체를 선언하세요."
+        )
+
+        try:
+            manifest_model = self._get_parse_model().with_structured_output(
+                FileManifest
+            )
+            response = await manifest_model.ainvoke([
+                SystemMessage(content=self._MANIFEST_SYSTEM_PROMPT),
+                HumanMessage(content=prompt),
+            ])
+            manifest = response.model_dump()
+            log.append(
+                f"[manifest] {len(manifest.get('files', []))}개 파일, "
+                f"{len(manifest.get('contracts', []))}개 계약 선언"
+            )
+            return {"file_manifest": manifest, "execution_log": log}
+        except Exception as e:
+            log.append(f"[manifest] Structured Output 실패, 스킵: {e}")
+            return {"execution_log": log}
+
+    @staticmethod
+    def _format_manifest(manifest: dict) -> str:
+        """FileManifest dict를 프롬프트 주입용 텍스트로 변환한다."""
+        lines = ["### 파일 목록"]
+        for f in manifest.get("files", []):
+            lines.append(f"- `{f}`")
+
+        contracts = manifest.get("contracts", [])
+        if contracts:
+            lines.append("\n### 함수 계약 (반드시 준수)")
+            for c in contracts:
+                params = ", ".join(c.get("params", []))
+                callers = ", ".join(c.get("called_from", []))
+                lines.append(
+                    f"- `{c['name']}({params})` — 정의: `{c['defined_in']}`, "
+                    f"호출: {callers or '(미정)'}"
+                )
+
+        shared = manifest.get("shared_objects", [])
+        if shared:
+            lines.append("\n### 공유 객체 (단일 출처 원칙)")
+            for s in shared:
+                importers = ", ".join(s.get("imported_by", []))
+                lines.append(
+                    f"- `{s['name']}` — 정의: `{s['defined_in']}`, "
+                    f"import: {importers or '(미정)'}"
+                )
+
+        return "\n".join(lines)
+
     # write_file 도구 루프 최대 반복 횟수
     _GENERATE_MAX_TOOL_LOOPS = 10
 
@@ -731,21 +819,30 @@ class CodingAssistantAgent(BaseGraphAgent):
             for fp in planned_files:
                 system_prompt += f"- [ ] `{fp}`\n"
 
+        # FileManifest 주입 — 파일 간 인터페이스 계약
+        file_manifest = state.get("file_manifest")
+        if file_manifest:
+            system_prompt += (
+                "\n\n## 파일 매니페스트 (반드시 준수)\n"
+                + self._format_manifest(file_manifest)
+            )
+
         context_msg = self._build_context_message(state)
 
         # STRONG 모델 + write_file 도구 바인딩
         gen_model = self._get_gen_model()
 
-        # MCP 도구에서 write_file과 read_file만 필터링하여 바인딩
+        # MCP 도구에서 write_file, read_file, validate_consistency만 필터링하여 바인딩
+        _GENERATE_TOOL_NAMES = {"write_file", "read_file", "validate_consistency"}
         write_tools = [
             t for t in self._tools
-            if getattr(t, "name", "") in ("write_file", "read_file")
+            if getattr(t, "name", "") in _GENERATE_TOOL_NAMES
         ]
         if write_tools:
             gen_model = gen_model.bind_tools(write_tools)
 
         from coding_agent.core.middleware import ModelRequest as MWRequest
-        from langchain_core.messages import AIMessage, ToolMessage
+        from langchain_core.messages import ToolMessage
 
         sanitized = sanitize_messages_for_llm(state["messages"])
         sanitized.append(context_msg)
@@ -1078,13 +1175,22 @@ class CodingAssistantAgent(BaseGraphAgent):
         verify_result: dict[str, Any]
         try:
             async with asyncio.timeout(self._VERIFY_TIMEOUT_S):
-                response = await invoke_with_max_tokens_recovery(
-                    self._get_verify_model(),
-                    messages,
-                    self._context_manager,
-                    **self._get_recovery_limits("verification"),
-                )
-            verify_result = json.loads(response.content)
+                # Structured Output으로 검증 결과를 Pydantic 모델로 강제
+                try:
+                    structured_model = self._get_verify_model().with_structured_output(
+                        VerifyResultModel
+                    )
+                    response = await structured_model.ainvoke(messages)
+                    verify_result = response.model_dump()
+                except Exception:
+                    # Structured Output 미지원 시 기존 방식으로 폴백
+                    response = await invoke_with_max_tokens_recovery(
+                        self._get_verify_model(),
+                        messages,
+                        self._context_manager,
+                        **self._get_recovery_limits("verification"),
+                    )
+                    verify_result = json.loads(response.content)
         except TimeoutError:
             logging.getLogger(__name__).warning(
                 "verify_result 타임아웃 (%ds) — 검증 스킵", self._VERIFY_TIMEOUT_S
@@ -1108,13 +1214,16 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         # ── 정적 API 일치 검증 ──
         api_issues = self._check_api_consistency(generated_code)
-        if api_issues:
+        # ── 정적 함수 시그니처 일치 검증 ──
+        sig_issues = self._check_signature_consistency(generated_code)
+        static_issues = api_issues + sig_issues
+        if static_issues:
             existing_issues = verify_result.get("issues", [])
-            verify_result["issues"] = api_issues + existing_issues
+            verify_result["issues"] = static_issues + existing_issues
             # P0/P1 이슈가 있으면 실패로 재판정
-            if any(i.startswith("[P0]") or i.startswith("[P1]") for i in api_issues):
+            if any(i.startswith("[P0]") or i.startswith("[P1]") for i in static_issues):
                 verify_result["passed"] = False
-                log.append(f"[verify] API 일치 검증 실패: {len(api_issues)}건")
+                log.append(f"[verify] 정적 검증 실패: {len(static_issues)}건")
 
         log.append(f"[verify] passed={verify_result.get('passed')}")
 
@@ -1337,6 +1446,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         """
         written_files = state.get("written_files", [])
         log = list(state.get("execution_log", []))
+        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
 
         # ── planned vs written 비교 검증 ──
         planned_files = state.get("planned_files", [])
@@ -1732,7 +1842,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 )
                 _, install_err = await install_proc.communicate()
                 if install_proc.returncode != 0:
-                    log.append(f"[run_tests] npm install 실패 — 프론트엔드 테스트 스킵")
+                    log.append("[run_tests] npm install 실패 — 프론트엔드 테스트 스킵")
                     return {
                         "test_passed": True,
                         "test_output": f"npm install 실패 — 프론트엔드 테스트 스킵\n{install_err.decode()[:500]}",
@@ -1986,29 +2096,29 @@ class CodingAssistantAgent(BaseGraphAgent):
         """execute 후 라우팅 판단.
 
         우선순위:
-        1. exit_reason이 설정됨 → GENERATE_FINAL (안전장치 발동)
-        2. 도구 호출 한도 도달 → GENERATE_FINAL (루프 강제 탈출)
+        1. exit_reason이 설정됨 → PLAN_MANIFEST (안전장치 발동)
+        2. 도구 호출 한도 도달 → PLAN_MANIFEST (루프 강제 탈출)
         3. 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
-        4. 도구를 한 번이라도 사용했으면 → GENERATE_FINAL (STRONG으로 최종 생성)
+        4. 도구를 한 번이라도 사용했으면 → PLAN_MANIFEST (STRONG으로 최종 생성)
         5. 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
         """
         # 안전장치 발동 시 즉시 최종 생성으로 전환
         exit_reason = state.get("exit_reason", "")
         if exit_reason:
-            return self.get_node_name("GENERATE_FINAL")
+            return self.get_node_name("PLAN_MANIFEST")
 
         # generate/scaffold/analyze 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
         parse_result = state.get("parse_result", {})
         task_type = parse_result.get("task_type", "generate")
         if task_type in ("generate", "scaffold", "analyze"):
-            return self.get_node_name("GENERATE_FINAL")
+            return self.get_node_name("PLAN_MANIFEST")
 
         tool_call_count = state.get("tool_call_count", 0)
         max_calls = self._coding_config.max_tool_calls
 
         # 도구 호출 한도 도달 시 강제 탈출 (recursion_limit 방어)
         if tool_call_count >= max_calls:
-            return self.get_node_name("GENERATE_FINAL")
+            return self.get_node_name("PLAN_MANIFEST")
 
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
@@ -2019,7 +2129,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         # 도구를 한 번이라도 사용했으면 STRONG 모델로 최종 생성
         if tool_call_count > 0:
-            return self.get_node_name("GENERATE_FINAL")
+            return self.get_node_name("PLAN_MANIFEST")
 
         # 도구 미사용 → FAST 출력 그대로 검증 (불필요한 STRONG 호출 생략)
         return self.get_node_name("VERIFY")
@@ -2260,6 +2370,21 @@ class CodingAssistantAgent(BaseGraphAgent):
             "존재하지 않는 속성 접근. 클래스/모듈의 실제 인터페이스를 확인하세요.",
         ),
         (
+            r"TypeError:.*takes \d+ positional arguments? but \d+ (?:was|were) given",
+            "TypeError_ArgCount",
+            "함수 정의의 인자 개수가 호출부와 불일치합니다. "
+            "**테스트 파일(conftest.py, test_*.py)의 호출 방식이 표준**이므로, "
+            "함수 정의(예: __init__.py의 create_app)를 수정하여 인자를 받도록 하세요. "
+            "config 딕셔너리 패턴: config = {'testing': TestingConfig, ...}; "
+            "def create_app(config_name='development'): app.config.from_object(config[config_name])",
+        ),
+        (
+            r"TypeError:.*missing \d+ required positional argument",
+            "TypeError_MissingArg",
+            "필수 인자가 누락되었습니다. 호출부에 필요한 인자를 추가하거나, "
+            "함수 정의에서 기본값을 설정하세요.",
+        ),
+        (
             r"TypeError",
             "TypeError",
             "타입 불일치 또는 인자 개수 오류. 함수 시그니처와 호출부를 대조하세요.",
@@ -2404,6 +2529,62 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return issues
 
+    @staticmethod
+    def _check_signature_consistency(generated_code: str) -> list[str]:
+        """파일 간 함수 정의와 호출의 인자 개수 일관성을 검증한다."""
+        issues: list[str] = []
+        # 내장/일반 함수 무시 목록
+        _BUILTIN_NAMES = frozenset({
+            "print", "len", "range", "str", "int", "float", "list", "dict",
+            "set", "tuple", "type", "super", "isinstance", "getattr", "setattr",
+            "hasattr", "open", "sorted", "filter", "map", "zip", "enumerate",
+            "min", "max", "abs", "round", "any", "all", "next", "iter",
+            "format", "repr", "id", "hash", "vars", "dir", "callable",
+            "staticmethod", "classmethod", "property",
+        })
+
+        # Python 함수 정의 추출: def func_name(args)
+        definitions: dict[str, dict[str, int]] = {}
+        for match in re.finditer(r"def\s+(\w+)\s*\(([^)]*)\)", generated_code):
+            name = match.group(1)
+            if name.startswith("_"):
+                continue  # private 함수는 스킵
+            args_str = match.group(2)
+            params = [a.strip() for a in args_str.split(",") if a.strip()]
+            params = [p for p in params if p not in ("self", "cls")]
+            required = [p for p in params if "=" not in p and "*" not in p]
+            definitions[name] = {
+                "total": len(params),
+                "required": len(required),
+            }
+
+        # 함수 호출 패턴 검출: name(args) — 정의와 교차 검증
+        for match in re.finditer(r"(?<!\bdef\s)(\w+)\s*\(([^)]*)\)", generated_code):
+            name = match.group(1)
+            if name not in definitions or name in _BUILTIN_NAMES:
+                continue
+            args_str = match.group(2).strip()
+            call_args = (
+                [a.strip() for a in args_str.split(",") if a.strip()]
+                if args_str else []
+            )
+
+            defn = definitions[name]
+            if len(call_args) < defn["required"]:
+                issues.append(
+                    f"[P1] 함수 시그니처 불일치: {name}() 호출에 인자 "
+                    f"{len(call_args)}개, 정의는 필수 인자 {defn['required']}개. "
+                    f"함수 정의에 기본값을 추가하거나 호출부에 인자를 추가하세요."
+                )
+            elif len(call_args) > defn["total"]:
+                issues.append(
+                    f"[P1] 함수 시그니처 불일치: {name}() 호출에 인자 "
+                    f"{len(call_args)}개, 정의는 최대 {defn['total']}개. "
+                    f"함수 정의를 수정하여 추가 인자를 받도록 하세요."
+                )
+
+        return issues
+
     def _classify_test_error(self, test_output: str) -> tuple[str, str]:
         """테스트 출력에서 에러 유형을 분류하고 수정 지시를 반환한다."""
         for pattern, error_type, guidance in self._ERROR_PATTERNS:
@@ -2428,7 +2609,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 and abs(len(norm_cur) - len(norm_prev)) < len(norm_cur) * 0.05
                 and norm_cur[:500] == norm_prev[:500]
             ):
-                log.append(f"[inject_test_failure] 동일 코드 반복 감지 — 재시도 중단")
+                log.append("[inject_test_failure] 동일 코드 반복 감지 — 재시도 중단")
                 return {
                     "test_passed": True,
                     "test_output": f"동일 코드 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
@@ -2445,8 +2626,8 @@ class CodingAssistantAgent(BaseGraphAgent):
 
             def _normalize_error(s: str) -> str:
                 """에러 라인을 추출하고 숫자를 정규화하여 비교 가능한 형태로 변환."""
-                lines = [l.strip() for l in s.split("\n")
-                         if any(kw in l for kw in _FAIL_KEYWORDS)]
+                lines = [line.strip() for line in s.split("\n")
+                         if any(kw in line for kw in _FAIL_KEYWORDS)]
                 # 숫자를 N으로 치환 → "assert 405 == 404" → "assert N == N"
                 normalized = "\n".join(lines[:20])
                 normalized = re.sub(r"\b\d+\b", "N", normalized)
@@ -2460,7 +2641,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 len(cur_norm) > 20
                 and _similarity_ratio(cur_norm, prev_norm) > 0.85
             )):
-                log.append(f"[inject_test_failure] 동일 테스트 에러 반복 감지 — 재시도 중단")
+                log.append("[inject_test_failure] 동일 테스트 에러 반복 감지 — 재시도 중단")
                 return {
                     "test_passed": True,
                     "test_output": f"동일 에러 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
@@ -2544,6 +2725,37 @@ class CodingAssistantAgent(BaseGraphAgent):
                     "설정 파일에 의존성이 빠져있다면 해당 파일도 수정 코드에 포함하세요.\n"
                 )
 
+        # traceback에서 관련 파일 추출 → 실제 내용 주입
+        error_files: set[str] = set()
+        for tb_match in re.finditer(r'File "([^"]+)"', test_output):
+            fpath = tb_match.group(1)
+            if workspace in fpath and ".venv" not in fpath and "site-packages" not in fpath:
+                rel = os.path.relpath(fpath, workspace)
+                error_files.add(rel)
+
+        file_contents_hint = ""
+        for rel_path in sorted(error_files)[:3]:
+            abs_path = os.path.join(workspace, rel_path)
+            if os.path.exists(abs_path):
+                try:
+                    with open(abs_path) as f:
+                        content = f.read()
+                    if len(content) > 3000:
+                        content = content[:3000] + "\n... (truncated)"
+                    file_contents_hint += (
+                        f"\n\n### 관련 파일: {rel_path}\n```\n{content}\n```\n"
+                    )
+                except Exception:
+                    pass
+
+        if file_contents_hint:
+            file_contents_hint = (
+                "\n\n## 에러에 관련된 파일 내용 (수정 필요)\n"
+                "아래 파일들이 traceback에서 참조됩니다. "
+                "**파일 간 함수 시그니처, import, 변수명이 일관되도록** 수정하세요."
+                + file_contents_hint
+            )
+
         error_msg = HumanMessage(content=(
             f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
             f"### 에러 유형: {error_type}\n"
@@ -2551,7 +2763,8 @@ class CodingAssistantAgent(BaseGraphAgent):
             f"### 에러 출력:\n"
             f"```\n{test_output[:2000]}\n```\n"
             f"{escalation_hint}"
-            f"{existing_hint}\n"
+            f"{existing_hint}"
+            f"{file_contents_hint}\n"
             f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
             f"수정된 파일을 write_file 도구로 저장하세요."
         ))
@@ -2573,6 +2786,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("RETRIEVE_MEMORY"), self._retrieve_memory)
         graph.add_node(self.get_node_name("EXECUTE"), self._execute_code)
         graph.add_node(self.get_node_name("EXECUTE_TOOLS"), self._execute_tools)
+        graph.add_node(self.get_node_name("PLAN_MANIFEST"), self._plan_file_manifest)
         graph.add_node(self.get_node_name("GENERATE_FINAL"), self._generate_final)
         graph.add_node(self.get_node_name("VERIFY"), self._verify_result)
         graph.add_node(self.get_node_name("APPLY_CODE"), self._apply_code)
@@ -2599,6 +2813,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         graph.add_edge(
             self.get_node_name("EXECUTE_TOOLS"),
             self.get_node_name("EXECUTE"),
+        )
+        # plan_manifest(Structured Output) → generate_final(STRONG)
+        graph.add_edge(
+            self.get_node_name("PLAN_MANIFEST"),
+            self.get_node_name("GENERATE_FINAL"),
         )
         # generate_final(STRONG) → verify(LLM)
         graph.add_edge(

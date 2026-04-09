@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
@@ -433,7 +433,8 @@ class TestResilienceMiddleware:
             messages=[],
             metadata={"purpose": "generation"},
         )
-        response = await mw.wrap_model_call(request, flaky_handler)
+        with patch("coding_agent.core.resilience.asyncio.sleep", new_callable=AsyncMock):
+            response = await mw.wrap_model_call(request, flaky_handler)
 
         assert response.message.content == "success"
         assert call_count == 3  # 2번 실패 + 1번 성공
@@ -468,7 +469,8 @@ class TestResilienceMiddleware:
             messages=[HumanMessage(content="test")],
             metadata={"purpose": "generation"},
         )
-        response = await mw.wrap_model_call(request, always_fail)
+        with patch("coding_agent.core.resilience.asyncio.sleep", new_callable=AsyncMock):
+            response = await mw.wrap_model_call(request, always_fail)
 
         assert response.message.content == "fallback result"
 
