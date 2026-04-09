@@ -23,8 +23,15 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
+from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
 from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.middleware import (
+    MemoryMiddleware,
+    MiddlewareChain,
+    ModelRequest as MWRequest,
+    ResilienceMiddleware,
+)
 from coding_agent.core.tool_call_utils import tc_args, tc_id, tc_name
 
 from .config import PlannerConfig
@@ -104,6 +111,13 @@ class PlannerAgent(BaseGraphAgent):
         self._web_search_tools: list[Any] = []
         self._explicit_model = model
 
+        # AbortController + 미들웨어 체인
+        self._abort_controller = AbortController()
+        self._middleware_chain = MiddlewareChain([
+            ResilienceMiddleware(abort_controller=self._abort_controller),
+            MemoryMiddleware(),
+        ])
+
         kwargs.pop("auto_build", None)
         super().__init__(
             config=self._planner_config,
@@ -149,7 +163,13 @@ class PlannerAgent(BaseGraphAgent):
     # ── 노드 구현 ──
 
     async def _analyze_task(self, state: PlannerState) -> dict[str, Any]:
-        """사용자 요청의 복잡도를 분석한다."""
+        """사용자 요청의 복잡도를 분석한다.
+
+        REASONING 티어 유지 — 계획 수립은 고성능 모델 필요.
+        """
+        # 턴 시작: abort 상태 리셋
+        self._abort_controller.reset()
+
         user_request = state.get("user_request", "")
         if not user_request:
             # messages에서 추출
@@ -159,12 +179,13 @@ class PlannerAgent(BaseGraphAgent):
                     break
 
         model = self._get_model()
-        response = await model.ainvoke(
-            [
-                SystemMessage(content=ANALYZE_SYSTEM_PROMPT),
-                HumanMessage(content=user_request),
-            ]
+        mw_request = MWRequest(
+            system_message=ANALYZE_SYSTEM_PROMPT,
+            messages=[HumanMessage(content=user_request)],
+            metadata={"purpose": "planning"},
         )
+        mw_response = await self._middleware_chain.invoke(mw_request, model)
+        response = mw_response.message
 
         try:
             analysis = json.loads(response.content)
@@ -325,6 +346,9 @@ class PlannerAgent(BaseGraphAgent):
         if self._tools:
             model = model.bind_tools(self._tools)
 
+        # LLM 호출 전 abort 체크 (도구 바인딩된 모델은 middleware chain 미사용)
+        self._abort_controller.check_or_raise()
+
         response = await model.ainvoke(
             [
                 SystemMessage(
@@ -338,6 +362,9 @@ class PlannerAgent(BaseGraphAgent):
             ]
         )
 
+        # LLM 호출 후 abort 체크
+        self._abort_controller.check_or_raise()
+
         # 도구 호출 실행 (최대 1 라운드)
         context_entries: list[str] = list(state.get("explored_context", []))
         tool_calls = getattr(response, "tool_calls", None) or []
@@ -346,6 +373,9 @@ class PlannerAgent(BaseGraphAgent):
         messages = [response]
 
         for call in tool_calls[:5]:  # 최대 5회
+            # 도구 실행 전 abort 체크
+            self._abort_controller.check_or_raise()
+
             name = tc_name(call)
             args = tc_args(call)
             call_id = tc_id(call)
@@ -372,6 +402,9 @@ class PlannerAgent(BaseGraphAgent):
                 )
             )
 
+        # 도구 실행 후 abort 체크
+        self._abort_controller.check_or_raise()
+
         return {
             "explored_context": context_entries,
             "messages": messages,
@@ -395,17 +428,16 @@ class PlannerAgent(BaseGraphAgent):
         )
 
         model = self._get_model()
-        response = await model.ainvoke(
-            [
-                SystemMessage(
-                    content=PLAN_SYSTEM_PROMPT.format(
-                        explored_context=context_str,
-                        research_context=research_str,
-                    )
-                ),
-                HumanMessage(content=user_request),
-            ]
+        mw_request = MWRequest(
+            system_message=PLAN_SYSTEM_PROMPT.format(
+                explored_context=context_str,
+                research_context=research_str,
+            ),
+            messages=[HumanMessage(content=user_request)],
+            metadata={"purpose": "planning"},
         )
+        mw_response = await self._middleware_chain.invoke(mw_request, model)
+        response = mw_response.message
 
         try:
             plan_data = json.loads(response.content)

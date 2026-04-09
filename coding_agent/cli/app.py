@@ -169,7 +169,7 @@ def _extract_node_summary(node: str, output: dict) -> str:
                         error_line = stripped[:80]
             if not error_line:
                 # 첫 번째 비어있지 않은 줄 사용
-                first_line = next((l.strip() for l in test_out.split("\n") if l.strip()), "")
+                first_line = next((line.strip() for line in test_out.split("\n") if line.strip()), "")
                 error_line = fallback_line or first_line[:80] or "상세 로그 없음"
         else:
             error_line = "상세 로그 없음"

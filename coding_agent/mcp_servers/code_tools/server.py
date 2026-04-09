@@ -30,9 +30,34 @@ mcp = FastMCP(
 )
 
 
+def _normalize_to_relative(path: str) -> str:
+    """경로를 workspace 기준 상대 경로로 정규화한다.
+
+    절대 경로가 workspace 하위이면 상대 경로로 변환하고,
+    이미 상대 경로이면 '..' 등을 제거하여 정규화한다.
+    """
+    workspace = Path(_WORKSPACE).resolve()
+    p = Path(path)
+
+    if p.is_absolute():
+        resolved = p.resolve()
+        # workspace 하위인 경우 상대 경로로 변환
+        try:
+            return str(resolved.relative_to(workspace))
+        except ValueError:
+            # workspace 밖 절대 경로 — 그대로 반환 (_safe_path에서 차단됨)
+            return path
+    else:
+        # 상대 경로: "./" 제거, ".." 정규화
+        normalized = Path(os.path.normpath(path))
+        return str(normalized)
+
+
 def _safe_path(path: str) -> Path:
     """workspace 밖으로의 접근을 차단한다."""
-    resolved = Path(_WORKSPACE, path).resolve()
+    # 먼저 상대 경로로 정규화
+    rel_path = _normalize_to_relative(path)
+    resolved = Path(_WORKSPACE, rel_path).resolve()
     workspace = Path(_WORKSPACE).resolve()
     if not str(resolved).startswith(str(workspace)):
         raise ValueError(f"접근 거부: workspace 밖 경로 ({resolved})")
@@ -75,6 +100,7 @@ def read_file(path: str, max_lines: int = 500) -> str:
         path: workspace 기준 상대 경로 (예: "coding_agent/core/base_agent.py")
         max_lines: 최대 읽을 줄 수 (기본 500)
     """
+    path = _normalize_to_relative(path)
     target = _safe_path(path)
     if not target.exists():
         return f"Error: 파일이 존재하지 않습니다 — {path}"
@@ -99,10 +125,11 @@ def write_file(path: str, content: str) -> str:
         path: workspace 기준 상대 경로
         content: 파일에 쓸 전체 내용
     """
-    target = _safe_path(path)
+    rel_path = _normalize_to_relative(path)
+    target = _safe_path(rel_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"OK: {path} ({len(content)}자, {content.count(chr(10)) + 1}줄)"
+    return f"OK: {rel_path} ({len(content)}자, {content.count(chr(10)) + 1}줄)"
 
 
 @mcp.tool()
@@ -843,5 +870,5 @@ def search_recent_papers(query: str, max_results: int = 5) -> str:
 if __name__ == "__main__":
     print(f"통합 MCP 서버 시작: http://0.0.0.0:{_PORT}/mcp")
     print(f"Workspace: {_WORKSPACE}")
-    print(f"도구: 코드(11) + 검색(4) = 15개")
+    print("도구: 코드(11) + 검색(4) = 15개")
     mcp.run(transport="streamable-http")

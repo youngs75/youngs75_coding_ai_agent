@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import os
-import sys
 import time
 
 from dotenv import load_dotenv
@@ -101,7 +100,7 @@ async def run_pms_test():
 
     # 1단계: 초기 실행 (classify → plan → interrupt)
     logger.info("[1/3] Orchestrator 초기 실행 (classify + plan)...")
-    result = await agent.graph.ainvoke(
+    await agent.graph.ainvoke(
         {"messages": [HumanMessage(content=PMS_PROMPT)]},
         config=run_config,
     )
@@ -128,7 +127,7 @@ async def run_pms_test():
 
         # 자동 승인 → delegate(Phase 순차실행) 진행
         logger.info("[3/3] 계획 자동 승인 → Phase 순차실행 시작...")
-        result = await agent.graph.ainvoke(
+        await agent.graph.ainvoke(
             Command(resume=True),
             config=run_config,
         )
@@ -183,7 +182,7 @@ async def run_pms_test():
     if langfuse_handler:
         safe_flush(langfuse_handler)
         print("\n🔍 Langfuse 트레이싱 전송 완료")
-        print(f"   Trace: https://cloud.langfuse.com → pms_e2e_test")
+        print("   Trace: https://cloud.langfuse.com → pms_e2e_test")
 
     print("\n" + "=" * 60)
 

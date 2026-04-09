@@ -5,7 +5,8 @@
 - MessageWindowMiddleware 슬라이딩 윈도우
 - SummarizationMiddleware 토큰 기반 컴팩션
 - SkillMiddleware 스킬 주입 + 중복 방지
-- MemoryMiddleware 메모리 주입
+- MemoryMiddleware 메모리 주입 + 자동 축적
+- ResilienceMiddleware 재시도 + fallback + abort 체크
 - append_to_system_message 유틸리티
 """
 
@@ -16,6 +17,9 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
+from coding_agent.core.abort_controller import AbortController, AbortReason
+from coding_agent.core.memory.schemas import MemoryType
+from coding_agent.core.memory.store import MemoryStore
 from coding_agent.core.middleware import (
     AgentMiddleware,
     MemoryMiddleware,
@@ -23,10 +27,12 @@ from coding_agent.core.middleware import (
     MiddlewareChain,
     ModelRequest,
     ModelResponse,
+    ResilienceMiddleware,
     SkillMiddleware,
     SummarizationMiddleware,
     append_to_system_message,
 )
+from coding_agent.core.resilience import FailureMatrix
 
 
 # ── append_to_system_message ──
@@ -336,3 +342,293 @@ class TestIntegration:
         system_content = call_args[0].content
         assert "Test Skill" in system_content
         assert "Flask 프로젝트" in system_content
+
+
+# ── ResilienceMiddleware ──
+
+
+class TestResilienceMiddleware:
+    @pytest.fixture()
+    def abort_controller(self) -> AbortController:
+        return AbortController()
+
+    @pytest.fixture()
+    def resilience_mw(self, abort_controller: AbortController) -> ResilienceMiddleware:
+        return ResilienceMiddleware(abort_controller=abort_controller)
+
+    @pytest.mark.asyncio
+    async def test_normal_flow(self, resilience_mw: ResilienceMiddleware):
+        """정상 흐름 — abort 없이 handler 결과를 그대로 반환."""
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(message=AIMessage(content="ok"))
+        )
+        request = ModelRequest(
+            system_message="system",
+            messages=[HumanMessage(content="test")],
+        )
+        response = await resilience_mw.wrap_model_call(request, mock_handler)
+
+        assert response.message.content == "ok"
+        mock_handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_abort_before_llm(self, abort_controller: AbortController):
+        """before 단계에서 abort 신호가 있으면 AbortError 발생."""
+        from coding_agent.core.abort_controller import AbortError
+
+        mw = ResilienceMiddleware(abort_controller=abort_controller)
+        abort_controller.abort(AbortReason.USER_INTERRUPT)
+
+        mock_handler = AsyncMock()
+        request = ModelRequest(system_message="", messages=[])
+
+        with pytest.raises(AbortError):
+            await mw.wrap_model_call(request, mock_handler)
+
+        # handler는 호출되지 않아야 함
+        mock_handler.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_abort_after_llm(self, abort_controller: AbortController):
+        """after 단계에서 abort 신호가 있으면 AbortError 발생."""
+        from coding_agent.core.abort_controller import AbortError
+
+        call_count = 0
+
+        async def handler_that_triggers_abort(req):
+            nonlocal call_count
+            call_count += 1
+            # handler 실행 후 abort 신호 발생
+            abort_controller.abort(AbortReason.BUDGET_EXCEEDED)
+            return ModelResponse(message=AIMessage(content="done"))
+
+        mw = ResilienceMiddleware(abort_controller=abort_controller)
+        request = ModelRequest(system_message="", messages=[])
+
+        with pytest.raises(AbortError):
+            await mw.wrap_model_call(request, handler_that_triggers_abort)
+
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_on_failure(self, abort_controller: AbortController):
+        """handler 실패 시 재시도가 수행되는지 확인."""
+        matrix = FailureMatrix()
+        mw = ResilienceMiddleware(
+            abort_controller=abort_controller,
+            failure_matrix=matrix,
+        )
+
+        call_count = 0
+
+        async def flaky_handler(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise Exception("transient error")
+            return ModelResponse(message=AIMessage(content="success"))
+
+        request = ModelRequest(
+            system_message="",
+            messages=[],
+            metadata={"purpose": "generation"},
+        )
+        response = await mw.wrap_model_call(request, flaky_handler)
+
+        assert response.message.content == "success"
+        assert call_count == 3  # 2번 실패 + 1번 성공
+
+    @pytest.mark.asyncio
+    async def test_fallback_on_exhausted_retries(
+        self, abort_controller: AbortController
+    ):
+        """재시도 소진 후 fallback 체인이 호출되는지 확인."""
+        mock_fallback_model = AsyncMock()
+        mock_fallback_model.ainvoke.return_value = AIMessage(content="fallback result")
+
+        from coding_agent.core.resilience import ModelFallbackChain
+
+        def build_fallback():
+            return ModelFallbackChain(
+                models=[mock_fallback_model],
+                model_names=["fallback_model"],
+                timeout_per_model=10.0,
+            )
+
+        mw = ResilienceMiddleware(
+            abort_controller=abort_controller,
+            fallback_chain_builder=build_fallback,
+        )
+
+        async def always_fail(req):
+            raise Exception("permanent failure")
+
+        request = ModelRequest(
+            system_message="",
+            messages=[HumanMessage(content="test")],
+            metadata={"purpose": "generation"},
+        )
+        response = await mw.wrap_model_call(request, always_fail)
+
+        assert response.message.content == "fallback result"
+
+
+# ── MemoryMiddleware (확장: store 검색 + 자동 축적) ──
+
+
+class TestMemoryMiddlewareExtended:
+    @pytest.fixture()
+    def memory_store(self) -> MemoryStore:
+        return MemoryStore()
+
+    @pytest.mark.asyncio
+    async def test_store_search_injection(self, memory_store: MemoryStore):
+        """MemoryStore 검색 결과가 system prompt에 주입되는지 확인."""
+        # 도메인 지식 추가
+        memory_store.accumulate_domain_knowledge(
+            content="Flask는 WSGI 기반 마이크로 프레임워크이다",
+            tags=["flask", "python"],
+        )
+
+        mw = MemoryMiddleware(memory_store=memory_store)
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(message=AIMessage(content="ok"))
+        )
+
+        request = ModelRequest(
+            system_message="base",
+            messages=[HumanMessage(content="Flask 프로젝트에 CORS를 설정하려면?")],
+            metadata={"purpose": "generation"},
+        )
+        await mw.wrap_model_call(request, mock_handler)
+
+        passed = mock_handler.call_args[0][0]
+        assert "Flask" in passed.system_message
+        assert "WSGI" in passed.system_message
+
+    @pytest.mark.asyncio
+    async def test_auto_accumulate_domain_knowledge(self, memory_store: MemoryStore):
+        """after 단계에서 도메인 지식이 자동 축적되는지 확인."""
+
+        async def mock_slm(messages):
+            return '{"type": "domain_knowledge", "content": "React는 SPA 프레임워크이다", "tags": ["react"]}'
+
+        mw = MemoryMiddleware(
+            memory_store=memory_store,
+            slm_invoker=mock_slm,
+            auto_accumulate=True,
+        )
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(
+                message=AIMessage(content="React는 SPA 프레임워크입니다.")
+            )
+        )
+
+        request = ModelRequest(system_message="", messages=[], state={})
+        await mw.wrap_model_call(request, mock_handler)
+
+        items = memory_store.list_by_type(MemoryType.DOMAIN_KNOWLEDGE)
+        assert len(items) == 1
+        assert "React" in items[0].content
+
+    @pytest.mark.asyncio
+    async def test_auto_accumulate_user_profile(self, memory_store: MemoryStore):
+        """after 단계에서 사용자 프로필이 자동 축적되는지 확인."""
+
+        async def mock_slm(messages):
+            return '{"type": "user_profile", "content": "사용자는 Python 전문가이다", "tags": ["skill"]}'
+
+        mw = MemoryMiddleware(
+            memory_store=memory_store,
+            slm_invoker=mock_slm,
+            auto_accumulate=True,
+        )
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(message=AIMessage(content="ok"))
+        )
+
+        request = ModelRequest(system_message="", messages=[], state={})
+        await mw.wrap_model_call(request, mock_handler)
+
+        items = memory_store.list_by_type(MemoryType.USER_PROFILE)
+        assert len(items) == 1
+        assert "Python" in items[0].content
+
+    @pytest.mark.asyncio
+    async def test_auto_accumulate_disabled(self, memory_store: MemoryStore):
+        """auto_accumulate=False이면 축적하지 않음."""
+
+        async def mock_slm(messages):
+            return '{"type": "domain_knowledge", "content": "test", "tags": []}'
+
+        mw = MemoryMiddleware(
+            memory_store=memory_store,
+            slm_invoker=mock_slm,
+            auto_accumulate=False,
+        )
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(message=AIMessage(content="ok"))
+        )
+
+        request = ModelRequest(system_message="", messages=[], state={})
+        await mw.wrap_model_call(request, mock_handler)
+
+        assert memory_store.total_count == 0
+
+    @pytest.mark.asyncio
+    async def test_slm_failure_does_not_break_flow(self, memory_store: MemoryStore):
+        """SLM 호출 실패 시 LLM 응답은 정상 반환."""
+
+        async def failing_slm(messages):
+            raise RuntimeError("SLM down")
+
+        mw = MemoryMiddleware(
+            memory_store=memory_store,
+            slm_invoker=failing_slm,
+            auto_accumulate=True,
+        )
+        mock_handler = AsyncMock(
+            return_value=ModelResponse(message=AIMessage(content="important result"))
+        )
+
+        request = ModelRequest(system_message="", messages=[], state={})
+        response = await mw.wrap_model_call(request, mock_handler)
+
+        assert response.message.content == "important result"
+
+
+# ── ResilienceMiddleware + MemoryMiddleware 체인 통합 ──
+
+
+class TestResilienceMemoryIntegration:
+    @pytest.mark.asyncio
+    async def test_resilience_and_memory_in_chain(self):
+        """ResilienceMiddleware + MemoryMiddleware를 체인으로 연결한 통합 테스트."""
+        abort = AbortController()
+        store = MemoryStore()
+        store.accumulate_domain_knowledge(
+            content="Python 비동기 패턴은 asyncio를 사용한다",
+            tags=["python", "async"],
+        )
+
+        chain = MiddlewareChain([
+            ResilienceMiddleware(abort_controller=abort),
+            MemoryMiddleware(memory_store=store),
+        ])
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = AIMessage(content="async 코드 생성 완료")
+
+        request = ModelRequest(
+            system_message="코드 생성 에이전트",
+            messages=[HumanMessage(content="asyncio로 웹 크롤러를 만들어줘")],
+            metadata={"purpose": "generation"},
+        )
+        response = await chain.invoke(request, mock_llm)
+
+        assert response.message.content == "async 코드 생성 완료"
+
+        # 메모리가 주입되었는지 확인
+        call_args = mock_llm.ainvoke.call_args[0][0]
+        system_content = call_args[0].content
+        assert "asyncio" in system_content

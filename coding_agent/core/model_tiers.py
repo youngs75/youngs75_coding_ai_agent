@@ -22,7 +22,10 @@ import json
 import logging
 import os
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from coding_agent.core.resilience import ModelFallbackChain
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
@@ -461,6 +464,7 @@ def create_chat_model(
 
         llm = ChatLiteLLM(
             model=litellm_model,
+            model_name=litellm_model,
             temperature=effective_temp,
             request_timeout=timeout,
             model_kwargs=model_kwargs,

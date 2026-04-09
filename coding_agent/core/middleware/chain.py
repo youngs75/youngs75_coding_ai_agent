@@ -7,10 +7,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, SystemMessage
 
 from .base import AgentMiddleware, Handler, ModelRequest, ModelResponse
 
@@ -18,9 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 class MiddlewareChain:
-    """미들웨어 리스트를 양파 패턴으로 실행한다.
+    """미들웨어 리스트를 양파(Onion) 패턴으로 실행한다.
 
-    사용 예:
+    리스트의 첫 번째 미들웨어가 가장 바깥쪽(먼저 실행, 마지막 반환)이며,
+    가장 안쪽 핸들러가 실제 LLM을 호출한다.
+
+    Args:
+        middlewares: 초기 미들웨어 리스트. None이면 빈 체인.
+
+    Example:
         chain = MiddlewareChain([
             MessageWindowMiddleware(max_turns=4),
             SummarizationMiddleware(threshold=0.85),
@@ -34,7 +38,14 @@ class MiddlewareChain:
         self._middlewares: list[AgentMiddleware] = list(middlewares or [])
 
     def add(self, middleware: AgentMiddleware) -> "MiddlewareChain":
-        """미들웨어를 체인 끝에 추가한다."""
+        """미들웨어를 체인 끝에 추가한다.
+
+        Args:
+            middleware: 추가할 미들웨어.
+
+        Returns:
+            self (메서드 체이닝 지원).
+        """
         self._middlewares.append(middleware)
         return self
 
@@ -52,6 +63,13 @@ class MiddlewareChain:
         1. 미들웨어를 역순으로 래핑하여 양파 구조를 만든다
         2. 가장 안쪽 핸들러가 실제 LLM을 호출한다
         3. 각 미들웨어는 request를 수정하고 handler()를 호출한다
+
+        Args:
+            request: LLM 호출 요청.
+            llm: LangChain 기반 LLM 모델 인스턴스.
+
+        Returns:
+            미들웨어 체인을 거친 LLM 응답.
         """
 
         # 가장 안쪽: 실제 LLM 호출

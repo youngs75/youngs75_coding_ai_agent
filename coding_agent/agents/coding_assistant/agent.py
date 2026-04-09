@@ -28,11 +28,37 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+
+def _normalize_file_path(path: str, workspace: str | None = None) -> str:
+    """파일 경로를 workspace 기준 상대 경로로 정규화한다.
+
+    - 절대 경로가 workspace 하위이면 상대 경로로 변환
+    - "./" 접두사, ".." 등을 제거
+    - "app.py (+24 lines)" 같은 메타 접미사도 제거
+    """
+    # 메타 접미사 제거: "app.py (+24 lines)" → "app.py"
+    raw = path.split(" (")[0].strip()
+    if not raw:
+        return raw
+
+    # 절대 경로 → workspace 기준 상대 경로
+    if workspace and os.path.isabs(raw):
+        ws = os.path.normpath(workspace)
+        norm = os.path.normpath(raw)
+        # workspace 하위인 경우만 상대 경로로 변환
+        if norm.startswith(ws + os.sep) or norm == ws:
+            raw = os.path.relpath(norm, ws)
+
+    # "./" 제거, ".." 정규화
+    return os.path.normpath(raw)
+
+from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
 from coding_agent.core.context_manager import (
     ContextManager,
     invoke_with_max_tokens_recovery,
 )
+from coding_agent.core.exceptions import ToolCallError
 from coding_agent.core.mcp_loader import MCPToolLoader
 from coding_agent.core.memory.schemas import MemoryItem, MemoryType
 from coding_agent.core.memory.store import MemoryStore
@@ -250,19 +276,27 @@ class CodingAssistantAgent(BaseGraphAgent):
             compact_threshold=getattr(self._coding_config, "compact_threshold", 0.8),
         )
 
+        # AbortController — 턴 시작 시 reset
+        self._abort_controller = AbortController()
+
         # 미들웨어 체인 — LLM 호출 전후 메시지/컨텍스트 자동 관리
+        # 양파 순서: Resilience(가장 바깥) → Window → Summarization → Memory(가장 안쪽)
         from coding_agent.core.middleware import (
+            MemoryMiddleware,
             MessageWindowMiddleware,
             MiddlewareChain,
+            ResilienceMiddleware,
             SummarizationMiddleware,
         )
         self._middleware_chain = MiddlewareChain([
+            ResilienceMiddleware(abort_controller=self._abort_controller),
             MessageWindowMiddleware(max_turns=4, max_messages=10),
             SummarizationMiddleware(
                 token_threshold=100_000,
                 keep_recent_messages=6,
                 max_tool_arg_chars=2000,
             ),
+            MemoryMiddleware(memory_store=self._memory_store),
         ])
 
         # 다층 안전장치 (Claude Code OS 패턴)
@@ -293,9 +327,10 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 모델 lazy init ──────────────────────────────────────
 
     def _get_parse_model(self) -> BaseChatModel:
+        """FAST 티어 모델 반환 — 파싱/분류는 SLM으로 충분."""
         if self._parse_model is None:
             self._parse_model = self._explicit_model or self._coding_config.get_model(
-                "default"
+                "parsing"
             )
         return self._parse_model
 
@@ -325,8 +360,12 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 노드 구현 ──────────────────────────────────────────
 
     async def _parse_request(self, state: CodingState) -> dict[str, Any]:
-        """사용자 요청을 분석하여 작업 유형과 요구사항을 추출한다."""
+        """사용자 요청을 분석하여 작업 유형과 요구사항을 추출한다.
+
+        FAST(SLM) 티어로 파싱하여 비용 최적화.
+        """
         # 턴 시작 시 안전장치 초기화
+        self._abort_controller.reset()
         self._stall_detector.reset()
         self._turn_budget.reset()
 
@@ -629,6 +668,25 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         budget_verdict = self._turn_budget.record_llm_call(output_tokens)
 
+        # StallDetector: 도구 호출 후 반복 패턴 체크
+        tool_calls = getattr(response, "tool_calls", None) or []
+        for call in tool_calls:
+            stall_action = self._stall_detector.record_and_check(
+                tc_name(call), tc_args(call)
+            )
+            if stall_action == StallAction.WARN:
+                log.append(
+                    "[stall] 진전 없음 감지 — 다른 접근을 시도하세요"
+                )
+            elif stall_action == StallAction.FORCE_EXIT:
+                summary = self._stall_detector.get_stall_summary()
+                log.append(f"[stall] FORCE_EXIT: {summary}")
+                return {
+                    "generated_code": response.content or "",
+                    "execution_log": log,
+                    "exit_reason": "stall_detected",
+                }
+
         log.append(
             f"[execute] iteration={iteration}, tools_bound={needs_tools}, model=FAST"
         )
@@ -738,9 +796,13 @@ class CodingAssistantAgent(BaseGraphAgent):
                     result = await _execute_tool_safely(
                         tools_by_name[call_name], call_args
                     )
-                    # write_file 성공 결과에서 파일 경로 수집
+                    # write_file 성공 결과에서 파일 경로 수집 (정규화)
                     if call_name == "write_file" and result.startswith("OK:"):
                         filepath = result.split("OK:")[1].split("(")[0].strip()
+                        workspace = os.environ.get(
+                            "CODE_TOOLS_WORKSPACE", os.getcwd()
+                        )
+                        filepath = _normalize_file_path(filepath, workspace)
                         if filepath and filepath not in written_files:
                             written_files.append(filepath)
                 else:
@@ -754,6 +816,31 @@ class CodingAssistantAgent(BaseGraphAgent):
                 responded_ids.add(call_id)
 
             total_tool_calls += len(tool_calls)
+
+            # StallDetector: write_file 루프에서도 반복 패턴 체크
+            stall_break = False
+            for call in tool_calls:
+                stall_action = self._stall_detector.record_and_check(
+                    tc_name(call), tc_args(call)
+                )
+                if stall_action == StallAction.WARN:
+                    log.append(
+                        "[stall] 진전 없음 감지 — 다른 접근을 시도하세요"
+                    )
+                    loop_messages.append(
+                        SystemMessage(
+                            content="[시스템] 진전 없음이 감지되었습니다. "
+                            "다른 접근 방식을 시도하세요."
+                        )
+                    )
+                elif stall_action == StallAction.FORCE_EXIT:
+                    summary = self._stall_detector.get_stall_summary()
+                    log.append(f"[stall] FORCE_EXIT: {summary}")
+                    stall_break = True
+                    break
+            if stall_break:
+                break
+
             log.append(
                 f"[generate_final] 루프 {loop_idx}: "
                 f"도구 {len(tool_calls)}회 호출, "
@@ -799,6 +886,9 @@ class CodingAssistantAgent(BaseGraphAgent):
         - project_context 파일 경로 기준 중복 제거
         - tool_call_count 누적
         """
+        # 도구 실행 전 abort 체크
+        self._abort_controller.check_or_raise()
+
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
         tool_calls = getattr(last_msg, "tool_calls", None) or []
@@ -925,6 +1015,9 @@ class CodingAssistantAgent(BaseGraphAgent):
                         name=name or "unknown",
                     )
                 )
+
+        # 도구 실행 후 abort 체크
+        self._abort_controller.check_or_raise()
 
         return {
             "messages": tool_messages,
@@ -1249,9 +1342,12 @@ class CodingAssistantAgent(BaseGraphAgent):
         planned_files = state.get("planned_files", [])
         if planned_files:
             written_paths = {
-                f.split(" (")[0].strip() for f in written_files
+                _normalize_file_path(f, workspace) for f in written_files
             }
-            missing = [f for f in planned_files if f not in written_paths]
+            missing = [
+                f for f in planned_files
+                if _normalize_file_path(f, workspace) not in written_paths
+            ]
             if missing:
                 missing_str = ", ".join(missing)
                 log.append(
@@ -1281,10 +1377,10 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
 
-        # 파일 경로에서 실제 경로 추출 ("app.py (+24 lines)" → "app.py")
+        # 파일 경로에서 실제 경로 추출 + 정규화 ("app.py (+24 lines)" → "app.py")
         real_files = []
         for f in written_files:
-            path = f.split(" (")[0].strip()
+            path = _normalize_file_path(f, workspace)
             real_files.append(path)
 
         py_files = [f for f in real_files if f.endswith(".py")]
@@ -1844,14 +1940,11 @@ class CodingAssistantAgent(BaseGraphAgent):
         written: list[str] = []
 
         for block in blocks:
-            filepath = block["filepath"]
+            filepath = _normalize_file_path(block["filepath"], workspace)
             code = block["code"]
 
             # 절대 경로 계산
-            if os.path.isabs(filepath):
-                full_path = filepath
-            else:
-                full_path = os.path.join(workspace, filepath)
+            full_path = os.path.join(workspace, filepath)
 
             resolved = os.path.realpath(full_path)
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
 from coding_agent.core.middleware.base import (
     AgentMiddleware,

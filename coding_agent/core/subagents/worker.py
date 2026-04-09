@@ -15,8 +15,12 @@ import json
 import logging
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage
+
+if TYPE_CHECKING:
+    from coding_agent.core.memory.store import MemoryStore
 
 # stderr로만 로그 출력 (stdout은 JSON 결과 전용)
 logging.basicConfig(
@@ -116,6 +120,56 @@ _EXTRACT_FNS = {
 }
 
 
+def _extract_token_usage(result: dict) -> dict[str, int]:
+    """LangChain AIMessage의 usage_metadata에서 토큰 사용량을 추출한다.
+
+    Args:
+        result: 에이전트 invoke 결과 딕셔너리.
+
+    Returns:
+        input_tokens, output_tokens, total_tokens 키를 가진 딕셔너리.
+    """
+    usage: dict[str, int] = {}
+    messages = result.get("messages", [])
+    for msg in reversed(messages):
+        meta = getattr(msg, "usage_metadata", None)
+        if meta:
+            usage = {
+                "input_tokens": meta.get("input_tokens", 0),
+                "output_tokens": meta.get("output_tokens", 0),
+                "total_tokens": meta.get("total_tokens", 0),
+            }
+            break
+    return usage
+
+
+def _load_memory_store(workspace: str) -> "MemoryStore | None":
+    """workspace의 .ai/memory/ 디렉토리에서 MemoryStore를 초기화한다.
+
+    Args:
+        workspace: 워크스페이스 루트 경로.
+
+    Returns:
+        초기화된 MemoryStore, 또는 메모리 디렉토리가 없으면 None.
+    """
+    from pathlib import Path
+
+    memory_dir = Path(workspace) / ".ai" / "memory"
+    if not memory_dir.is_dir():
+        logger.debug("메모리 디렉토리 없음: %s", memory_dir)
+        return None
+
+    try:
+        from coding_agent.core.memory.store import MemoryStore
+
+        store = MemoryStore(persist_dir=str(memory_dir))
+        logger.info("MemoryStore 초기화: %s", memory_dir)
+        return store
+    except Exception as e:
+        logger.warning("MemoryStore 초기화 실패: %s", e)
+        return None
+
+
 async def _run_agent(
     agent_type: str,
     task_message: str,
@@ -123,6 +177,8 @@ async def _run_agent(
 ) -> dict:
     """에이전트를 초기화하고 작업을 수행한다."""
     import importlib
+    import os
+    from pathlib import Path
 
     spec = _AGENT_REGISTRY.get(agent_type)
     if not spec:
@@ -140,9 +196,6 @@ async def _run_agent(
 
     # 스킬 레지스트리 초기화 (coding_assistant)
     if spec.get("use_skill_registry"):
-        import os
-        from pathlib import Path
-
         from coding_agent.core.skills.loader import SkillLoader
         from coding_agent.core.skills.registry import SkillRegistry
 
@@ -157,6 +210,12 @@ async def _run_agent(
             skill_registry.discover()
         create_kwargs["skill_registry"] = skill_registry
 
+    # MemoryStore 초기화 — 모든 에이전트 타입에서 접근 가능
+    workspace = os.environ.get("WORKSPACE", os.getcwd())
+    memory_store = _load_memory_store(workspace)
+    if memory_store is not None:
+        create_kwargs["memory_store"] = memory_store
+
     if spec.get("use_create_factory"):
         agent = await agent_cls.create(**create_kwargs)
     else:
@@ -169,9 +228,14 @@ async def _run_agent(
     # 실행
     result = await agent.graph.ainvoke(invoke_input)
 
+    # 토큰 사용량 추출
+    token_usage = _extract_token_usage(result)
+
     # 결과 추출
     extract_fn = _EXTRACT_FNS[spec["extract_fn"]]
-    return extract_fn(result)
+    extracted = extract_fn(result)
+    extracted["token_usage"] = token_usage
+    return extracted
 
 
 def _output_json(data: dict) -> None:
@@ -210,7 +274,7 @@ async def main() -> None:
             "test_passed": extracted.get("test_passed", True),
             "exit_reason": extracted.get("exit_reason", ""),
             "duration_s": round(duration, 2),
-            "token_usage": {},
+            "token_usage": extracted.get("token_usage", {}),
             "error": None,
         })
         logger.info("에이전트 완료: %.1fs", duration)

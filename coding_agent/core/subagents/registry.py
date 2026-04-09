@@ -39,13 +39,17 @@ _ACTIVE_STATES = {
 
 
 class SubAgentRegistry:
-    """서브에이전트 등록, 동적 선택, 사용 통계 추적, 인스턴스 수명주기 관리."""
+    """서브에이전트 등록, 동적 선택, 사용 통계 추적, 인스턴스 수명주기 관리.
+
+    Puppeteer 패턴에 따라 R = r(quality) - lambda * C(cost) 공식으로
+    태스크에 최적인 에이전트를 동적 선택한다. 사용 통계를 추적하여
+    선택 품질을 지속적으로 개선한다.
+
+    Args:
+        cost_sensitivity: 비용 민감도 lambda (0이면 품질만, 1이면 비용 위주).
+    """
 
     def __init__(self, cost_sensitivity: float = 0.3):
-        """
-        Args:
-            cost_sensitivity: 비용 민감도 λ (0 → 품질만, 1 → 비용 위주)
-        """
         self._agents: dict[str, SubAgentSpec] = {}
         self._usage: list[SubAgentUsageRecord] = []
         self._lambda = cost_sensitivity
@@ -55,18 +59,41 @@ class SubAgentRegistry:
         self._events: list[SubAgentEvent] = []
 
     def register(self, spec: SubAgentSpec) -> None:
-        """서브에이전트 등록."""
+        """서브에이전트를 레지스트리에 등록한다.
+
+        Args:
+            spec: 등록할 에이전트 사양.
+        """
         self._agents[spec.name] = spec
 
     def unregister(self, name: str) -> bool:
-        """서브에이전트 제거."""
+        """서브에이전트를 레지스트리에서 제거한다.
+
+        Args:
+            name: 제거할 에이전트 이름.
+
+        Returns:
+            제거 성공 시 True, 미등록 시 False.
+        """
         return self._agents.pop(name, None) is not None
 
     def get(self, name: str) -> SubAgentSpec | None:
+        """이름으로 에이전트 사양을 조회한다.
+
+        Args:
+            name: 에이전트 이름.
+
+        Returns:
+            SubAgentSpec 또는 None (미등록 시).
+        """
         return self._agents.get(name)
 
     def list_available(self) -> list[SubAgentSpec]:
-        """사용 가능한 에이전트 목록."""
+        """사용 가능한(CREATED/AVAILABLE 상태) 에이전트 목록을 반환한다.
+
+        Returns:
+            사용 가능한 SubAgentSpec 리스트.
+        """
         return [
             a for a in self._agents.values() if a.status in _AVAILABLE_STATES
         ]
@@ -99,11 +126,23 @@ class SubAgentRegistry:
         return best
 
     def record_usage(self, record: SubAgentUsageRecord) -> None:
-        """사용 기록 추가."""
+        """사용 기록을 추가한다.
+
+        Args:
+            record: 추가할 사용 기록.
+        """
         self._usage.append(record)
 
     def get_success_rate(self, agent_name: str, task_type: str | None = None) -> float:
-        """에이전트의 성공률 계산."""
+        """에이전트의 성공률을 계산한다.
+
+        Args:
+            agent_name: 에이전트 이름.
+            task_type: 태스크 유형 필터. None이면 전체 성공률.
+
+        Returns:
+            성공률 (0.0~1.0). 기록 없으면 0.5 (중립값).
+        """
         relevant = [
             u
             for u in self._usage
@@ -113,6 +152,21 @@ class SubAgentRegistry:
         if not relevant:
             return 0.5  # 기록 없으면 중립값
         return sum(1 for u in relevant if u.success) / len(relevant)
+
+    def get_failure_reasons(self, agent_name: str) -> dict[str, int]:
+        """에이전트의 실패 원인별 발생 횟수를 반환한다.
+
+        Args:
+            agent_name: 에이전트 이름.
+
+        Returns:
+            실패 원인 문자열 → 발생 횟수 매핑.
+        """
+        reasons: dict[str, int] = defaultdict(int)
+        for u in self._usage:
+            if u.agent_name == agent_name and not u.success and u.failure_reason:
+                reasons[u.failure_reason] += 1
+        return dict(reasons)
 
     @property
     def usage_stats(self) -> dict[str, dict[str, int]]:
@@ -140,7 +194,14 @@ class SubAgentRegistry:
     ) -> SubAgentInstance | None:
         """SubAgentSpec 기반으로 런타임 인스턴스를 생성한다.
 
-        spec_name이 등록되지 않았으면 None 반환.
+        Args:
+            spec_name: 참조할 SubAgentSpec 이름.
+            task_summary: 할당된 작업 요약.
+            role: 역할/전문성 설명.
+            parent_id: 부모 에이전트/오케스트레이터 ID.
+
+        Returns:
+            생성된 SubAgentInstance 또는 None (spec 미등록 시).
         """
         if spec_name not in self._agents:
             return None
@@ -169,7 +230,20 @@ class SubAgentRegistry:
         error_message: str | None = None,
         result_summary: str | None = None,
     ) -> SubAgentEvent | None:
-        """인스턴스 상태를 전이한다. 유효하지 않은 전이면 None 반환."""
+        """인스턴스 상태를 전이한다.
+
+        VALID_TRANSITIONS에 정의된 유효한 전이만 허용한다.
+
+        Args:
+            agent_id: 전이할 에이전트 인스턴스 ID.
+            new_state: 전이할 목표 상태.
+            reason: 전이 사유.
+            error_message: 실패 시 에러 메시지.
+            result_summary: 완료 시 결과 요약.
+
+        Returns:
+            SubAgentEvent 또는 None (인스턴스 미존재 또는 유효하지 않은 전이 시).
+        """
         instance = self._instances.get(agent_id)
         if instance is None:
             return None
@@ -215,7 +289,14 @@ class SubAgentRegistry:
         return event
 
     def get_instance(self, agent_id: str) -> SubAgentInstance | None:
-        """인스턴스 조회."""
+        """인스턴스를 조회한다.
+
+        Args:
+            agent_id: 조회할 에이전트 인스턴스 ID.
+
+        Returns:
+            SubAgentInstance 또는 None (미존재 시).
+        """
         return self._instances.get(agent_id)
 
     def list_instances(
@@ -224,7 +305,15 @@ class SubAgentRegistry:
         state: SubAgentStatus | None = None,
         parent_id: str | None = None,
     ) -> list[SubAgentInstance]:
-        """인스턴스 목록 (상태/부모 필터)."""
+        """인스턴스 목록을 반환한다.
+
+        Args:
+            state: 상태 필터. None이면 전체.
+            parent_id: 부모 ID 필터. None이면 전체.
+
+        Returns:
+            필터 조건에 맞는 SubAgentInstance 리스트.
+        """
         result = list(self._instances.values())
         if state is not None:
             result = [i for i in result if i.state == state]
@@ -235,7 +324,15 @@ class SubAgentRegistry:
     def destroy_instance(
         self, agent_id: str, *, reason: str = "cleanup"
     ) -> SubAgentEvent | None:
-        """인스턴스를 DESTROYED로 전이하고 정리한다."""
+        """인스턴스를 DESTROYED로 전이하고 정리한다.
+
+        Args:
+            agent_id: 파괴할 에이전트 인스턴스 ID.
+            reason: 파괴 사유.
+
+        Returns:
+            SubAgentEvent 또는 None (전이 불가 시).
+        """
         return self.transition_state(
             agent_id,
             SubAgentStatus.DESTROYED,
@@ -243,9 +340,13 @@ class SubAgentRegistry:
         )
 
     def cleanup_completed(self, *, max_age_seconds: float = 300) -> int:
-        """완료/실패/취소된 인스턴스 중 max_age_seconds 지난 것을 정리.
+        """완료/실패/취소된 인스턴스 중 max_age_seconds 지난 것을 정리한다.
 
-        정리 수 반환.
+        Args:
+            max_age_seconds: 정리 대상 최소 경과 시간(초).
+
+        Returns:
+            정리된 인스턴스 수.
         """
         terminal_states = {
             SubAgentStatus.COMPLETED,

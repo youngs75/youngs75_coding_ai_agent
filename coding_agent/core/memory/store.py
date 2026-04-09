@@ -47,7 +47,20 @@ _PERSISTENT_TYPES = {
 
 
 class MemoryStore:
-    """메모리 저장소 — InMemoryStore 래핑 + 2단계 검색 + 파일 영속화."""
+    """메모리 저장소 — InMemoryStore 래핑 + 2단계 검색 + 파일 영속화.
+
+    LangGraph InMemoryStore를 래핑하여 MemoryItem CRUD,
+    GAM 2단계 검색(태그 필터 → BM25 랭킹), Voyager 패턴 스킬 축적,
+    도메인 지식/사용자 프로필 자동 중복 제거를 제공한다.
+
+    영속화 대상 타입(PROCEDURAL, USER_PROFILE, DOMAIN_KNOWLEDGE, SEMANTIC)은
+    JSONL 파일로 자동 저장되어 세션 간 학습이 유지된다.
+
+    Args:
+        store: 내부 InMemoryStore 인스턴스. None이면 새로 생성.
+        search: 2단계 검색 인스턴스. None이면 기본 설정으로 생성.
+        persist_dir: 영속화 디렉토리 경로. None이면 영속화 비활성화.
+    """
 
     def __init__(
         self,
@@ -68,7 +81,13 @@ class MemoryStore:
             self._load_persisted()
 
     def put(self, item: MemoryItem) -> None:
-        """메모리 항목 저장. 영속화 대상 타입은 파일에도 저장."""
+        """메모리 항목을 저장한다.
+
+        영속화 대상 타입은 JSONL 파일에도 append한다.
+
+        Args:
+            item: 저장할 MemoryItem.
+        """
         ns = _namespace(item.type, item.session_id)
         if ns not in self._index:
             self._index[ns] = {}
@@ -81,7 +100,16 @@ class MemoryStore:
     def get(
         self, item_id: str, memory_type: MemoryType, session_id: str | None = None
     ) -> MemoryItem | None:
-        """ID로 메모리 항목 조회."""
+        """ID로 메모리 항목을 조회한다.
+
+        Args:
+            item_id: 조회할 항목 ID.
+            memory_type: 메모리 타입.
+            session_id: 세션 스코프 ID. None이면 전역 네임스페이스.
+
+        Returns:
+            MemoryItem 또는 None (미존재 시).
+        """
         ns = _namespace(memory_type, session_id)
         bucket = self._index.get(ns, {})
         return bucket.get(item_id)
@@ -121,7 +149,15 @@ class MemoryStore:
         memory_type: MemoryType,
         session_id: str | None = None,
     ) -> list[MemoryItem]:
-        """타입별 메모리 항목 목록."""
+        """타입별 메모리 항목 목록을 반환한다.
+
+        Args:
+            memory_type: 조회할 메모리 타입.
+            session_id: 세션 스코프 ID. None이면 전역 네임스페이스.
+
+        Returns:
+            created_at 역순으로 정렬된 MemoryItem 리스트.
+        """
         ns = _namespace(memory_type, session_id)
         bucket = self._index.get(ns, {})
         return sorted(bucket.values(), key=lambda x: x.created_at, reverse=True)
@@ -129,7 +165,16 @@ class MemoryStore:
     def delete(
         self, item_id: str, memory_type: MemoryType, session_id: str | None = None
     ) -> bool:
-        """메모리 항목 삭제. 성공 시 True."""
+        """메모리 항목을 삭제한다.
+
+        Args:
+            item_id: 삭제할 항목 ID.
+            memory_type: 메모리 타입.
+            session_id: 세션 스코프 ID.
+
+        Returns:
+            삭제 성공 시 True, 항목 미존재 시 False.
+        """
         ns = _namespace(memory_type, session_id)
         bucket = self._index.get(ns, {})
         if item_id in bucket:
@@ -146,7 +191,19 @@ class MemoryStore:
         metadata: dict[str, Any] | None = None,
         session_id: str | None = None,
     ) -> MemoryItem | None:
-        """메모리 항목을 정정(correction)한다. 갱신된 항목 반환, 없으면 None."""
+        """메모리 항목을 정정(correction)한다.
+
+        Args:
+            item_id: 갱신할 항목 ID.
+            memory_type: 메모리 타입.
+            content: 새 콘텐츠. None이면 기존 값 유지.
+            tags: 새 태그 리스트. None이면 기존 값 유지.
+            metadata: 새 메타데이터. None이면 기존 값 유지.
+            session_id: 세션 스코프 ID.
+
+        Returns:
+            갱신된 MemoryItem 또는 None (항목 미존재 시).
+        """
         existing = self.get(item_id, memory_type, session_id)
         if existing is None:
             return None
@@ -171,7 +228,14 @@ class MemoryStore:
         return updated_item
 
     def clear(self, memory_type: MemoryType | None = None) -> int:
-        """메모리 초기화. 삭제된 항목 수 반환."""
+        """메모리를 초기화한다.
+
+        Args:
+            memory_type: 초기화할 타입. None이면 전체 초기화.
+
+        Returns:
+            삭제된 항목 수.
+        """
         count = 0
         if memory_type is None:
             for bucket in self._index.values():

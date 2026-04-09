@@ -30,8 +30,16 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, END, StateGraph
 from langgraph.types import interrupt
 
+from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
 from coding_agent.core.context_manager import ContextManager
+from coding_agent.core.exceptions import SubAgentError
+from coding_agent.core.middleware import (
+    MemoryMiddleware,
+    MiddlewareChain,
+    ModelRequest as MWRequest,
+    ResilienceMiddleware,
+)
 from coding_agent.core.subagents.registry import SubAgentRegistry
 from .config import OrchestratorConfig
 from .coordinator import CoordinatorMode
@@ -39,6 +47,10 @@ from .schemas import OrchestratorState
 
 # 오케스트레이터용 컨텍스트 매니저 (서브에이전트 호출 시 히스토리 필터링)
 _orchestrator_context_manager = ContextManager()
+
+# 모듈 레벨 미들웨어/중단 제어기 (OrchestratorAgent.__init__에서 초기화)
+_abort_controller: AbortController | None = None
+_middleware_chain: MiddlewareChain | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +71,58 @@ CLASSIFY_SYSTEM_PROMPT = """\
 """
 
 
+import re as _re
+
+# 복잡 요청 감지 키워드 패턴 (multi-file, fullstack, multi-step 등)
+_COMPLEX_PATTERNS = _re.compile(
+    r"(?:풀스택|fullstack|full[\-\s]stack|프론트엔드.*백엔드|백엔드.*프론트엔드"
+    r"|여러\s*파일|multi[\-\s]*file|multi[\-\s]*step|multi[\-\s]*phase"
+    r"|프로젝트\s*(?:생성|만들|구축|개발)|(?:앱|애플리케이션|서비스)\s*(?:만들|개발|구축)"
+    r"|(?:CRUD|REST\s*API|GraphQL)\s*(?:서버|백엔드|API)"
+    r"|(?:로그인|인증|회원가입).*(?:페이지|화면|UI)"
+    r"|칸반|대시보드|관리\s*페이지|어드민"
+    r"|(?:3|4|5|6|7|8|9|10)\s*개\s*(?:이상의?\s*)?(?:파일|페이지|컴포넌트|모듈))",
+    _re.IGNORECASE,
+)
+
+
+def _detect_complexity(user_message: str) -> bool:
+    """사용자 메시지에서 복잡한 코딩 요청인지 판단한다.
+
+    복잡 요청 기준:
+    - multi-file, fullstack, multi-step 키워드
+    - 프론트엔드+백엔드 조합 요청
+    - 프로젝트 수준의 생성/구축 요청
+    - 메시지 길이가 충분히 긴 경우 (상세 요구사항)
+
+    Args:
+        user_message: 사용자의 원본 메시지
+
+    Returns:
+        True면 Planner를 경유해야 하는 복잡 요청
+    """
+    if _COMPLEX_PATTERNS.search(user_message):
+        return True
+
+    # 긴 메시지(500자 이상)는 상세한 요구사항일 가능성이 높음
+    if len(user_message) > 500:
+        return True
+
+    return False
+
+
 async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
-    """사용자 입력을 분석하여 적합한 에이전트를 선택한다."""
+    """사용자 입력을 분석하여 적합한 에이전트를 선택한다.
+
+    SLM(FAST) 티어로 분류하여 비용/지연 최적화.
+    ResilienceMiddleware로 재시도 + abort 체크포인트 보호.
+    """
+    # 턴 시작: abort 상태 리셋
+    if _abort_controller:
+        _abort_controller.reset()
+
     oc = OrchestratorConfig.from_runnable_config(config)
-    llm = oc.get_model("default")
+    llm = oc.get_model("parsing")  # FAST 티어 — 분류는 SLM으로 충분
 
     agent_descriptions = oc.get_agent_descriptions()
     system_prompt = CLASSIFY_SYSTEM_PROMPT.format(agent_descriptions=agent_descriptions)
@@ -74,12 +134,22 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
             user_message = msg.content
             break
 
-    response = await llm.ainvoke(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
-    )
+    # 미들웨어 체인으로 LLM 호출 (abort 체크 + 재시도 + 메모리 주입)
+    if _middleware_chain:
+        mw_request = MWRequest(
+            system_message=system_prompt,
+            messages=[HumanMessage(content=user_message)],
+            metadata={"purpose": "classification"},
+        )
+        mw_response = await _middleware_chain.invoke(mw_request, llm)
+        response = mw_response.message
+    else:
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ]
+        )
 
     selected = response.content.strip().lower()
 
@@ -99,8 +169,14 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
         else:
             selected = "none"
 
-    logger.info(f"라우팅 결정: '{user_message[:50]}...' → {selected}")
-    return {"selected_agent": selected}
+    # 복잡도 판단: multi-file, fullstack, multi-step 키워드 감지
+    is_complex = _detect_complexity(user_message)
+
+    logger.info(
+        "라우팅 결정: '%s...' → %s (complex=%s)",
+        user_message[:50], selected, is_complex,
+    )
+    return {"selected_agent": selected, "is_complex": is_complex}
 
 
 async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
@@ -108,8 +184,15 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
 
     Returns:
         (task_plan_structured, plan_text): 구조화된 TaskPlan dict와 마크다운 텍스트
+
+    Raises:
+        AbortError: 중단 신호가 발생한 경우.
     """
     try:
+        # SubAgent 호출 전 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
+
         from coding_agent.agents.planner.agent import PlannerAgent
         from coding_agent.agents.planner.config import PlannerConfig
 
@@ -120,9 +203,16 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
                 "user_request": user_message,
             }
         )
+
+        # SubAgent 호출 후 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
+
         return result.get("task_plan"), result.get("plan_text", "")
+    except SubAgentError:
+        raise
     except Exception as e:
-        logger.warning(f"Planner 호출 실패, 계획 없이 진행: {e}")
+        logger.warning("Planner 호출 실패, 계획 없이 진행: %s", e)
         return None, None
 
 
@@ -162,6 +252,10 @@ async def _invoke_local_agent(
         agent_type = "simple_react"
 
     try:
+        # SubAgent 호출 전 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
+
         manager = _get_process_manager()
         result = await manager.spawn_and_wait(
             agent_type=agent_type,
@@ -169,6 +263,10 @@ async def _invoke_local_agent(
             task_plan=task_plan,
             timeout_s=300.0,
         )
+
+        # SubAgent 호출 후 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
 
         if result.success and result.result:
             output = result.result
@@ -179,13 +277,17 @@ async def _invoke_local_agent(
             return output
 
         if result.error:
-            logger.warning(
-                "SubAgent 프로세스 실패 (%s): %s", agent_type, result.error[:200]
+            raise SubAgentError(
+                agent_id=agent_type,
+                message=result.error[:200],
             )
         return result.result  # partial 결과라도 반환
 
-    except Exception as e:
-        logger.warning(f"SubAgent 프로세스 spawn 실패 '{agent_name}': {e}")
+    except (SubAgentError, Exception) as e:
+        if isinstance(e, SubAgentError):
+            logger.warning("SubAgent 실패 (%s): %s", agent_type, e)
+        else:
+            logger.warning("SubAgent 프로세스 spawn 실패 '%s': %s", agent_name, e)
     return None
 
 
@@ -530,13 +632,25 @@ async def _execute_phases_sequentially(
             test_passed = compacted["test_passed"]
             phase_status = "success" if test_passed else "failed"
 
-            # 파일 경로 기준 중복 제거 후 누적
-            existing_paths = {f.split(" (")[0].strip() if isinstance(f, str) else f.get("path", "") for f in all_written_files}
+            # 파일 경로 기준 중복 제거 후 누적 (정규화 적용)
+            from coding_agent.agents.coding_assistant.agent import (
+                _normalize_file_path,
+            )
+
+            _ws = workspace
+            existing_paths = {
+                _normalize_file_path(
+                    f.split(" (")[0].strip() if isinstance(f, str) else f.get("path", ""),
+                    _ws,
+                )
+                for f in all_written_files
+            }
             for f in written:
                 fpath = f.get("path", "") if isinstance(f, dict) else str(f)
-                if fpath and fpath not in existing_paths:
-                    all_written_files.append(fpath)
-                    existing_paths.add(fpath)
+                norm = _normalize_file_path(fpath, _ws)
+                if norm and norm not in existing_paths:
+                    all_written_files.append(norm)
+                    existing_paths.add(norm)
 
             unique_written = written
 
@@ -673,14 +787,23 @@ async def coordinate(state: OrchestratorState, config: RunnableConfig) -> dict:
     )
 
     try:
+        # SubAgent 호출 전 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
+
         result = await coordinator.run(
             task=user_message,
             context=state["messages"],
             llm=llm,
         )
+
+        # SubAgent 호출 후 abort 체크
+        if _abort_controller:
+            _abort_controller.check_or_raise()
+
         return {"agent_response": result["synthesized_response"]}
     except Exception as e:
-        logger.error(f"코디네이터 실행 실패: {e}")
+        logger.error("코디네이터 실행 실패: %s", e)
         return {"agent_response": f"복합 작업 처리 중 오류가 발생했습니다: {e}"}
 
 
@@ -760,13 +883,13 @@ def _route_after_classify(state: OrchestratorState) -> str:
     """classify 노드 이후 라우팅 결정.
 
     복합 작업(coordinate)이면 coordinate 노드로,
-    코딩 작업이면 plan 노드로 (계획 수립 후 delegate),
-    그 외에는 delegate로 직행.
+    복잡한 코딩 작업(is_complex)이면 plan 노드로 (계획 수립 후 delegate),
+    단순 코딩 작업은 delegate로 직행 (Planner 건너뜀).
     """
     selected = state.get("selected_agent", "")
     if selected == "__coordinator__":
         return "coordinate"
-    if selected in ("coding_assistant", "coder"):
+    if selected in ("coding_assistant", "coder") and state.get("is_complex"):
         return "plan"
     return "delegate"
 
@@ -791,7 +914,19 @@ class OrchestratorAgent(BaseGraphAgent):
         config: OrchestratorConfig | None = None,
         **kwargs: Any,
     ) -> None:
+        global _abort_controller, _middleware_chain
+
         self._orch_config = config or OrchestratorConfig()
+
+        # AbortController — 턴 시작 시 reset
+        _abort_controller = AbortController()
+
+        # 미들웨어 체인: ResilienceMiddleware(가장 바깥) + MemoryMiddleware
+        _middleware_chain = MiddlewareChain([
+            ResilienceMiddleware(abort_controller=_abort_controller),
+            MemoryMiddleware(),
+        ])
+
         super().__init__(
             config=self._orch_config,
             state_schema=OrchestratorState,

@@ -881,14 +881,24 @@ class TestRouteAfterClassify:
         assert _route_after_classify(state) == "coordinate"  # type: ignore[arg-type]
 
     def test_route_to_plan_for_coding(self):
-        """selected_agent가 코딩 에이전트이면 plan으로 라우팅."""
+        """selected_agent가 코딩 에이전트 + is_complex이면 plan으로 라우팅."""
+        from coding_agent.agents.orchestrator.agent import _route_after_classify
+
+        state: dict[str, Any] = {"selected_agent": "coder", "is_complex": True}
+        assert _route_after_classify(state) == "plan"  # type: ignore[arg-type]
+
+        state2: dict[str, Any] = {"selected_agent": "coding_assistant", "is_complex": True}
+        assert _route_after_classify(state2) == "plan"  # type: ignore[arg-type]
+
+    def test_route_to_delegate_for_simple_coding(self):
+        """selected_agent가 코딩 에이전트지만 is_complex=False이면 delegate로 직행."""
         from coding_agent.agents.orchestrator.agent import _route_after_classify
 
         state: dict[str, Any] = {"selected_agent": "coder"}
-        assert _route_after_classify(state) == "plan"  # type: ignore[arg-type]
+        assert _route_after_classify(state) == "delegate"  # type: ignore[arg-type]
 
-        state2: dict[str, Any] = {"selected_agent": "coding_assistant"}
-        assert _route_after_classify(state2) == "plan"  # type: ignore[arg-type]
+        state2: dict[str, Any] = {"selected_agent": "coder", "is_complex": False}
+        assert _route_after_classify(state2) == "delegate"  # type: ignore[arg-type]
 
     def test_route_to_delegate_for_non_coding(self):
         """selected_agent가 비코딩 에이전트이면 delegate로 직접 라우팅."""

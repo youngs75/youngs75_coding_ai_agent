@@ -7,6 +7,7 @@ from .base import AgentMiddleware, Handler, ModelRequest, ModelResponse, append_
 from .chain import MiddlewareChain
 from .memory import MemoryMiddleware
 from .message_window import MessageWindowMiddleware
+from .resilience import ResilienceMiddleware
 from .skill import SkillMiddleware
 from .summarization import SummarizationMiddleware
 
@@ -18,6 +19,7 @@ __all__ = [
     "MiddlewareChain",
     "ModelRequest",
     "ModelResponse",
+    "ResilienceMiddleware",
     "SkillMiddleware",
     "SummarizationMiddleware",
     "append_to_system_message",

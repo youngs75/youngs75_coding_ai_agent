@@ -15,6 +15,7 @@ from coding_agent.cli.eval_runner import (
     load_last_remediation_report,
     run_evaluation_async,
 )
+from coding_agent.core.memory.schemas import MemoryType
 from coding_agent.core.tool_permissions import PermissionDecision
 
 if TYPE_CHECKING:
@@ -83,6 +84,18 @@ def handle_command(
         case "/memory":
             _show_memory(session, renderer)
             return CommandResult()
+
+        case "/remember":
+            return _handle_remember(arg, session, renderer)
+
+        case "/remember_preference":
+            return _handle_remember_preference(arg, session, renderer)
+
+        case "/forget":
+            return _handle_forget(arg, session, renderer)
+
+        case "/correct":
+            return _handle_correct(arg, session, renderer)
 
         case "/skill":
             return _handle_skill(arg, session, renderer)
@@ -172,8 +185,128 @@ def _show_session(session: CLISession, renderer: CLIRenderer) -> None:
 
 
 def _show_memory(session: CLISession, renderer: CLIRenderer) -> None:
-    count = session.memory.total_count
-    renderer.system_message(f"메모리 항목 수: {count}")
+    """메모리 현황을 타입별 카운트 + 최근 5개 항목과 함께 표시한다."""
+    store = session.memory
+    total = store.total_count
+
+    lines = [f"메모리 현황 (총 {total}개):"]
+
+    # 타입별 카운트
+    for mt in MemoryType:
+        items = store.list_by_type(mt)
+        if items:
+            lines.append(f"  {mt.value}: {len(items)}개")
+
+    # 최근 5개 항목 미리보기
+    all_items: list = []
+    for mt in MemoryType:
+        all_items.extend(store.list_by_type(mt))
+    all_items.sort(key=lambda x: x.created_at, reverse=True)
+
+    if all_items:
+        lines.append("")
+        lines.append("최근 항목:")
+        for item in all_items[:5]:
+            preview = item.content[:60] + "..." if len(item.content) > 60 else item.content
+            lines.append(f"  [{item.type.value}] {preview}")
+
+    renderer.system_message("\n".join(lines))
+
+
+def _handle_remember(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
+    """도메인 지식을 메모리에 저장한다."""
+    content = arg.strip()
+    if not content:
+        renderer.error("저장할 내용을 입력하세요. 예: /remember Python에서 GIL은 ...")
+        return CommandResult()
+
+    store = session.memory
+    store.accumulate_domain_knowledge(
+        content, tags=["user_input"], source="user"
+    )
+    summary = content[:40] + "..." if len(content) > 40 else content
+    renderer.system_message(f"도메인 지식이 저장되었습니다: {summary}")
+    return CommandResult()
+
+
+def _handle_remember_preference(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
+    """사용자 선호를 메모리에 저장한다."""
+    content = arg.strip()
+    if not content:
+        renderer.error(
+            "저장할 선호를 입력하세요. 예: /remember_preference 한국어로 응답해주세요"
+        )
+        return CommandResult()
+
+    store = session.memory
+    store.accumulate_user_profile(
+        content, tags=["preference"], source="user"
+    )
+    summary = content[:40] + "..." if len(content) > 40 else content
+    renderer.system_message(f"사용자 선호가 저장되었습니다: {summary}")
+    return CommandResult()
+
+
+def _handle_forget(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
+    """검색어와 가장 유사한 메모리 항목 1개를 삭제한다."""
+    query = arg.strip()
+    if not query:
+        renderer.error("삭제할 메모리 검색어를 입력하세요. 예: /forget GIL")
+        return CommandResult()
+
+    store = session.memory
+    results = store.search(query, limit=1)
+    if not results:
+        renderer.system_message(f"'{query}'와 일치하는 메모리가 없습니다.")
+        return CommandResult()
+
+    target = results[0]
+    preview = target.content[:60] + "..." if len(target.content) > 60 else target.content
+    deleted = store.delete(target.id, target.type, target.session_id)
+    if deleted:
+        renderer.system_message(f"메모리가 삭제되었습니다: [{target.type.value}] {preview}")
+    else:
+        renderer.error("메모리 삭제에 실패했습니다.")
+    return CommandResult()
+
+
+def _handle_correct(
+    arg: str, session: CLISession, renderer: CLIRenderer
+) -> CommandResult:
+    """검색어로 메모리를 찾아 새 내용으로 정정한다."""
+    parts = arg.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        renderer.error(
+            "사용법: /correct <검색어> <새 내용>\n"
+            "  예: /correct GIL GIL은 Global Interpreter Lock의 약자이다"
+        )
+        return CommandResult()
+
+    query, new_content = parts[0], parts[1]
+    store = session.memory
+    results = store.search(query, limit=1)
+    if not results:
+        renderer.system_message(f"'{query}'와 일치하는 메모리가 없습니다.")
+        return CommandResult()
+
+    target = results[0]
+    old_preview = target.content[:40] + "..." if len(target.content) > 40 else target.content
+    new_preview = new_content[:40] + "..." if len(new_content) > 40 else new_content
+
+    updated = store.update(
+        target.id, target.type, content=new_content, session_id=target.session_id
+    )
+    if updated:
+        renderer.system_message(f"메모리가 정정되었습니다: {old_preview} → {new_preview}")
+    else:
+        renderer.error("메모리 정정에 실패했습니다.")
+    return CommandResult()
 
 
 def _handle_export(renderer: CLIRenderer) -> None:

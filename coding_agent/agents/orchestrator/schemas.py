@@ -31,6 +31,7 @@ class OrchestratorState(TypedDict):
 
     messages: Annotated[list[BaseMessage], add_messages]
     selected_agent: Optional[str]
+    is_complex: Optional[bool]  # 복잡도 판단 (True면 Planner 경유)
     task_plan: Optional[str]  # Planner Agent 출력 (마크다운)
     task_plan_structured: Optional[dict]  # Planner Agent 출력 (구조화된 TaskPlan)
     agent_response: Optional[str]

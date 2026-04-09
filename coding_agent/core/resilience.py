@@ -62,6 +62,16 @@ class FailureMatrix:
     """장애 유형별 정책 매트릭스.
 
     요구사항의 '장애 유형별 처리 행렬'을 코드로 구현한다.
+    7가지 장애 유형(MODEL_TIMEOUT, STUCK_LOOP, BAD_TOOL_CALL 등)에 대해
+    각각의 재시도/백오프/fallback 정책을 관리한다.
+
+    Example:
+        matrix = FailureMatrix()
+        policy = matrix.get_policy(FailureType.MODEL_TIMEOUT)
+        matrix.set_policy(FailurePolicy(
+            failure_type=FailureType.EXTERNAL_API_ERROR,
+            max_retries=5,
+        ))
     """
 
     def __init__(self) -> None:
@@ -149,6 +159,12 @@ class FailureMatrix:
         """장애 유형에 해당하는 정책을 반환한다.
 
         등록되지 않은 유형이면 기본값(retry 1, backoff 1초)을 반환한다.
+
+        Args:
+            failure_type: 조회할 장애 유형.
+
+        Returns:
+            해당 장애 유형의 FailurePolicy.
         """
         return self._policies.get(
             failure_type,
@@ -156,7 +172,11 @@ class FailureMatrix:
         )
 
     def set_policy(self, policy: FailurePolicy) -> None:
-        """장애 유형별 정책을 설정(오버라이드)한다."""
+        """장애 유형별 정책을 설정(오버라이드)한다.
+
+        Args:
+            policy: 설정할 FailurePolicy.
+        """
         self._policies[policy.failure_type] = policy
 
 
@@ -224,7 +244,14 @@ class RetryWithBackoff:
         raise RuntimeError("RetryWithBackoff: 재시도 루프가 비정상 종료됨")
 
     def calculate_delay(self, attempt: int) -> float:
-        """attempt번째 재시도의 대기 시간(초)을 계산한다."""
+        """attempt번째 재시도의 대기 시간(초)을 계산한다.
+
+        Args:
+            attempt: 현재 재시도 횟수 (0-based).
+
+        Returns:
+            대기 시간(초). backoff_max를 초과하지 않는다.
+        """
         delay = self.backoff_base * (self.backoff_multiplier ** attempt)
         return min(delay, self.backoff_max)
 
@@ -252,7 +279,15 @@ class ModelFallbackChain:
     """모델 fallback 체인.
 
     현재 모델이 실패하면 다음 순위 모델로 자동 전환한다.
-    4-tier 체계와 연동: STRONG -> DEFAULT -> FAST
+    4-tier 체계와 연동: STRONG -> DEFAULT -> FAST.
+
+    각 모델 호출에 asyncio.wait_for(timeout) 적용하여
+    무한 대기를 방지한다. 모든 모델 실패 시 마지막 예외를 raise한다.
+
+    Args:
+        models: fallback 순서대로 정렬된 BaseChatModel 리스트.
+        model_names: 로깅/추적용 모델 이름 리스트.
+        timeout_per_model: 모델별 호출 타임아웃(초).
     """
 
     models: list[BaseChatModel] = field(default_factory=list)

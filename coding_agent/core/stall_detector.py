@@ -51,6 +51,9 @@ class StallDetector:
     exit_threshold: int = 3
     window_size: int = 10
 
+    diversity_warn_threshold: float = 0.3
+    diversity_exit_threshold: float = 0.2
+
     _history: deque[_StallRecord] = field(
         default_factory=lambda: deque(maxlen=10),
         repr=False,
@@ -98,6 +101,52 @@ class StallDetector:
                 "[StallDetector] WARN: %s — 동일 인자 %d회 반복",
                 tool_name,
                 count,
+            )
+            return StallAction.WARN
+
+        # diversity 메트릭: 윈도우가 가득 찼을 때만 체크
+        diversity_action = self._check_diversity()
+        if diversity_action != StallAction.CONTINUE:
+            return diversity_action
+
+        return StallAction.CONTINUE
+
+    def _check_diversity(self) -> StallAction:
+        """최근 N턴의 unique action 비율을 체크한다.
+
+        윈도우가 가득 찬 상태에서 unique action 비율이 낮으면
+        다양한 접근을 시도하지 않고 있다고 판단한다.
+
+        Returns:
+            StallAction — CONTINUE, WARN, FORCE_EXIT
+        """
+        if len(self._history) < self.window_size:
+            return StallAction.CONTINUE
+
+        unique_actions = {
+            f"{r.tool_name}:{r.args_hash}" for r in self._history
+        }
+        diversity = len(unique_actions) / self.window_size
+
+        if diversity < self.diversity_exit_threshold:
+            logger.warning(
+                "[StallDetector] FORCE_EXIT: diversity=%.2f (<%s), "
+                "unique=%d/%d",
+                diversity,
+                self.diversity_exit_threshold,
+                len(unique_actions),
+                self.window_size,
+            )
+            return StallAction.FORCE_EXIT
+
+        if diversity < self.diversity_warn_threshold:
+            logger.warning(
+                "[StallDetector] WARN: diversity=%.2f (<%s), "
+                "unique=%d/%d",
+                diversity,
+                self.diversity_warn_threshold,
+                len(unique_actions),
+                self.window_size,
             )
             return StallAction.WARN
 

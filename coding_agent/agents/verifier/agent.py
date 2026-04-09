@@ -20,8 +20,15 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
+from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
 from coding_agent.core.mcp_loader import MCPToolLoader
+from coding_agent.core.middleware import (
+    MemoryMiddleware,
+    MiddlewareChain,
+    ModelRequest as MWRequest,
+    ResilienceMiddleware,
+)
 
 from .config import VerifierConfig
 from .prompts import REVIEW_SYSTEM_PROMPT
@@ -65,6 +72,13 @@ class VerificationAgent(BaseGraphAgent):
         if model is None:
             model = self._verifier_config.get_model("review")
 
+        # AbortController + 미들웨어 체인
+        self._abort_controller = AbortController()
+        self._middleware_chain = MiddlewareChain([
+            ResilienceMiddleware(abort_controller=self._abort_controller),
+            MemoryMiddleware(),
+        ])
+
         kwargs.pop("auto_build", None)
         super().__init__(
             config=self._verifier_config,
@@ -87,6 +101,9 @@ class VerificationAgent(BaseGraphAgent):
 
     async def _lint_check(self, state: VerificationState) -> dict[str, Any]:
         """파일의 문법 오류를 검사한다 (멀티언어 지원)."""
+        # 턴 시작: abort 상태 리셋 (lint가 첫 노드)
+        self._abort_controller.reset()
+
         if not self._verifier_config.enable_lint:
             return {"lint_result": _skip_result("lint", "비활성화됨")}
 
@@ -176,7 +193,10 @@ class VerificationAgent(BaseGraphAgent):
         }
 
     async def _llm_review(self, state: VerificationState) -> dict[str, Any]:
-        """LLM 기반 코드 리뷰를 수행한다."""
+        """LLM 기반 코드 리뷰를 수행한다.
+
+        미들웨어 체인으로 abort 체크 + 재시도 보호.
+        """
         if not self._verifier_config.enable_llm_review:
             return {"review_result": _skip_result("llm_review", "비활성화됨")}
 
@@ -198,17 +218,18 @@ class VerificationAgent(BaseGraphAgent):
             f"원래 요청: {requirements}\n\n"
             f"생성된 코드:\n{code_for_review}"
         )
-        messages = [
-            SystemMessage(content=REVIEW_SYSTEM_PROMPT),
-            HumanMessage(content=review_context),
-        ]
 
         try:
-            response = await asyncio.wait_for(
-                self.model.ainvoke(messages),
+            mw_request = MWRequest(
+                system_message=REVIEW_SYSTEM_PROMPT,
+                messages=[HumanMessage(content=review_context)],
+                metadata={"purpose": "verification"},
+            )
+            mw_response = await asyncio.wait_for(
+                self._middleware_chain.invoke(mw_request, self.model),
                 timeout=self._verifier_config.review_timeout,
             )
-            review = json.loads(response.content)
+            review = json.loads(mw_response.message.content)
             return {
                 "review_result": CheckResult(
                     check_type="llm_review",
@@ -229,7 +250,13 @@ class VerificationAgent(BaseGraphAgent):
             }
 
     async def _aggregate_results(self, state: VerificationState) -> dict[str, Any]:
-        """모든 체크 결과를 집계한다."""
+        """모든 체크 결과를 집계한다.
+
+        순수 데이터 집계 — LLM 미호출. abort 체크포인트만 삽입.
+        """
+        # 집계 전 abort 체크
+        self._abort_controller.check_or_raise()
+
         checks: list[CheckResult] = []
         all_issues: list[str] = []
         all_suggestions: list[str] = []

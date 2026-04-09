@@ -122,16 +122,16 @@ class SubagentContextFilter:
         parts: list[str] = [
             f"## Phase {phase_index + 1}/{total_phases}: {phase.get('title', 'Untitled')}",
             "",
-            f"### 사용자 요청",
+            "### 사용자 요청",
             user_message,
             "",
-            f"### 전체 계획 요약",
+            "### 전체 계획 요약",
             plan_summary,
             "",
-            f"### 아키텍처",
+            "### 아키텍처",
             architecture,
             "",
-            f"### 현재 페이즈 지시사항",
+            "### 현재 페이즈 지시사항",
         ]
 
         # 페이즈 지시사항 추가
