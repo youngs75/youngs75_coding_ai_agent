@@ -144,13 +144,13 @@ class TestShouldRetryTests:
         })
         assert result == "__end__"
 
-    def test_failed_with_budget_returns_inject_test_failure(self, agent):
+    def test_failed_with_budget_returns_inject_error(self, agent):
         result = agent._should_retry_tests({
             "test_passed": False,
             "iteration": 1,
             "max_iterations": 3,
         })
-        assert result == agent.get_node_name("INJECT_TEST_FAILURE")
+        assert result == agent.get_node_name("INJECT_ERROR")
 
     def test_failed_max_iterations_returns_end(self, agent):
         result = agent._should_retry_tests({

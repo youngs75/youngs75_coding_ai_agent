@@ -2,7 +2,7 @@
 
 DeepAgents 패턴 도입 후:
 - _generate_final()이 write_file 도구를 호출하여 파일 저장
-- _apply_code()가 도구 저장 시 마크다운 파싱 스킵
+- _generate_code()가 마크다운 폴백 수행
 - VERIFY_SYSTEM_PROMPT에서 filepath 규칙 제거
 - 재시도 시 written_files 초기화
 """
@@ -10,7 +10,6 @@ DeepAgents 패턴 도입 후:
 from __future__ import annotations
 
 import re
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -93,79 +92,6 @@ class TestVerifyPromptNoFilepath:
             max_delete_lines=100, allowed_extensions=".py, .js"
         )
         assert "passed: true/false" in prompt
-
-
-# ── _apply_code 스킵 가드 테스트 ────────────────────────
-
-
-class TestApplyCodeSkipGuard:
-    """write_file 도구로 파일이 이미 저장된 경우 _apply_code가 스킵하는지 확인."""
-
-    @pytest.fixture
-    def mock_agent(self):
-        """최소한의 CodingAssistantAgent mock."""
-        from coding_agent.agents.coding_assistant.agent import (
-            CodingAssistantAgent,
-        )
-
-        with patch.object(CodingAssistantAgent, "__init__", lambda self: None):
-            agent = CodingAssistantAgent.__new__(CodingAssistantAgent)
-            agent._coding_config = MagicMock()
-            agent._coding_config.allowed_extensions = [".py", ".js"]
-            agent._coding_config.max_delete_lines = 100
-            return agent
-
-    @pytest.mark.asyncio
-    async def test_skip_when_written_files_exist(self, mock_agent):
-        state = {
-            "written_files": ["app.py", "tests/test_app.py"],
-            "execution_log": [],
-            "generated_code": "# some code",
-        }
-        result = await mock_agent._apply_code(state)
-        assert result["written_files"] == ["app.py", "tests/test_app.py"]
-        assert any("스킵" in e for e in result["execution_log"])
-
-    @pytest.mark.asyncio
-    async def test_fallback_when_no_written_files(self, mock_agent):
-        state = {
-            "written_files": [],
-            "execution_log": [],
-            "generated_code": "",
-        }
-        result = await mock_agent._apply_code(state)
-        assert result["written_files"] == []
-        assert any("생성된 코드 없음" in e for e in result["execution_log"])
-
-
-# ── verify_result written_files 초기화 테스트 ────────────
-
-
-class TestWrittenFilesResetOnRetry:
-    """검증 실패 / 테스트 실패 시 written_files가 초기화되는지 확인."""
-
-    def test_verify_result_resets_written_files_on_failure(self):
-        """_verify_result 반환값에서 passed=False 시 written_files=[] 포함 확인.
-
-        실제 _verify_result는 LLM 호출이 필요하므로,
-        반환 딕셔너리 구조만 검증한다.
-        """
-        # passed=False일 때 written_files가 비어야 함
-        result = {
-            "verify_result": {"passed": False, "issues": ["test issue"]},
-            "written_files": [],
-            "iteration": 1,
-        }
-        assert result["written_files"] == []
-
-    def test_verify_result_no_reset_on_pass(self):
-        """passed=True일 때 written_files가 유지되어야 함."""
-        result = {
-            "verify_result": {"passed": True, "issues": []},
-            "iteration": 1,
-        }
-        # written_files 키가 없으면 기존 state 값 유지
-        assert "written_files" not in result
 
 
 # ── write_file 결과 파싱 테스트 ──────────────────────────

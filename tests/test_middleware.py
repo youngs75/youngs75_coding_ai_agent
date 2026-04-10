@@ -128,8 +128,8 @@ class TestMiddlewareChain:
 class TestMessageWindowMiddleware:
     @pytest.mark.asyncio
     async def test_small_messages_pass_through(self):
-        """메시지가 적으면 그대로 통과."""
-        mw = MessageWindowMiddleware(max_turns=4, max_messages=10)
+        """토큰이 예산 이내면 그대로 통과."""
+        mw = MessageWindowMiddleware(max_context_tokens=60_000)
         mock_handler = AsyncMock(return_value=ModelResponse(message=AIMessage(content="ok")))
 
         request = ModelRequest(
@@ -138,21 +138,21 @@ class TestMessageWindowMiddleware:
         )
         await mw.wrap_model_call(request, mock_handler)
 
-        # handler에 전달된 messages가 원본과 동일해야 함
         passed_request = mock_handler.call_args[0][0]
         assert len(passed_request.messages) == 2
 
     @pytest.mark.asyncio
     async def test_large_messages_trimmed(self):
-        """메시지가 많으면 윈도우로 잘림."""
-        mw = MessageWindowMiddleware(max_turns=2, max_messages=4)
+        """토큰 초과 시 다단계 컴팩션으로 축소."""
+        # 낮은 예산으로 강제 컴팩션
+        mw = MessageWindowMiddleware(max_context_tokens=200, keep_recent=2)
         mock_handler = AsyncMock(return_value=ModelResponse(message=AIMessage(content="ok")))
 
-        # 20개 메시지 (10턴)
+        # 큰 메시지 20개
         messages = []
         for i in range(10):
-            messages.append(HumanMessage(content=f"user msg {i}"))
-            messages.append(AIMessage(content=f"ai msg {i}"))
+            messages.append(HumanMessage(content=f"user msg {i} " + "x" * 100))
+            messages.append(AIMessage(content=f"ai msg {i} " + "y" * 100))
 
         request = ModelRequest(system_message="system", messages=messages)
         await mw.wrap_model_call(request, mock_handler)
@@ -162,8 +162,27 @@ class TestMessageWindowMiddleware:
         assert len(passed_request.messages) < 20
         # 첫 번째 메시지(원본 태스크)는 유지
         assert "user msg 0" in passed_request.messages[0].content
-        # 마지막 메시지는 가장 최근 것
-        assert "ai msg 9" in passed_request.messages[-1].content
+
+    @pytest.mark.asyncio
+    async def test_error_message_preserved(self):
+        """에러 메시지는 컴팩션에서 우선 보존."""
+        mw = MessageWindowMiddleware(max_context_tokens=300, keep_recent=2)
+        mock_handler = AsyncMock(return_value=ModelResponse(message=AIMessage(content="ok")))
+
+        messages = [
+            HumanMessage(content="original task " + "x" * 100),
+            AIMessage(content="code " + "y" * 200),
+            HumanMessage(content="테스트가 실패했습니다 (시도 1회). 에러를 분석하고 수정하세요. ImportError"),
+            AIMessage(content="fix " + "z" * 100),
+            HumanMessage(content="recent " + "w" * 50),
+        ]
+
+        request = ModelRequest(system_message="system", messages=messages)
+        await mw.wrap_model_call(request, mock_handler)
+
+        passed_request = mock_handler.call_args[0][0]
+        contents = " ".join(m.content for m in passed_request.messages)
+        assert "테스트가 실패했습니다" in contents
 
 
 # ── SummarizationMiddleware ──
@@ -209,7 +228,11 @@ class TestSummarizationMiddleware:
         # 원본 4개와 같거나 적어야 함 (첫 메시지 + 요약 + 최근 2개 = 4)
         assert len(passed.messages) <= 4
         # 요약 메시지가 포함되어야 함
-        summary_found = any("컨텍스트 축소" in getattr(m, "content", "") for m in passed.messages)
+        summary_found = any(
+            "이전 대화 요약" in getattr(m, "content", "")
+            or "메시지 제거됨" in getattr(m, "content", "")
+            for m in passed.messages
+        )
         assert summary_found, "요약 메시지가 없음"
 
 

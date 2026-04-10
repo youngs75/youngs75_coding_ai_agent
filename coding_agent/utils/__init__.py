@@ -10,6 +10,13 @@ from .token_optimizer import (
 )
 from .llm_cache import LLMCache, get_llm_cache
 from .profiler import Profiler, profile_sync, profile_async
+from .langfuse_trace_exporter import (
+    extract_trace,
+    extract_session,
+    list_sessions,
+    list_traces,
+    format_conversation_markdown,
+)
 
 __all__ = [
     "setup_logging",
@@ -28,4 +35,9 @@ __all__ = [
     "Profiler",
     "profile_sync",
     "profile_async",
+    "extract_trace",
+    "extract_session",
+    "list_sessions",
+    "list_traces",
+    "format_conversation_markdown",
 ]

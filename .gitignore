@@ -41,6 +41,9 @@ htmlcov/
 # DeepEval
 .deepeval/
 
+# AI 서브에이전트 결과
+.ai/subagent_results/
+
 # Agent 산출물 잔여 파일 (벤치마크/테스트 실행 시 생성)
 fibonacci.py
 test_fibonacci.py

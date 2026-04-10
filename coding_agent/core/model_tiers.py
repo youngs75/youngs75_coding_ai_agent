@@ -424,6 +424,15 @@ def create_chat_model(
     extra_body = kwargs.get("extra_body", {})
     if "enable_thinking" not in extra_body:
         extra_body["enable_thinking"] = False
+
+    # Langfuse 세션 추적: 모든 LLM 호출을 하나의 E2E 세션으로 묶음
+    from coding_agent.utils.e2e_session import get_or_create_session_id
+
+    metadata = extra_body.get("metadata", {})
+    metadata.setdefault("langfuse_session_id", get_or_create_session_id())
+    metadata.setdefault("langfuse_trace_name", f"harness:{litellm_model}")
+    extra_body["metadata"] = metadata
+
     kwargs["extra_body"] = extra_body
 
     # extra_body를 kwargs에서 분리 (ChatOpenAI는 명시적 파라미터로 받아야 함)

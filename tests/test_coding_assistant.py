@@ -131,8 +131,8 @@ class TestMaxToolCallsEnforcement:
         agent.build_graph()
         return agent
 
-    def test_tool_call_count_initialized_in_parse(self):
-        """_parse_request 반환에 tool_call_count=0이 포함된다."""
+    def test_tool_call_count_initialized_in_schema(self):
+        """CodingState에 tool_call_count 필드가 존재한다."""
         from coding_agent.agents.coding_assistant import (
             CodingAssistantAgent,
             CodingConfig,
@@ -140,7 +140,6 @@ class TestMaxToolCallsEnforcement:
 
         config = CodingConfig()
         CodingAssistantAgent(config=config)
-        # _parse_request는 비동기이므로 직접 호출하지 않고 스키마를 확인
         from coding_agent.agents.coding_assistant.schemas import CodingState
 
         # CodingState에 tool_call_count 필드가 존재하는지 확인
@@ -208,8 +207,8 @@ class TestMaxToolCallsEnforcement:
 
         assert result["tool_call_count"] == 5  # 3 + 2
 
-    def test_tool_call_count_resets_on_retry(self):
-        """_verify_result 반환에 tool_call_count=0이 포함되어 재시도 시 리셋된다."""
+    def test_tool_call_count_field_exists(self):
+        """CodingState 스키마에 tool_call_count 필드가 존재한다."""
         # verify_result 반환 구조 확인 (LLM 없이 반환값 구조만 테스트)
         from coding_agent.agents.coding_assistant.schemas import CodingState
 

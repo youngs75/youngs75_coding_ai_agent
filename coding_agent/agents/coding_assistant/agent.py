@@ -30,16 +30,13 @@ from langgraph.types import interrupt
 
 from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
-from coding_agent.core.context_manager import (
-    ContextManager,
-    invoke_with_max_tokens_recovery,
-)
+from coding_agent.core.context_manager import ContextManager
 from coding_agent.core.mcp_loader import MCPToolLoader
 from coding_agent.core.memory.schemas import MemoryItem, MemoryType
 from coding_agent.core.memory.store import MemoryStore
 from coding_agent.core.skills.registry import SkillRegistry
 from coding_agent.core.stall_detector import StallAction, StallDetector
-from coding_agent.core.turn_budget import BudgetVerdict, TurnBudgetTracker
+from coding_agent.core.turn_budget import TurnBudgetTracker
 from coding_agent.core.tool_call_utils import (
     sanitize_messages_for_llm,
     tc_args,
@@ -52,10 +49,8 @@ from .config import CodingConfig
 from .prompts import (
     EXECUTE_SYSTEM_PROMPT,
     GENERATE_FINAL_SYSTEM_PROMPT,
-    PARSE_SYSTEM_PROMPT,
-    VERIFY_SYSTEM_PROMPT,
 )
-from .schemas import CodingState, FileManifest, ParseResultModel, VerifyResultModel
+from .schemas import CodingState
 
 
 def _normalize_file_path(path: str, workspace: str | None = None) -> str:
@@ -80,12 +75,6 @@ def _normalize_file_path(path: str, workspace: str | None = None) -> str:
 
     # "./" 제거, ".." 정규화
     return os.path.normpath(raw)
-
-
-def _similarity_ratio(a: str, b: str) -> float:
-    """두 문자열의 유사도를 0.0~1.0으로 반환한다 (SequenceMatcher 기반)."""
-    from difflib import SequenceMatcher
-    return SequenceMatcher(None, a, b).ratio()
 
 
 async def _execute_tool_safely(tool: Any, args: dict) -> str:
@@ -239,18 +228,10 @@ class CodingAssistantAgent(BaseGraphAgent):
     """
 
     NODE_NAMES: ClassVar[dict[str, str]] = {
-        # 단순화된 4-노드 그래프 (v2)
         "RETRIEVE_MEMORY": "retrieve_memory",
         "GENERATE": "generate_code",
         "RUN_TESTS": "run_tests",
         "INJECT_ERROR": "inject_error",
-        # 레거시 호환 별칭 (기존 코드/테스트 참조용)
-        "PARSE": "retrieve_memory",
-        "EXECUTE": "generate_code",
-        "GENERATE_FINAL": "generate_code",
-        "VERIFY": "run_tests",
-        "APPLY_CODE": "run_tests",
-        "INJECT_TEST_FAILURE": "inject_error",
     }
 
     def __init__(
@@ -270,9 +251,6 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         self._explicit_model = model
         self._gen_model: BaseChatModel | None = None
-        self._tool_planning_model: BaseChatModel | None = None
-        self._verify_model: BaseChatModel | None = None
-        self._parse_model: BaseChatModel | None = None
         self._context_manager = ContextManager(
             max_tokens=getattr(self._coding_config, "max_context_tokens", 128000),
             compact_threshold=getattr(self._coding_config, "compact_threshold", 0.8),
@@ -290,13 +268,30 @@ class CodingAssistantAgent(BaseGraphAgent):
             ResilienceMiddleware,
             SummarizationMiddleware,
         )
+        # DEFAULT 모델: 요약용 (코드 구조 이해가 필요하므로 FAST보다 상위 티어)
+        # 요약은 100K 초과 시에만 드물게 발생, 비용 부담 적음
+        summarize_model = self._coding_config.get_model("verification") if hasattr(
+            self._coding_config, "get_model"
+        ) else None
+
+        # 양파 순서 (바깥→안쪽):
+        # 1. Resilience: 재시도/타임아웃 (가장 바깥)
+        # 2. Summarization(110K): LLM 요약으로 중복/반복 압축 (DEFAULT 모델)
+        # 3. MessageWindow(100K): 토큰 기반 다단계 컴팩션 (규칙 기반 안전망)
+        # 4. Memory: 메모리 컨텍스트 주입 (가장 안쪽)
+        # ※ SLM 컨텍스트 128K 기준, 출력 토큰 ~16K 확보 → 입력 ~110K 사용 가능
         self._middleware_chain = MiddlewareChain([
             ResilienceMiddleware(abort_controller=self._abort_controller),
-            MessageWindowMiddleware(max_turns=4, max_messages=10),
             SummarizationMiddleware(
-                token_threshold=100_000,
-                keep_recent_messages=6,
-                max_tool_arg_chars=2000,
+                token_threshold=110_000,
+                keep_recent_messages=8,
+                max_tool_arg_chars=3000,
+                summarize_model=summarize_model,  # DEFAULT 모델로 LLM 요약
+            ),
+            MessageWindowMiddleware(
+                max_context_tokens=100_000,    # 128K 모델 기준 안전 마진
+                tool_result_max_tokens=8_000,  # 개별 도구 결과 상한
+                keep_recent=8,                 # 최근 보존 메시지 수
             ),
             MemoryMiddleware(memory_store=self._memory_store),
         ])
@@ -325,121 +320,21 @@ class CodingAssistantAgent(BaseGraphAgent):
     async def async_init(self) -> None:
         """MCP 도구를 비동기로 로드한다."""
         self._tools = await self._mcp_loader.load()
+        if not self._tools:
+            logging.getLogger(__name__).warning(
+                "MCP 도구가 0개 로드됨 — write_file 없이는 코드 생성 불가. "
+                "MCP 서버 연결을 확인하세요: %s",
+                self._coding_config.mcp_servers,
+            )
 
     # ── 모델 lazy init ──────────────────────────────────────
-
-    def _get_parse_model(self) -> BaseChatModel:
-        """FAST 티어 모델 반환 — 파싱/분류는 SLM으로 충분."""
-        if self._parse_model is None:
-            self._parse_model = self._explicit_model or self._coding_config.get_model(
-                "parsing"
-            )
-        return self._parse_model
-
-    def _get_tool_planning_model(self) -> BaseChatModel:
-        if self._tool_planning_model is None:
-            self._tool_planning_model = self._coding_config.get_model("tool_planning")
-        return self._tool_planning_model
 
     def _get_gen_model(self) -> BaseChatModel:
         if self._gen_model is None:
             self._gen_model = self._coding_config.get_model("generation")
         return self._gen_model
 
-    def _get_verify_model(self) -> BaseChatModel:
-        if self._verify_model is None:
-            self._verify_model = self._coding_config.get_model("verification")
-        return self._verify_model
-
-    def _get_recovery_limits(self, purpose: str = "generation") -> dict[str, int]:
-        """invoke_with_max_tokens_recovery에 전달할 모델별 한도를 반환한다."""
-        tier_config = self._coding_config.get_tier_config(purpose)
-        return {
-            "model_context_limit": tier_config.total_context_limit,
-            "max_output_tokens": tier_config.max_output_tokens,
-        }
-
     # ── 노드 구현 ──────────────────────────────────────────
-
-    async def _parse_request(self, state: CodingState) -> dict[str, Any]:
-        """사용자 요청을 분석하여 작업 유형과 요구사항을 추출한다.
-
-        FAST(SLM) 티어로 파싱하여 비용 최적화.
-        """
-        # 턴 시작 시 안전장치 초기화
-        self._abort_controller.reset()
-        self._stall_detector.reset()
-        self._turn_budget.reset()
-
-        messages = [
-            SystemMessage(content=PARSE_SYSTEM_PROMPT),
-            *state["messages"],
-        ]
-        # 컨텍스트 컴팩션
-        if self._context_manager.should_compact(messages):
-            messages = await self._context_manager.compact(
-                messages, self._get_parse_model()
-            )
-
-        # Structured Output으로 파싱 결과를 Pydantic 모델로 강제
-        # method="json_mode": FAST 모델(OpenRouter qwen3.5-flash)이 tool_choice를
-        # 지원하지 않으므로 function_calling 대신 json_mode 사용
-        try:
-            structured_model = self._get_parse_model().with_structured_output(
-                ParseResultModel, method="json_mode"
-            )
-            response = await structured_model.ainvoke(messages)
-            parse_result = response.model_dump()
-        except Exception:
-            # Structured Output 미지원 모델이거나 파싱 실패 시 기존 방식으로 폴백
-            response = await invoke_with_max_tokens_recovery(
-                self._get_parse_model(),
-                messages,
-                self._context_manager,
-                **self._get_recovery_limits("parsing"),
-            )
-            try:
-                parse_result = json.loads(response.content)
-            except (json.JSONDecodeError, TypeError):
-                parse_result = {
-                    "task_type": "generate",
-                    "language": "python",
-                    "description": getattr(response, "content", str(response)),
-                    "target_files": [],
-                    "requirements": [],
-                }
-
-        result: dict[str, Any] = {
-            "parse_result": parse_result,
-            "execution_log": [f"[parse] task_type={parse_result.get('task_type')}"],
-            "iteration": state.get("iteration", 0),
-            "max_iterations": state.get("max_iterations", 3),
-            "tool_call_count": 0,
-        }
-
-        # task_type 기반 스킬 자동 활성화
-        # orchestrator가 이미 skill_context를 주입한 경우 중복 방지
-        existing_skills = state.get("skill_context", [])
-        if self._skill_registry and not existing_skills:
-            task_type = parse_result.get("task_type", "generate")
-            framework_hint = parse_result.get("framework", "")
-            activated = self._skill_registry.auto_activate_for_task(
-                task_type, framework_hint=framework_hint
-            )
-            if activated:
-                # L2 본문이 로드된 스킬의 컨텍스트 주입
-                skill_bodies = self._skill_registry.get_active_skill_bodies()
-                if skill_bodies:
-                    result["skill_context"] = skill_bodies
-                result["execution_log"].append(
-                    f"[skills] 자동 활성화: {', '.join(activated)}"
-                )
-        elif existing_skills:
-            result["execution_log"].append(
-                f"[skills] orchestrator에서 주입된 스킬 사용 ({len(existing_skills)}건)"
-            )
-
-        return result
 
     async def _retrieve_memory(self, state: CodingState) -> dict[str, Any]:
         """진입점: 안전장치 초기화 + Memory 검색.
@@ -634,168 +529,6 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return HumanMessage(content="\n".join(context_parts))
 
-    async def _execute_code(self, state: CodingState) -> dict[str, Any]:
-        """ReAct 루프 1단계: 도구 호출을 판단하고 컨텍스트를 수집한다.
-
-        generate 작업은 LLM 호출 없이 패스스루 — generate_final(STRONG)이 직접 생성.
-        fix/refactor/analyze만 FAST 모델로 도구 호출을 판단한다.
-        """
-        parse_result = state.get("parse_result", {})
-        task_type = parse_result.get("task_type", "generate")
-        iteration = state.get("iteration", 0)
-        log = state.get("execution_log", [])
-
-
-        # generate/scaffold/analyze 작업 → LLM 호출 없이 패스스루 (이중 생성 방지)
-        # generate_final(STRONG)이 직접 코드를 생성한다.
-        # scaffold도 FAST 모델이 도구를 호출하지 않고 저품질 코드를 생성하므로 STRONG 직행.
-        # analyze도 FAST 모델이 read_file 도구를 호출하지 않는 문제 → STRONG 직행.
-        if task_type in ("generate", "scaffold", "analyze") and iteration == 0:
-            log.append(f"[execute] {task_type} 태스크 — FAST 스킵, STRONG으로 직행")
-            return {"execution_log": log}
-
-        system_prompt = self._build_execute_system_prompt(state)
-        context_msg = self._build_context_message(state)
-
-        # fix/refactor/analyze만 도구가 필요 (기존 파일 읽기/수정)
-        needs_tools = task_type in ("fix", "refactor", "analyze")
-
-        llm_with_tools = self._get_tool_planning_model()
-        if needs_tools and self._tools:
-            llm_with_tools = llm_with_tools.bind_tools(self._tools)
-
-        # 미들웨어 체인으로 메시지 관리 (윈도우 + 컴팩션)
-        from coding_agent.core.middleware import ModelRequest as MWRequest
-
-        sanitized = sanitize_messages_for_llm(state["messages"])
-        sanitized.append(context_msg)
-
-        mw_request = MWRequest(
-            system_message=system_prompt,
-            messages=sanitized,
-            state=dict(state),
-            model_name="tool_planning",
-            metadata={
-                "purpose": "tool_planning",
-                "request_timeout": self._coding_config.get_request_timeout("tool_planning"),
-            },
-        )
-
-        try:
-            mw_response = await self._middleware_chain.invoke(mw_request, llm_with_tools)
-            response = mw_response.message
-        except Exception as e:
-            # DashScope 400 (invalid JSON arguments) 등 LLM 호출 실패 방어
-            error_msg = str(e)
-            logging.getLogger(__name__).warning(
-                "[execute] LLM 호출 실패 — GENERATE_FINAL로 전환: %s", error_msg[:200]
-            )
-            log.append(f"[execute] LLM 오류 — GENERATE_FINAL로 전환: {error_msg[:100]}")
-            return {
-                "generated_code": "",
-                "execution_log": log,
-                "exit_reason": "llm_error",
-            }
-
-        # 토큰 예산 추적 (감소수익 감지)
-        output_tokens = 0
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            output_tokens = getattr(response.usage_metadata, "output_tokens", 0)
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("usage", {})
-            output_tokens = usage.get("completion_tokens", 0)
-        # 폴백: 콘텐츠 길이 기반 추정
-        if output_tokens == 0 and response.content:
-            output_tokens = len(response.content) // 4
-
-        budget_verdict = self._turn_budget.record_llm_call(output_tokens)
-
-        # StallDetector: 도구 호출 후 반복 패턴 체크
-        tool_calls = getattr(response, "tool_calls", None) or []
-        for call in tool_calls:
-            stall_action = self._stall_detector.record_and_check(
-                tc_name(call), tc_args(call)
-            )
-            if stall_action == StallAction.WARN:
-                log.append(
-                    "[stall] 진전 없음 감지 — 다른 접근을 시도하세요"
-                )
-            elif stall_action == StallAction.FORCE_EXIT:
-                summary = self._stall_detector.get_stall_summary()
-                log.append(f"[stall] FORCE_EXIT: {summary}")
-                return {
-                    "generated_code": response.content or "",
-                    "execution_log": log,
-                    "exit_reason": "stall_detected",
-                }
-
-        log.append(
-            f"[execute] iteration={iteration}, tools_bound={needs_tools}, model=FAST"
-        )
-
-        result: dict[str, Any] = {
-            "generated_code": response.content or "",
-            "execution_log": log,
-            # messages에 LLM 응답을 추가하지 않음 — 검증 재시도 시 컨텍스트 폭증 방지
-            # 코드 내용은 generated_code 필드에 저장됨
-        }
-
-        if budget_verdict == BudgetVerdict.STOP:
-            result["exit_reason"] = "budget_exceeded"
-            log.append(f"[budget] {self._turn_budget.get_summary()}")
-
-        return result
-
-    # ── FileManifest (Structured Output) ──
-
-    _MANIFEST_SYSTEM_PROMPT = (
-        "당신은 소프트웨어 아키텍트입니다. "
-        "요구사항과 파일 목록을 받아, 파일 간 공유되는 함수와 객체의 계약을 선언하세요. "
-        "특히 팩토리 함수(create_app 등)의 매개변수와, "
-        "공유 객체(db, config 등)의 정의 위치를 명확히 지정하세요. "
-        "응답은 반드시 JSON 형식으로 반환하세요."
-    )
-
-    async def _plan_file_manifest(self, state: CodingState) -> dict[str, Any]:
-        """코드 생성 전 파일 간 인터페이스를 Structured Output으로 선언한다.
-
-        FAST(SLM) 모델로 FileManifest Pydantic 모델을 생성하여
-        _generate_final에서 참조할 수 있도록 state에 저장.
-        """
-        log = list(state.get("execution_log", []))
-        planned_files = state.get("planned_files", [])
-        parse_result = state.get("parse_result", {})
-
-        # planned_files가 없으면 스킵
-        if not planned_files or len(planned_files) < 2:
-            log.append("[manifest] 파일 2개 미만 — 매니페스트 스킵")
-            return {"execution_log": log}
-
-        prompt = (
-            f"요구사항: {parse_result.get('description', '')}\n\n"
-            f"생성할 파일 목록:\n"
-            + "\n".join(f"- {f}" for f in planned_files)
-            + "\n\n각 파일에서 다른 파일이 사용할 함수와 공유 객체를 선언하세요."
-        )
-
-        try:
-            manifest_model = self._get_parse_model().with_structured_output(
-                FileManifest, method="json_mode"
-            )
-            response = await manifest_model.ainvoke([
-                SystemMessage(content=self._MANIFEST_SYSTEM_PROMPT),
-                HumanMessage(content=prompt),
-            ])
-            manifest = response.model_dump()
-            log.append(
-                f"[manifest] {len(manifest.get('files', []))}개 파일, "
-                f"{len(manifest.get('contracts', []))}개 계약 선언"
-            )
-            return {"file_manifest": manifest, "execution_log": log}
-        except Exception as e:
-            log.append(f"[manifest] Structured Output 실패, 스킵: {e}")
-            return {"execution_log": log}
-
     @staticmethod
     def _format_manifest(manifest: dict) -> str:
         """FileManifest dict를 프롬프트 주입용 텍스트로 변환한다."""
@@ -956,10 +689,18 @@ class CodingAssistantAgent(BaseGraphAgent):
         ]
         if write_tools:
             gen_model = gen_model.bind_tools(write_tools)
+        else:
+            logging.getLogger(__name__).error(
+                "[generate_final] write_file 도구 없음 — MCP 도구 %d개 중 매칭 0개. "
+                "코드 생성이 텍스트 전용으로 실행됩니다.",
+                len(self._tools),
+            )
 
         from coding_agent.core.middleware import ModelRequest as MWRequest
         from langchain_core.messages import ToolMessage
 
+        # 메시지 정리는 MessageWindowMiddleware(토큰 기반 다단계 컴팩션)에 위임.
+        # 에러 메시지 우선 보존 + 오래된 도구 결과 자동 정리가 미들웨어에서 처리됨.
         sanitized = sanitize_messages_for_llm(state["messages"])
         sanitized.append(context_msg)
 
@@ -1247,140 +988,6 @@ class CodingAssistantAgent(BaseGraphAgent):
         }
 
     # 검증 타임아웃 (초) — 이 시간 초과 시 검증 스킵하고 진행
-    _VERIFY_TIMEOUT_S = 30
-    # 검증에 보낼 코드 최대 길이 (토큰 폭발 방지)
-    _VERIFY_MAX_CODE_CHARS = 4000
-
-    async def _verify_result(self, state: CodingState) -> dict[str, Any]:
-        """생성된 코드를 검증한다.
-
-        안전장치:
-        - simple 태스크는 검증 스킵 (불필요한 LLM 호출 방지)
-        - 긴 코드는 truncation하여 검증 (토큰 폭발 방지)
-        - 타임아웃 보호 (30초 초과 시 graceful skip)
-        - LLM 호출 실패 시 passed=True로 폴백 (파이프라인 중단 방지)
-        """
-        generated_code = state.get("generated_code", "")
-        parse_result = state.get("parse_result", {})
-        log = state.get("execution_log", [])
-
-        # simple 태스크는 검증 스킵 (단, HTML/프론트엔드 코드는 항상 검증)
-        task_type = parse_result.get("task_type", "generate")
-        language = parse_result.get("language", "").lower()
-        _frontend_langs = {"html", "css", "javascript", "typescript", "vue", "react", "svelte"}
-        is_frontend = language in _frontend_langs or any(
-            ext in generated_code[:200].lower()
-            for ext in ("<!doctype", "<html", "<head", "<body")
-        )
-        if task_type == "generate" and len(generated_code) < 500 and not is_frontend:
-            log.append("[verify] simple 태스크 — 검증 스킵")
-            return {
-                "verify_result": {"passed": True, "issues": [], "suggestions": []},
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-        # 코드 truncation — 검증에 전문 대신 요약만 전달
-        code_for_verify = generated_code
-        if len(code_for_verify) > self._VERIFY_MAX_CODE_CHARS:
-            code_for_verify = (
-                code_for_verify[: self._VERIFY_MAX_CODE_CHARS]
-                + f"\n\n... (총 {len(generated_code)}자 중 {self._VERIFY_MAX_CODE_CHARS}자만 검증)"
-            )
-
-        verify_prompt = VERIFY_SYSTEM_PROMPT.format(
-            max_delete_lines=self._coding_config.max_delete_lines,
-            allowed_extensions=", ".join(self._coding_config.allowed_extensions),
-        )
-        verify_context = (
-            f"원래 요청: {parse_result.get('description', '')}\n\n"
-            f"생성된 코드:\n{code_for_verify}"
-        )
-        messages = [
-            SystemMessage(content=verify_prompt),
-            HumanMessage(content=verify_context),
-        ]
-
-        # 타임아웃 + 에러 보호
-        verify_result: dict[str, Any]
-        try:
-            async with asyncio.timeout(self._VERIFY_TIMEOUT_S):
-                # Structured Output으로 검증 결과를 Pydantic 모델로 강제
-                try:
-                    structured_model = self._get_verify_model().with_structured_output(
-                        VerifyResultModel, method="function_calling"
-                    )
-                    response = await structured_model.ainvoke(messages)
-                    verify_result = response.model_dump()
-                except Exception:
-                    # Structured Output 미지원 시 기존 방식으로 폴백
-                    response = await invoke_with_max_tokens_recovery(
-                        self._get_verify_model(),
-                        messages,
-                        self._context_manager,
-                        **self._get_recovery_limits("verification"),
-                    )
-                    verify_result = json.loads(response.content)
-        except TimeoutError:
-            logging.getLogger(__name__).warning(
-                "verify_result 타임아웃 (%ds) — 검증 스킵", self._VERIFY_TIMEOUT_S
-            )
-            log.append(f"[verify] 타임아웃 ({self._VERIFY_TIMEOUT_S}s) — 스킵")
-            verify_result = {
-                "passed": True,
-                "issues": [],
-                "suggestions": ["검증 타임아웃으로 스킵됨"],
-            }
-        except (json.JSONDecodeError, TypeError):
-            verify_result = {"passed": True, "issues": [], "suggestions": []}
-        except Exception as e:
-            logging.getLogger(__name__).warning("verify_result 실패: %s", e)
-            log.append(f"[verify] 오류 — 스킵: {e}")
-            verify_result = {
-                "passed": True,
-                "issues": [],
-                "suggestions": [f"검증 오류: {e}"],
-            }
-
-        # ── 정적 API 일치 검증 ──
-        api_issues = self._check_api_consistency(generated_code)
-        # ── 정적 함수 시그니처 일치 검증 ──
-        sig_issues = self._check_signature_consistency(generated_code)
-        static_issues = api_issues + sig_issues
-        if static_issues:
-            existing_issues = verify_result.get("issues", [])
-            verify_result["issues"] = static_issues + existing_issues
-            # P0/P1 이슈가 있으면 실패로 재판정
-            if any(i.startswith("[P0]") or i.startswith("[P1]") for i in static_issues):
-                verify_result["passed"] = False
-                log.append(f"[verify] 정적 검증 실패: {len(static_issues)}건")
-
-        log.append(f"[verify] passed={verify_result.get('passed')}")
-
-        result: dict[str, Any] = {
-            "verify_result": verify_result,
-            "execution_log": log,
-            "iteration": state.get("iteration", 0) + 1,
-            # 이전 exit_reason 클리어 — 재시도 시 잔존하면 _should_retry가 즉시 탈출함
-            "exit_reason": "",
-            # 현재 생성 코드를 _prev로 저장 — 테스트 실패 시 동일 코드 반복 감지용
-            "_prev_generated_code": generated_code,
-        }
-
-        # 검증 실패 시 written_files 초기화 (재생성 시 새로 쓰도록)
-        if not verify_result.get("passed"):
-            result["written_files"] = []
-
-        # Procedural Memory 훅: 검증 통과 시 코드 패턴 자동 누적
-        if verify_result.get("passed") and self._memory_store:
-            self._accumulate_skill_from_execution(state, result)
-
-        # Episodic Memory 훅
-        if self._memory_store:
-            self._record_episodic_memory(state, verify_result)
-
-        return result
-
     # ── 실행 기반 검증 ─────────────────────────────────────
 
     _RUN_TESTS_TIMEOUT_S = 60
@@ -2388,159 +1995,7 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     # ── 코드 적용 (파일 저장) ──────────────────────────────
 
-    async def _apply_code(self, state: CodingState) -> dict[str, Any]:
-        """생성된 코드에서 파일을 저장한다.
-
-        write_file 도구로 이미 저장된 경우 스킵하고,
-        그렇지 않으면 마크다운 파싱 폴백을 수행한다.
-        """
-        log = list(state.get("execution_log", []))
-
-        # 도구 호출로 이미 파일이 저장된 경우 → 스킵
-        existing_written = state.get("written_files", [])
-        if existing_written:
-            log.append(
-                f"[apply] write_file 도구로 {len(existing_written)}개 파일 "
-                "이미 저장 — 마크다운 파싱 스킵"
-            )
-            return {"written_files": existing_written, "execution_log": log}
-
-        # Fallback: 마크다운 파싱 (도구 호출이 없었을 때)
-        generated_code = state.get("generated_code", "")
-        if not generated_code:
-            log.append("[apply] 생성된 코드 없음 — 스킵")
-            return {"written_files": [], "execution_log": log}
-
-        blocks = _extract_code_blocks(generated_code)
-
-        # 방어: 코드 블록은 있는데 filepath 추출이 0인 경우 → 재시도 트리거
-        fence_count = len(_FENCE_RE.findall(generated_code))
-        if fence_count > 0 and len(blocks) == 0:
-            log.append(
-                f"[apply] ⚠ 코드 블록 {fence_count}개 발견, filepath 추출 0개 "
-                "— filepath 주석 누락으로 파일 저장 실패"
-            )
-            return {
-                "written_files": [],
-                "execution_log": log,
-                "verify_result": {
-                    "passed": False,
-                    "issues": [
-                        f"코드 블록 {fence_count}개가 있지만 filepath 주석이 없어 파일 저장 불가. "
-                        "모든 코드 블록 첫 줄에 '# filepath: path/to/file.py' 형식의 주석을 추가하세요."
-                    ],
-                },
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-        if not blocks:
-            log.append("[apply] 추출된 코드 블록 없음 — 스킵")
-            return {"written_files": [], "execution_log": log}
-
-        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
-        workspace_resolved = os.path.realpath(workspace)
-        written: list[str] = []
-
-        for block in blocks:
-            filepath = _normalize_file_path(block["filepath"], workspace)
-            code = block["code"]
-
-            # 절대 경로 계산
-            full_path = os.path.join(workspace, filepath)
-
-            resolved = os.path.realpath(full_path)
-
-            # 보안: workspace 밖 쓰기 금지
-            if (
-                not resolved.startswith(workspace_resolved + os.sep)
-                and resolved != workspace_resolved
-            ):
-                log.append(f"[apply] workspace 외부 경로 스킵: {filepath}")
-                continue
-
-            # 보안: 금지 경로 체크
-            if any(forbidden in resolved for forbidden in _FORBIDDEN_PATHS):
-                log.append(f"[apply] 금지 경로 스킵: {filepath}")
-                continue
-
-            try:
-                dir_path = os.path.dirname(resolved)
-                if dir_path:
-                    os.makedirs(dir_path, exist_ok=True)
-                with open(resolved, "w", encoding="utf-8") as f:
-                    f.write(code)
-                    if not code.endswith("\n"):
-                        f.write("\n")
-                line_count = code.count("\n") + 1
-                written.append(f"{filepath} (+{line_count} lines)")
-                log.append(f"[apply] ✓ {filepath} (+{line_count} lines)")
-            except OSError as e:
-                log.append(f"[apply] ✗ {filepath}: {e}")
-
-        return {
-            "written_files": written,
-            "execution_log": log,
-        }
-
     # ── 라우팅 ──────────────────────────────────────────────
-
-    def _should_use_tools(self, state: CodingState) -> str:
-        """execute 후 라우팅 판단.
-
-        우선순위:
-        1. exit_reason이 설정됨 → PLAN_MANIFEST (안전장치 발동)
-        2. 도구 호출 한도 도달 → PLAN_MANIFEST (루프 강제 탈출)
-        3. 도구 호출이 있으면 → EXECUTE_TOOLS (ReAct 루프 계속)
-        4. 도구를 한 번이라도 사용했으면 → PLAN_MANIFEST (STRONG으로 최종 생성)
-        5. 도구를 전혀 사용하지 않았으면 → VERIFY (FAST 출력 그대로 검증)
-        """
-        # 안전장치 발동 시 즉시 최종 생성으로 전환
-        exit_reason = state.get("exit_reason", "")
-        if exit_reason:
-            return self.get_node_name("PLAN_MANIFEST")
-
-        # generate/scaffold/analyze 작업 → ReAct 루프 불필요, STRONG 모델로 직접 생성
-        parse_result = state.get("parse_result", {})
-        task_type = parse_result.get("task_type", "generate")
-        if task_type in ("generate", "scaffold", "analyze"):
-            return self.get_node_name("PLAN_MANIFEST")
-
-        tool_call_count = state.get("tool_call_count", 0)
-        max_calls = self._coding_config.max_tool_calls
-
-        # 도구 호출 한도 도달 시 강제 탈출 (recursion_limit 방어)
-        if tool_call_count >= max_calls:
-            return self.get_node_name("PLAN_MANIFEST")
-
-        messages = state.get("messages", [])
-        last_msg = messages[-1] if messages else None
-        tool_calls = getattr(last_msg, "tool_calls", None) or []
-
-        if tool_calls:
-            return self.get_node_name("EXECUTE_TOOLS")
-
-        # 도구를 한 번이라도 사용했으면 STRONG 모델로 최종 생성
-        if tool_call_count > 0:
-            return self.get_node_name("PLAN_MANIFEST")
-
-        # 도구 미사용 → FAST 출력 그대로 검증 (불필요한 STRONG 호출 생략)
-        return self.get_node_name("VERIFY")
-
-    def _should_retry(self, state: CodingState) -> str:
-        """LLM 검증 실패 시 재시도 여부를 판단한다."""
-        verify_result = state.get("verify_result", {})
-        iteration = state.get("iteration", 0)
-        max_iterations = state.get("max_iterations", 3)
-
-        if verify_result.get("passed", True):
-            return self.get_node_name("APPLY_CODE")
-        if iteration >= max_iterations:
-            return self.get_node_name("APPLY_CODE")
-        # StallDetector FORCE_EXIT 등 안전장치 발동 시 재시도하지 않고 현재 코드로 진행
-        exit_reason = state.get("exit_reason", "")
-        if exit_reason:
-            return self.get_node_name("APPLY_CODE")
-        return self.get_node_name("EXECUTE")
 
     def _should_retry_tests(self, state: CodingState) -> str:
         """실행 기반 테스트 실패 시 수정 루프를 결정한다.
@@ -3042,12 +2497,58 @@ class CodingAssistantAgent(BaseGraphAgent):
                     deps_changed = True
                     log.append(f"[inject_error] requirements.txt에 자동 추가: {added}")
 
-        # 3. 에러 원문만 전달 — LLM이 직접 판단
+        # 3. traceback에서 관련 파일 추출 → 실제 내용 수집 (기계적 작업)
+        error_files: dict[str, str] = {}
+        for tb_match in re.finditer(r'File "([^"]+)"', test_output):
+            fpath = tb_match.group(1)
+            if workspace in fpath and ".venv" not in fpath and "site-packages" not in fpath:
+                rel = os.path.relpath(fpath, workspace)
+                abs_path = os.path.join(workspace, rel)
+                if os.path.exists(abs_path) and rel not in error_files:
+                    try:
+                        content = open(abs_path, encoding="utf-8").read()
+                        if len(content) > 3000:
+                            content = content[:3000] + "\n... (truncated)"
+                        error_files[rel] = content
+                    except Exception:
+                        pass
+
+        # ImportError/NameError에서 참조되는 모듈 파일도 수집
+        for imp_match in re.finditer(
+            r"(?:cannot import name ['\"](\w+)['\"] from ['\"]([^'\"]+)['\"]"
+            r"|No module named ['\"]([^'\"]+)['\"])",
+            test_output,
+        ):
+            module_path = imp_match.group(2) or imp_match.group(3) or ""
+            if module_path:
+                # 모듈 경로를 파일 경로로 변환 (backend.routes → backend/routes.py)
+                file_path = module_path.replace(".", "/") + ".py"
+                abs_path = os.path.join(workspace, file_path)
+                if os.path.exists(abs_path) and file_path not in error_files:
+                    try:
+                        content = open(abs_path, encoding="utf-8").read()
+                        if len(content) > 3000:
+                            content = content[:3000] + "\n... (truncated)"
+                        error_files[file_path] = content
+                    except Exception:
+                        pass
+
+        # 4. 에러 원문 + 관련 파일 내용 전달 — LLM이 직접 판단
+        file_context = ""
+        if error_files:
+            file_context = "\n\n## 에러에 관련된 파일 내용\n"
+            file_context += "아래 파일에서 에러가 발생했습니다. **불일치 부분만 수정**하세요.\n"
+            for rel_path, content in list(error_files.items())[:5]:
+                file_context += f"\n### {rel_path}\n```python\n{content}\n```\n"
+
         error_msg = HumanMessage(content=(
             f"테스트가 실패했습니다 (시도 {iteration}회). "
-            f"에러를 분석하고 수정하세요.\n\n"
-            f"```\n{test_output[:3000]}\n```\n\n"
-            f"수정된 파일을 write_file 도구로 저장하세요."
+            f"에러를 분석하고 **해당 파일만** 수정하세요.\n\n"
+            f"### 에러 출력\n"
+            f"```\n{test_output[:3000]}\n```\n"
+            f"{file_context}\n"
+            f"**전체 파일을 새로 만들지 말고, 에러가 발생한 파일만 read_file로 읽고 "
+            f"문제가 되는 부분을 수정하여 write_file로 저장하세요.**"
         ))
 
         log.append(f"[inject_error] 에러 원문 주입 (iteration={iteration})")
@@ -3058,249 +2559,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             "written_files": [],
             "_prev_generated_code": state.get("generated_code", ""),
             "_prev_test_output": test_output,
-            "_deps_changed": deps_changed,
-        }
-
-    async def _inject_test_failure(self, state: CodingState) -> dict[str, Any]:
-        """[레거시] 테스트 실패 에러를 messages에 주입. _inject_error로 대체됨."""
-        test_output = state.get("test_output", "")
-        log = list(state.get("execution_log", []))
-        iteration = state.get("iteration", 0)
-
-        # 반복 감지 1: 동일 코드 반복 (유사도 비교)
-        generated_code = state.get("generated_code", "")
-        prev_code = state.get("_prev_generated_code", "")
-        if prev_code and generated_code:
-            norm_cur = re.sub(r"\s+", " ", generated_code).strip()
-            norm_prev = re.sub(r"\s+", " ", prev_code).strip()
-            if norm_cur == norm_prev or (
-                len(norm_cur) > 100
-                and abs(len(norm_cur) - len(norm_prev)) < len(norm_cur) * 0.05
-                and norm_cur[:500] == norm_prev[:500]
-            ):
-                log.append("[inject_test_failure] 동일 코드 반복 감지 — 재시도 중단")
-                return {
-                    "test_passed": True,
-                    "test_output": f"동일 코드 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
-                    "execution_log": log,
-                }
-
-        # 반복 감지 2: 동일 테스트 에러 반복 (연속 2회 같은 에러 패턴이면 중단)
-        prev_test_output = state.get("_prev_test_output", "")
-        if prev_test_output and test_output and iteration >= 2:
-            # 에러 패턴 정규화: 숫자를 제거하고 핵심 에러 구조만 비교
-            # "assert 405 == 404"와 "assert 404 == 405" → 같은 에러로 판정
-            _FAIL_KEYWORDS = ("FAILED", "ERROR", "assert", "--- FAIL", "panic",
-                              "failures:", "panicked", "FAIL ", "●", "Expected")
-
-            def _normalize_error(s: str) -> str:
-                """에러 라인을 추출하고 숫자를 정규화하여 비교 가능한 형태로 변환."""
-                lines = [line.strip() for line in s.split("\n")
-                         if any(kw in line for kw in _FAIL_KEYWORDS)]
-                # 숫자를 N으로 치환 → "assert 405 == 404" → "assert N == N"
-                normalized = "\n".join(lines[:20])
-                normalized = re.sub(r"\b\d+\b", "N", normalized)
-                # 공백 정규화
-                normalized = re.sub(r"\s+", " ", normalized).strip()
-                return normalized
-
-            cur_norm = _normalize_error(test_output)
-            prev_norm = _normalize_error(prev_test_output)
-            if cur_norm and (cur_norm == prev_norm or (
-                len(cur_norm) > 20
-                and _similarity_ratio(cur_norm, prev_norm) > 0.85
-            )):
-                log.append("[inject_test_failure] 동일 테스트 에러 반복 감지 — 재시도 중단")
-                return {
-                    "test_passed": True,
-                    "test_output": f"동일 에러 반복으로 재시도 중단 (시도 {iteration}회)\n{test_output[:500]}",
-                    "execution_log": log,
-                }
-
-        error_type, guidance = self._classify_test_error(test_output)
-        log.append(f"[inject_test_failure] 에러 유형: {error_type}")
-
-        # 반복 감지 3: 이종 에러 진동 (A→B→A→B 패턴)
-        error_history = list(state.get("_error_type_history", []))
-        error_history.append(error_type)
-        oscillation_detected = False
-        if len(error_history) >= 4:
-            # 마지막 4개에서 A-B-A-B 패턴 감지
-            last4 = error_history[-4:]
-            if (last4[0] == last4[2] and last4[1] == last4[3]
-                    and last4[0] != last4[1]):
-                oscillation_detected = True
-                log.append(
-                    f"[inject_test_failure] 이종 에러 진동 감지: "
-                    f"{last4[0]} ↔ {last4[1]} — 전체 재생성 강제"
-                )
-        if not oscillation_detected and len(error_history) >= 3:
-            # 3개 중 2종류가 번갈아 나오는 패턴도 감지
-            last3 = error_history[-3:]
-            if last3[0] == last3[2] and last3[0] != last3[1]:
-                oscillation_detected = True
-                log.append(
-                    f"[inject_test_failure] 이종 에러 진동 감지: "
-                    f"{last3[0]} ↔ {last3[1]} — 전체 재생성 강제"
-                )
-
-        # 진동 감지 시: 이전 코드를 완전히 버리고 근본적 재설계를 요구
-        oscillation_hint = ""
-        if oscillation_detected:
-            oscillation_hint = (
-                "\n\n### 🔴 이종 에러 진동 감지 — 전략 변경 필수\n"
-                f"최근 시도에서 **{error_history[-2]}** ↔ **{error_history[-1]}** "
-                "에러가 반복 교차되고 있습니다. 부분 수정으로는 해결 불가합니다.\n\n"
-                "**반드시 다음을 수행하세요:**\n"
-                "1. 이전에 생성한 모든 파일의 구조를 **처음부터 재설계**하세요\n"
-                "2. 순환 import를 원천 차단: 공유 객체(db, config)는 "
-                "**단일 파일(extensions.py)**에만 정의하고 다른 파일에서 import\n"
-                "3. Blueprint 등록 시 url_prefix와 테스트 코드의 URL이 "
-                "**정확히 일치**하는지 확인\n"
-                "4. 모든 파일을 **한 번에 write_file로 저장** — 일부만 수정하지 마세요\n"
-            )
-
-        # ── ModuleNotFoundError 자동 패치 ──
-        deps_changed = False
-        if error_type == "ModuleNotFoundError":
-            missing_modules = re.findall(
-                r"No module named ['\"]([^'\"]+)['\"]", test_output
-            )
-            if missing_modules:
-                workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
-                req_path = os.path.join(workspace, "requirements.txt")
-                if os.path.exists(req_path):
-                    with open(req_path) as f:
-                        existing = f.read()
-                    existing_pkgs = {
-                        line.split("==")[0].split(">=")[0].split("<=")[0].split("[")[0].strip().lower()
-                        for line in existing.splitlines()
-                        if line.strip() and not line.strip().startswith("#")
-                    }
-                    added = []
-                    for mod in missing_modules:
-                        # 최상위 패키지명만 추출 (예: backend.config → backend는 프로젝트 내부)
-                        top_pkg = mod.split(".")[0].replace("_", "-")
-                        # 프로젝트 내부 모듈이면 스킵
-                        internal_dir = os.path.join(workspace, mod.split(".")[0])
-                        if os.path.exists(internal_dir) or os.path.exists(internal_dir + ".py"):
-                            continue
-                        if top_pkg.lower() not in existing_pkgs:
-                            added.append(top_pkg)
-                    if added:
-                        with open(req_path, "a") as f:
-                            for pkg in added:
-                                f.write(f"\n{pkg}")
-                        deps_changed = True
-                        log.append(
-                            f"[inject_test_failure] requirements.txt에 자동 추가: {added}"
-                        )
-
-        # ── 재시도 횟수 기반 에스컬레이션 힌트 ──
-        escalation_hint = ""
-        if iteration >= 3:
-            escalation_hint = (
-                "\n\n### ⚠️ 반복 실패 경고 (3회 이상)\n"
-                f"이전 {iteration}회 재시도에서 같은 유형의 에러가 반복되었습니다. "
-                "이 에러는 현재 Phase 범위에서 해결 불가할 수 있습니다. "
-                "**문제가 되는 참조/import/relationship을 완전히 제거**하세요. "
-                "복잡한 의존성을 추가하지 말고, 현재 Phase에서 구현 가능한 범위로 단순화하세요.\n"
-            )
-        elif iteration >= 2:
-            escalation_hint = (
-                "\n\n### ⚠️ 반복 실패 경고\n"
-                f"이전 {iteration}회 재시도에서 같은 유형의 에러가 반복되었습니다. "
-                "근본적으로 다른 접근이 필요합니다. "
-                "같은 방식으로 수정하지 말고, 문제의 근본 원인을 제거하세요.\n"
-            )
-
-        # 이전 phase 파일 목록 수집 (MCP read_file로 읽을 수 있도록 안내)
-        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
-        written_files = state.get("written_files", [])
-        existing_hint = ""
-        if written_files:
-            all_files: list[str] = []
-            for root, _dirs, files in os.walk(workspace):
-                for fname in files:
-                    rel = os.path.relpath(os.path.join(root, fname), workspace)
-                    if not rel.startswith((".venv", "__pycache__", ".git", "node_modules")):
-                        all_files.append(rel)
-            if all_files:
-                existing_hint = (
-                    "\n\n### 프로젝트 내 기존 파일 (수정 가능)\n"
-                    f"```\n{chr(10).join(sorted(all_files)[:30])}\n```\n"
-                    "**위 파일 중 에러의 원인이 되는 파일이 있다면 해당 파일도 함께 수정하세요.**\n"
-                    "예: 초기화 파일에 라우트/모듈 등록이 누락되었거나, "
-                    "설정 파일에 의존성이 빠져있다면 해당 파일도 수정 코드에 포함하세요.\n"
-                )
-
-        # traceback에서 관련 파일 추출 → 실제 내용 주입
-        error_files: set[str] = set()
-        for tb_match in re.finditer(r'File "([^"]+)"', test_output):
-            fpath = tb_match.group(1)
-            if workspace in fpath and ".venv" not in fpath and "site-packages" not in fpath:
-                rel = os.path.relpath(fpath, workspace)
-                error_files.add(rel)
-
-        file_contents_hint = ""
-        for rel_path in sorted(error_files)[:3]:
-            abs_path = os.path.join(workspace, rel_path)
-            if os.path.exists(abs_path):
-                try:
-                    with open(abs_path) as f:
-                        content = f.read()
-                    if len(content) > 3000:
-                        content = content[:3000] + "\n... (truncated)"
-                    file_contents_hint += (
-                        f"\n\n### 관련 파일: {rel_path}\n```\n{content}\n```\n"
-                    )
-                except Exception:
-                    pass
-
-        if file_contents_hint:
-            file_contents_hint = (
-                "\n\n## 에러에 관련된 파일 내용 (수정 필요)\n"
-                "아래 파일들이 traceback에서 참조됩니다. "
-                "**파일 간 함수 시그니처, import, 변수명이 일관되도록** 수정하세요."
-                + file_contents_hint
-            )
-
-        # ── 이전 시도 히스토리 요약 (컨텍스트 보존) ──
-        retry_history_hint = ""
-        if len(error_history) >= 2:
-            history_lines = []
-            for idx, err_type in enumerate(error_history, 1):
-                history_lines.append(f"  - 시도 {idx}: {err_type}")
-            retry_history_hint = (
-                "\n\n### 이전 시도 이력\n"
-                "지금까지의 에러 유형 변화입니다. "
-                "**이전에 실패한 접근법을 반복하지 마세요.**\n"
-                + "\n".join(history_lines) + "\n"
-            )
-
-        error_msg = HumanMessage(content=(
-            f"## 테스트 실행 실패 (시도 {iteration}회)\n\n"
-            f"### 에러 유형: {error_type}\n"
-            f"**수정 방향**: {guidance}\n\n"
-            f"### 에러 출력:\n"
-            f"```\n{test_output[:2000]}\n```\n"
-            f"{oscillation_hint}"
-            f"{retry_history_hint}"
-            f"{escalation_hint}"
-            f"{existing_hint}"
-            f"{file_contents_hint}\n"
-            f"위 수정 방향을 반드시 따라 코드를 수정하세요. "
-            f"수정된 파일을 write_file 도구로 저장하세요."
-        ))
-        log.append(f"[inject_test_failure] 에러 주입, 수정 루프 시작 (iteration={iteration})")
-
-        return {
-            "messages": [error_msg],
-            "execution_log": log,
-            "written_files": [],  # 재생성 시 새로 쓰도록 초기화
-            "_prev_generated_code": generated_code,
-            "_prev_test_output": test_output,
-            "_error_type_history": error_history,
             "_deps_changed": deps_changed,
         }
 
