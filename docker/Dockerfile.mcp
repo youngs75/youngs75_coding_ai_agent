@@ -3,7 +3,7 @@
 # 빌드 컨텍스트: 프로젝트 루트 (..)
 # 단일 서버로 코드 도구 11개 + 검색 도구 4개 = 15개 도구 제공
 
-FROM python:3.13-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -11,11 +11,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
-    # Node.js 22 LTS
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    # Node.js 20 LTS (가장 널리 사용되는 안정 LTS)
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    # Java 21 (headless)
-    && apt-get install -y default-jdk-headless \
+    # Java 21 LTS
+    && apt-get install -y --no-install-recommends openjdk-21-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # ── MCP 서버 + 공통 Python 패키지 ──

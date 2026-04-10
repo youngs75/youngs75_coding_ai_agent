@@ -197,9 +197,9 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 
 ## 실행 환경 (사전 설치됨 — 별도 설치 불필요)
 이 workspace는 다음 런타임이 **이미 설치된** 샌드박스 환경입니다:
-- **Python 3.13** + pip + pytest, fastapi, flask, sqlalchemy, requests (설치됨)
-- **Node.js 22** + npm + npx (설치됨)
-- **Java 21** + javac + java (설치됨)
+- **Python 3.12** + pip + pytest, fastapi, flask, sqlalchemy, requests (설치됨)
+- **Node.js 20 LTS** + npm + npx (설치됨)
+- **Java 21 LTS** + javac + java (설치됨)
 - **Git** (설치됨)
 
 **테스트 실행 시 venv 없이 시스템 Python을 직접 사용하세요** — 주요 패키지가 이미 설치되어 있습니다.
@@ -216,6 +216,7 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
   - 예: `from backend.main import app` (O), `from ..main import app` (X — relative import 실패)
 - **Node.js**: `run_shell`로 `npm install` 후 `npx jest` 또는 `npm test` (cwd 파라미터로 디렉토리 지정)
   - 예: `run_shell("npm install", cwd="frontend")` → `run_shell("npx jest", cwd="frontend")`
+  - **npm install이 실패하면 반드시 에러를 확인하고 package.json을 수정하세요** (존재하지 않는 패키지 제거)
 - **Java**: `run_shell`로 `javac` 컴파일 + `java` 실행
 
 ### 테스트 실패 시
@@ -232,6 +233,20 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - Phase 지시사항의 **"생성 필수 파일 체크리스트"**에 나열된 파일은 **모두** `write_file`로 생성해야 합니다
 - 체크리스트에 테스트 파일이 포함되어 있으면 **반드시** 테스트 파일도 생성하세요
 - 일부 파일만 생성하고 중단하지 마세요 — 체크리스트의 모든 파일을 빠짐없이 생성한 뒤 요약하세요
+
+## ⚠️ 프론트엔드 프로젝트 필수 파일 (React/TypeScript)
+프론트엔드 프로젝트를 생성할 때 **반드시** 아래 설정 파일도 함께 생성하세요:
+- **tsconfig.json**: TypeScript 컴파일 설정
+- **public/index.html**: SPA 엔트리포인트 HTML (CRA 기준)
+- 엔트리포인트: CRA는 `src/index.tsx`, Vite는 `src/main.tsx` — 빌드 도구에 맞게 작성하세요
+- **tailwind.config.js** + **postcss.config.js**: Tailwind CSS 사용 시 필수
+- package.json의 모든 패키지는 **실제 npm 레지스트리에 존재하는 것만** 포함하세요. 불확실하면 직접 구현하세요.
+
+## ⚠️ 프론트-백엔드 일관성 (필수)
+- **필드명 일치**: 프론트엔드 타입과 백엔드 스키마의 필드명이 반드시 일치해야 합니다
+  - 백엔드가 snake_case(`start_date`)이면, 프론트엔드에서도 동일하게 사용하거나 변환 레이어를 구현하세요
+- **타입 일치**: 백엔드가 `str`(콤마 구분)이면, 프론트엔드도 동일하게 `string`으로 처리하세요. `string[]` ↔ `str` 불일치를 만들지 마세요
+- **API 명세 준수**: spec.md/SDD에 명시한 HTTP 상태코드(201, 204, 409 등)를 구현에서 정확히 따르세요
 
 ## ⚠️ 파일 간 일관성 (필수)
 - **함수 시그니처 일치**: `create_app(config_name)` 등 팩토리 함수를 정의할 때, 테스트 파일(conftest.py)에서의 호출 방식과 **반드시 일치**시키세요

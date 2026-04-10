@@ -159,7 +159,14 @@ _MODEL_COST_DB: dict[str, ModelCostInfo] = {
         input_cost_per_1m=0.72,
         output_cost_per_1m=2.30,
         latency_category="medium",
-        capability_scores={"code": 0.88, "reasoning": 0.90, "speed": 0.70},
+        capability_scores={"code": 0.92, "reasoning": 0.95, "speed": 0.70},
+    ),
+    "openrouter/minimax/minimax-m2.5": ModelCostInfo(
+        model="openrouter/minimax/minimax-m2.5",
+        input_cost_per_1m=0.12,
+        output_cost_per_1m=0.99,
+        latency_category="low",
+        capability_scores={"code": 0.96, "reasoning": 0.95, "speed": 0.80},
     ),
 }
 
@@ -191,6 +198,8 @@ _MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "qwen3.5-plus": 1_000_000,
     "qwen3.5-flash": 1_000_000,
     "qwen3.6-plus": 1_000_000,
+    "minimax-m2.5": 196_608,
+    "glm-5": 262_144,
 }
 
 # 모델별 최대 출력 토큰 (Non-thinking 모드 기준)
@@ -206,6 +215,8 @@ _MODEL_MAX_OUTPUTS: dict[str, int] = {
     "qwen3.5-plus": 32768,
     "qwen3.5-flash": 32768,
     "qwen3.6-plus": 65536,
+    "minimax-m2.5": 65536,
+    "glm-5": 65536,
 }
 
 

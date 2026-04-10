@@ -52,6 +52,7 @@ from .prompts import (
 )
 from .schemas import CodingState
 
+logger = logging.getLogger(__name__)
 
 
 def _normalize_file_path(path: str, workspace: str | None = None) -> str:
@@ -255,9 +256,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             "exit_reason": "",
         }
 
-        if not self._memory_store:
-            return base_result
-
         parse_result = state.get("parse_result", {})
         description = parse_result.get("description", "")
         language = parse_result.get("language", "python")
@@ -268,56 +266,87 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         result: dict[str, Any] = {}
 
-        # ── Procedural Memory 검색: 학습된 스킬 패턴 ──
-        try:
-            skills = self._memory_store.retrieve_skills(
-                query=query,
-                tags=[language, task_type],
-                limit=5,
-            )
-            if skills:
-                result["procedural_skills"] = [
-                    f"[{s.tags}] {s.metadata.get('description', s.content[:100])}"
-                    for s in skills
-                ]
-        except Exception:
-            pass  # 검색 실패 시 무시
+        # ── Memory 검색 (memory_store가 있을 때만) ──
+        if self._memory_store:
+            # Procedural Memory 검색: 학습된 스킬 패턴
+            try:
+                skills = self._memory_store.retrieve_skills(
+                    query=query,
+                    tags=[language, task_type],
+                    limit=5,
+                )
+                if skills:
+                    result["procedural_skills"] = [
+                        f"[{s.tags}] {s.metadata.get('description', s.content[:100])}"
+                        for s in skills
+                    ]
+            except Exception:
+                pass
 
-        # ── Episodic Memory 검색: 이전 실행 이력 ──
-        try:
-            episodes = self._memory_store.search(
-                query=query,
-                memory_type=MemoryType.EPISODIC,
-                limit=3,
-            )
-            if episodes:
-                result["episodic_log"] = [e.content for e in episodes]
-        except Exception:
-            pass  # 검색 실패 시 무시
+            # Episodic Memory 검색: 이전 실행 이력
+            try:
+                episodes = self._memory_store.search(
+                    query=query,
+                    memory_type=MemoryType.EPISODIC,
+                    limit=3,
+                )
+                if episodes:
+                    result["episodic_log"] = [e.content for e in episodes]
+            except Exception:
+                pass
 
-        # ── User Profile 검색: 사용자 선호도/습관 ──
-        try:
-            profiles = self._memory_store.search(
-                query=query,
-                memory_type=MemoryType.USER_PROFILE,
-                limit=5,
-            )
-            if profiles:
-                result["user_profile_context"] = [p.content for p in profiles]
-        except Exception:
-            pass
+            # User Profile 검색: 사용자 선호도/습관
+            try:
+                profiles = self._memory_store.search(
+                    query=query,
+                    memory_type=MemoryType.USER_PROFILE,
+                    limit=5,
+                )
+                if profiles:
+                    result["user_profile_context"] = [p.content for p in profiles]
+            except Exception:
+                pass
 
-        # ── Domain Knowledge 검색: 도메인 지식 ──
-        try:
-            domain = self._memory_store.search(
-                query=query,
-                memory_type=MemoryType.DOMAIN_KNOWLEDGE,
-                limit=5,
+            # Domain Knowledge 검색: 도메인 지식
+            try:
+                domain = self._memory_store.search(
+                    query=query,
+                    memory_type=MemoryType.DOMAIN_KNOWLEDGE,
+                    limit=5,
+                )
+                if domain:
+                    result["domain_knowledge_context"] = [d.content for d in domain]
+            except Exception:
+                pass
+
+        # ── Skill Registry: 활성 스킬 본문을 컨텍스트에 주입 ──
+        if self._skill_registry:
+            # planned_files가 있으면 scaffold로 판단 (Orchestrator에서 Phase 실행 시)
+            planned_files = state.get("planned_files", [])
+            skill_task_type = "scaffold" if planned_files else task_type
+
+            # planned_files 확장자에서 framework 힌트 추출
+            _fw_ext_map = {
+                ".tsx": "fastapi_react", ".jsx": "react_express",
+                ".vue": "flask_vue",
+            }
+            framework_hint = ""
+            for f in planned_files:
+                ext = "." + f.rsplit(".", 1)[-1] if "." in f else ""
+                if ext in _fw_ext_map:
+                    framework_hint = _fw_ext_map[ext]
+                    break
+
+            activated = self._skill_registry.auto_activate_for_task(
+                skill_task_type, framework_hint=framework_hint
             )
-            if domain:
-                result["domain_knowledge_context"] = [d.content for d in domain]
-        except Exception:
-            pass
+            skill_bodies = self._skill_registry.get_active_skill_bodies()
+            if skill_bodies:
+                result["skill_context"] = skill_bodies
+                logger.info(
+                    "[스킬] CodingAssistant 활성화: %s (%d개 본문 주입)",
+                    activated, len(skill_bodies),
+                )
 
         return {**base_result, **result}
 
@@ -1085,6 +1114,50 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "execution_log": log,
                 "iteration": state.get("iteration", 0) + 1,
             }
+
+        # ── 프론트엔드 필수 파일 검증 (기계적 체크) ──
+        js_ts_files = [f for f in real_files if f.endswith((".js", ".jsx", ".ts", ".tsx"))]
+        if js_ts_files:
+            fe_errors: list[str] = []
+            # package.json이 있는 디렉토리 탐지
+            pkg_dirs: set[str] = set()
+            for f in real_files:
+                if os.path.basename(f) == "package.json":
+                    pkg_dirs.add(os.path.dirname(f) or ".")
+            for pkg_dir in pkg_dirs:
+                pkg_path = os.path.join(workspace, pkg_dir, "package.json")
+                if not os.path.exists(pkg_path):
+                    continue
+                # tsconfig.json 존재 확인 (TS 파일이 있을 때)
+                ts_in_dir = [f for f in js_ts_files if f.endswith((".ts", ".tsx")) and f.startswith(pkg_dir)]
+                if ts_in_dir:
+                    tsconfig = os.path.join(workspace, pkg_dir, "tsconfig.json")
+                    if not os.path.exists(tsconfig):
+                        fe_errors.append(f"[frontend] {pkg_dir}/tsconfig.json 누락 — TypeScript 프로젝트에 필수")
+                # public/index.html 존재 확인 (react-scripts 사용 시)
+                try:
+                    with open(pkg_path, "r") as pf:
+                        pkg_content = pf.read()
+                    if "react-scripts" in pkg_content:
+                        index_html = os.path.join(workspace, pkg_dir, "public", "index.html")
+                        if not os.path.exists(index_html):
+                            fe_errors.append(f"[frontend] {pkg_dir}/public/index.html 누락 — CRA(react-scripts) 빌드에 필수")
+                        # 엔트리포인트 확인
+                        index_tsx = os.path.join(workspace, pkg_dir, "src", "index.tsx")
+                        index_jsx = os.path.join(workspace, pkg_dir, "src", "index.jsx")
+                        if not os.path.exists(index_tsx) and not os.path.exists(index_jsx):
+                            fe_errors.append(f"[frontend] {pkg_dir}/src/index.tsx 누락 — CRA 엔트리포인트 필수 (main.tsx가 아닌 index.tsx)")
+                except (OSError, ValueError):
+                    pass
+            if fe_errors:
+                output = "\n".join(fe_errors)
+                log.append(f"[run_tests] 프론트엔드 필수 파일 누락 {len(fe_errors)}건")
+                return {
+                    "test_passed": False,
+                    "test_output": output,
+                    "execution_log": log,
+                    "iteration": state.get("iteration", 0) + 1,
+                }
 
         # 테스트 통과 + 이전에 실패가 있었으면 패턴 저장
         if state.get("iteration", 0) > 0:
