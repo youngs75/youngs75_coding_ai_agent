@@ -294,6 +294,60 @@ class CLIRenderer:
         except (EOFError, KeyboardInterrupt):
             return ""
 
+    # ── Workspace 충돌 HITL ──
+
+    def show_workspace_conflict(self, conflict_info: dict) -> None:
+        """Workspace 충돌 분석 결과를 사용자에게 표시한다."""
+        conflicts = conflict_info.get("conflicts", [])
+        recommendation = conflict_info.get("recommendation", "none")
+        detail = conflict_info.get("recommendation_detail", "")
+        files = conflict_info.get("files_to_clean", [])
+        existing_fw = conflict_info.get("existing_framework", "")
+
+        lines = []
+        if existing_fw:
+            lines.append(f"**기존 프레임워크**: `{existing_fw}`\n")
+
+        lines.append("**발견된 충돌:**")
+        for c in conflicts:
+            severity_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
+                c.get("severity", ""), "⚪"
+            )
+            lines.append(
+                f"- {severity_icon} [{c.get('type', '')}] {c.get('description', '')}"
+            )
+            for f in c.get("existing_files", []):
+                lines.append(f"  - `{f}`")
+
+        if files:
+            lines.append(f"\n**정리 대상 파일** ({len(files)}개):")
+            for f in files:
+                lines.append(f"- `{f}`")
+
+        lines.append(f"\n**권장 조치**: `{recommendation}`")
+        if detail:
+            lines.append(f"> {detail}")
+
+        self.console.print()
+        self.console.print(
+            Panel(
+                Markdown("\n".join(lines)),
+                title="[bold yellow]⚠ Workspace 충돌 감지[/]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+
+    def ask_conflict_approval(self) -> bool:
+        """충돌 정리 승인 여부를 사용자에게 묻는다 (blocking)."""
+        try:
+            response = self.console.input(
+                f"  [{_CLR_BRAND}]?[/] 기존 파일을 정리하시겠습니까? (y/n, Enter=승인): "
+            )
+            return response.strip().lower() in ("y", "yes", "ㅇ", "네", "")
+        except (EOFError, KeyboardInterrupt):
+            return False
+
     # ── 환경 승인 HITL ──
 
     def show_env_approval(self, env_info: dict) -> None:

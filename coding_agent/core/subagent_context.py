@@ -109,6 +109,7 @@ class SubagentContextFilter:
         prior_written_files: list[str],
         *,
         max_user_message_chars: int = 500,
+        prior_stall_context: str = "",
     ) -> str:
         """멀티 페이즈 실행 시 서브에이전트에 전달할 태스크 메시지를 생성한다.
 
@@ -165,5 +166,15 @@ class SubagentContextFilter:
                 "⚠️ 이전 페이즈 산출물과의 통합을 확인하세요. "
                 "import 경로, 인터페이스 일관성, 타입 호환성을 검증한 뒤 작업하세요."
             )
+
+        # 이전 Phase 강제 종료 컨텍스트 (StallDetector)
+        if prior_stall_context:
+            parts.append("")
+            parts.append("### ⚠ 이전 Phase 강제 종료 알림")
+            parts.append(
+                "이전 Phase가 반복 루프로 인해 강제 종료되었습니다. "
+                "아래 상황 요약을 참고하여 동일 문제를 반복하지 마세요:"
+            )
+            parts.append(f"> {prior_stall_context}")
 
         return "\n".join(parts)

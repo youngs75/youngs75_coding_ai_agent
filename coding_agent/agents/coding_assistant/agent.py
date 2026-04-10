@@ -572,13 +572,9 @@ class CodingAssistantAgent(BaseGraphAgent):
             system_prompt += "\n\n## 수집된 프로젝트 파일 컨텍스트\n"
             system_prompt += "\n".join(project_context[:10])
 
-        # Planner가 지정한 생성 예정 파일 목록 주입
+        # Planner가 지정한 생성 예정 파일 목록 — 루프 내부에서 동적 체크리스트로 주입
+        # (시스템 프롬프트에 고정하면 진척도가 반영되지 않음)
         planned_files = state.get("planned_files", [])
-        if planned_files:
-            system_prompt += "\n\n## 생성 필수 파일 체크리스트\n"
-            system_prompt += "아래 파일을 **모두** write_file로 생성해야 합니다. 누락 시 검증 실패합니다:\n"
-            for fp in planned_files:
-                system_prompt += f"- [ ] `{fp}`\n"
 
         # FileManifest 주입 — 파일 간 인터페이스 계약
         file_manifest = state.get("file_manifest")
@@ -679,6 +675,10 @@ class CodingAssistantAgent(BaseGraphAgent):
             # LangChain 내부 형식(args: dict)이 DashScope 재전송 시
             # arguments(JSON string) 변환에 실패하는 문제 방지
             sanitized_response = self._sanitize_ai_tool_calls(response)
+            # write_file의 content 인자를 제거 — 파일은 디스크에 저장되었으므로
+            # 대화 히스토리에 전체 내용을 유지할 필요 없음.
+            # LLM이 필요하면 read_file로 읽을 수 있음.
+            sanitized_response = self._strip_write_file_content(sanitized_response)
             loop_messages.append(sanitized_response)
             for call in tool_calls:
                 call_id = tc_id(call) or f"call_{tc_name(call)}_{loop_idx}"
@@ -710,24 +710,26 @@ class CodingAssistantAgent(BaseGraphAgent):
 
             total_tool_calls += len(tool_calls)
 
-            # 이전 write_file tool result 압축 — 토큰 낭비 방지
-            # "OK: app.py (42 lines)" 같은 결과가 누적되면 LLM이 같은 파일을 반복 생성
-            # 이전 루프의 write_file 결과를 한 줄 요약으로 교체
-            if written_files and loop_idx > 0:
+            # 진척도 체크리스트 동적 주입 — 매 iteration마다 업데이트
+            # 3종 에이전트 패턴: 대화 히스토리로 진척도를 파악하되,
+            # 명시적 체크리스트로 남은 작업을 안내
+            if planned_files and loop_idx > 0:
                 written_set = set(written_files)
-                for i, msg in enumerate(loop_messages):
-                    if (
-                        isinstance(msg, ToolMessage)
-                        and getattr(msg, "name", "") == "write_file"
-                        and msg.content.startswith("OK:")
-                    ):
-                        # 이번 루프에서 생성한 메시지는 유지
-                        if i < len(loop_messages) - len(tool_calls) * 2:
-                            loop_messages[i] = ToolMessage(
-                                content=f"(이미 저장됨)",
-                                tool_call_id=msg.tool_call_id,
-                                name="write_file",
-                            )
+                done = [f for f in planned_files if f in written_set]
+                remaining = [f for f in planned_files if f not in written_set]
+                if remaining:
+                    checklist_parts = [
+                        f"[시스템] 진척 현황: {len(done)}/{len(planned_files)}개 파일 완료."
+                    ]
+                    if done:
+                        checklist_parts.append(f"완료: {', '.join(done)}")
+                    checklist_parts.append(
+                        f"남은 파일: {', '.join(remaining)}. "
+                        f"이 파일들만 write_file로 생성하세요."
+                    )
+                    loop_messages.append(
+                        SystemMessage(content=" ".join(checklist_parts))
+                    )
 
             # StallDetector: write_file 루프에서도 반복 패턴 체크
             stall_break = False
@@ -748,6 +750,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                 elif stall_action == StallAction.FORCE_EXIT:
                     summary = self._stall_detector.get_stall_summary()
                     log.append(f"[stall] FORCE_EXIT: {summary}")
+                    # LLM 요약은 _execute_tools 레벨에서 처리되므로 여기서는 플래그만 설정
                     stall_break = True
                     break
             if stall_break:
@@ -850,7 +853,13 @@ class CodingAssistantAgent(BaseGraphAgent):
                             name=tc_name(c) or "unknown",
                         )
                     )
-                return {"messages": stall_messages, "exit_reason": "stall_detected"}
+                # LLM에게 상황 요약 요청 — 다음 Phase에 전달
+                stall_context = await self._summarize_stall(state, summary)
+                return {
+                    "messages": stall_messages,
+                    "exit_reason": "stall_detected",
+                    "stall_context": stall_context,
+                }
 
         tools_by_name = _get_tools_by_name(self._tools)
         context_entries = list(state.get("project_context", []))
@@ -992,6 +1001,71 @@ class CodingAssistantAgent(BaseGraphAgent):
                 )
 
         return ai_msg
+
+    @staticmethod
+    def _strip_write_file_content(ai_msg: Any) -> Any:
+        """AIMessage의 write_file tool_call에서 content 인자를 제거한다.
+
+        파일은 이미 디스크에 저장되었으므로 대화 히스토리에 전체 내용을
+        유지할 필요가 없다. LLM이 내용을 다시 봐야 하면 read_file을 사용.
+        이로써 토큰 사용량을 대폭 절감하여 MessageWindowMiddleware가
+        대화 히스토리를 잘라내는 문제를 방지한다.
+        """
+        from langchain_core.messages import AIMessage
+
+        if not isinstance(ai_msg, AIMessage):
+            return ai_msg
+
+        tool_calls = getattr(ai_msg, "tool_calls", None)
+        if not tool_calls:
+            return ai_msg
+
+        modified = False
+        new_tool_calls = []
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            if name == "write_file" and "args" in tc:
+                args = tc["args"]
+                if isinstance(args, dict) and "content" in args:
+                    content = args["content"]
+                    line_count = content.count("\n") + 1 if content else 0
+                    new_args = dict(args)
+                    new_args["content"] = f"(디스크에 저장됨, {line_count}줄 — 필요 시 read_file로 확인)"
+                    new_tool_calls.append({**tc, "args": new_args})
+                    modified = True
+                    continue
+            new_tool_calls.append(tc)
+
+        if not modified:
+            return ai_msg
+
+        # additional_kwargs의 tool_calls도 동기화
+        ak = dict(getattr(ai_msg, "additional_kwargs", {}) or {})
+        ak_tool_calls = ak.get("tool_calls", [])
+        if ak_tool_calls:
+            new_ak_tcs = []
+            for tc in ak_tool_calls:
+                fn = tc.get("function", {})
+                if fn.get("name") == "write_file":
+                    args_raw = fn.get("arguments", "")
+                    try:
+                        args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                        if isinstance(args_dict, dict) and "content" in args_dict:
+                            content = args_dict["content"]
+                            line_count = content.count("\n") + 1 if content else 0
+                            args_dict["content"] = f"(디스크에 저장됨, {line_count}줄 — 필요 시 read_file로 확인)"
+                            fn["arguments"] = json.dumps(args_dict, ensure_ascii=False)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                new_ak_tcs.append(tc)
+            ak["tool_calls"] = new_ak_tcs
+
+        return AIMessage(
+            content=ai_msg.content or "",
+            tool_calls=new_tool_calls,
+            additional_kwargs=ak,
+            id=getattr(ai_msg, "id", None),
+        )
 
     # ── Python 캐시 정리 ──────────────────────────────────────
 
@@ -1362,6 +1436,48 @@ class CodingAssistantAgent(BaseGraphAgent):
 
     # (에러 분류/정적 검증/테스트 출력 절단 메서드 제거됨
     #  — LLM이 에러 원문을 직접 분석, validate_consistency MCP 도구로 일관성 검증 가능)
+
+    async def _summarize_stall(self, state: CodingState, stall_summary: str) -> str:
+        """StallDetector 강제 종료 시 LLM에게 상황 요약을 요청한다.
+
+        요약 결과는 다음 Phase에 전달되어 동일 문제 반복을 방지한다.
+        LLM 호출 실패 시 기계적 요약으로 폴백한다.
+        """
+        test_output = state.get("test_output", "")
+        written_files = list(state.get("written_files", []))
+        iteration = state.get("iteration", 0)
+
+        try:
+            model = self._coding_config.get_model("default")
+            from langchain_core.messages import HumanMessage as HM, SystemMessage as SM
+
+            response = await model.ainvoke([
+                SM(content=(
+                    "당신은 코딩 에이전트의 디버깅 상태를 분석하는 전문가입니다. "
+                    "에이전트가 반복 루프에 빠져 강제 종료되었습니다. "
+                    "다음 Phase에 전달할 상황 요약을 작성하세요.\n\n"
+                    "## 요약 포함 사항\n"
+                    "1. 어떤 작업을 시도하고 있었는가\n"
+                    "2. 왜 반복 루프에 빠졌는가 (근본 원인)\n"
+                    "3. 어떤 에러가 해결되지 않았는가\n"
+                    "4. 다음 Phase에서 주의해야 할 사항\n\n"
+                    "200자 이내로 간결하게 작성하세요."
+                )),
+                HM(content=(
+                    f"## StallDetector 요약\n{stall_summary}\n\n"
+                    f"## 반복 횟수\n{iteration}회\n\n"
+                    f"## 생성된 파일\n{', '.join(written_files[:20]) or '없음'}\n\n"
+                    f"## 마지막 테스트 출력\n```\n{test_output[:1500]}\n```"
+                )),
+            ])
+            return response.content[:500]
+        except Exception as e:
+            logger.warning("StallDetector LLM 요약 실패 (폴백): %s", e)
+            return (
+                f"강제 종료: {stall_summary}. "
+                f"반복 {iteration}회, 파일 {len(written_files)}개 생성. "
+                f"마지막 에러: {test_output[:200]}"
+            )
 
     async def _inject_error(self, state: CodingState) -> dict[str, Any]:
         """단순화된 에러 주입: 에러 원문만 LLM에게 전달한다.

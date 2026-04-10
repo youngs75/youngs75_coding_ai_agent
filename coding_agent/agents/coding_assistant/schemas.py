@@ -175,3 +175,7 @@ class CodingState(TypedDict, total=False):
 
     # 의존성 변경 플래그 — inject_test_failure에서 requirements.txt 수정 시 True
     _deps_changed: bool
+
+    # StallDetector 강제 종료 시 LLM이 생성한 상황 요약
+    # 다음 Phase에 전달되어 동일 문제 반복 방지에 활용
+    stall_context: str

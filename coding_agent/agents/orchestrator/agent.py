@@ -162,7 +162,8 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
     """Planner Agent를 호출하여 구현 계획을 생성한다.
 
     Returns:
-        (task_plan_structured, plan_text): 구조화된 TaskPlan dict와 마크다운 텍스트
+        (task_plan_structured, plan_text): 구조화된 TaskPlan dict와 마크다운 텍스트.
+        task_plan_structured에 _conflict_resolution 키로 충돌 분석 결과도 포함.
 
     Raises:
         AbortError: 중단 신호가 발생한 경우.
@@ -187,7 +188,13 @@ async def _invoke_planner(user_message: str) -> tuple[dict | None, str | None]:
         if _abort_controller:
             _abort_controller.check_or_raise()
 
-        return result.get("task_plan"), result.get("plan_text", "")
+        task_plan = result.get("task_plan")
+        # conflict_resolution을 task_plan에 내부 키로 전달
+        conflict_resolution = result.get("conflict_resolution")
+        if task_plan and conflict_resolution:
+            task_plan["_conflict_resolution"] = conflict_resolution
+
+        return task_plan, result.get("plan_text", "")
     except SubAgentError:
         raise
     except Exception as e:
@@ -577,8 +584,19 @@ async def _execute_phases_sequentially(
     phase_results: list[dict] = []
     failed_ids: set[str] = set()
 
-    # PRD/SDD 문서 자동 생성
+    # Workspace 충돌 정리 (사용자 HITL 승인 후)
     workspace = _os.getenv("CODE_TOOLS_WORKSPACE", _os.getcwd())
+    conflict_resolution = task_plan.get("_conflict_resolution")
+    if conflict_resolution and conflict_resolution.get("approved"):
+        files_to_clean = conflict_resolution.get("files_to_clean", [])
+        for fpath in files_to_clean:
+            full_path = _os.path.join(workspace, fpath)
+            if _os.path.exists(full_path):
+                backup_path = full_path + ".bak"
+                _os.rename(full_path, backup_path)
+                logger.info("충돌 파일 백업: %s → %s", fpath, fpath + ".bak")
+
+    # PRD/SDD 문서 자동 생성
     prd_path = _generate_prd(workspace, user_message, task_plan)
     sdd_path = _generate_sdd(workspace, task_plan)
     if prd_path:
@@ -586,12 +604,16 @@ async def _execute_phases_sequentially(
     if sdd_path:
         all_written_files.append(f"{sdd_path} (SDD)")
 
+    # 이전 Phase의 stall_context를 추적
+    _last_stall_context = ""
+
     async def _run_single_phase(
         phase: dict,
         idx: int,
         prior_files: list[str],
     ) -> dict:
         """단일 Phase를 실행하고 결과 dict를 반환한다."""
+        nonlocal _last_stall_context
         phase_id = phase.get("id", f"phase_{idx + 1}")
         title = phase.get("title", "")
 
@@ -611,6 +633,7 @@ async def _execute_phases_sequentially(
             phase_index=idx,
             total_phases=len(phases),
             prior_written_files=prior_files,
+            prior_stall_context=_last_stall_context,
         )
 
         try:
@@ -644,6 +667,7 @@ async def _execute_phases_sequentially(
             written = compacted["written_files"]
             test_passed = compacted["test_passed"]
             phase_status = "success" if test_passed else "failed"
+            stall_context = result.get("stall_context", "")
 
             if not test_passed:
                 logger.warning("Phase %s 테스트 실패 상태로 완료: %d개 파일", phase_id, len(written))
@@ -669,6 +693,7 @@ async def _execute_phases_sequentially(
                 "title": title,
                 "status": phase_status,
                 "written_files": written,
+                "stall_context": stall_context,
             }
 
         except Exception as e:
@@ -713,6 +738,15 @@ async def _execute_phases_sequentially(
     independent = [(i, p) for i, p in enumerate(phases) if not p.get("depends_on")]
     dependent = [(i, p) for i, p in enumerate(phases) if p.get("depends_on")]
 
+    def _update_stall_context(result: dict) -> None:
+        """Phase 결과에서 stall_context를 업데이트한다."""
+        nonlocal _last_stall_context
+        sc = result.get("stall_context", "")
+        if sc:
+            _last_stall_context = sc
+        else:
+            _last_stall_context = ""  # 정상 완료 시 리셋
+
     # 독립 Phase 병렬 실행
     if len(independent) > 1:
         logger.info("독립 Phase %d개 병렬 실행 시작", len(independent))
@@ -725,6 +759,7 @@ async def _execute_phases_sequentially(
             if r["status"] == "failed":
                 failed_ids.add(r["phase_id"])
             _merge_written_files(r)
+            _update_stall_context(r)
     else:
         for idx, p in independent:
             r = await _run_single_phase(p, idx, list(all_written_files))
@@ -732,6 +767,7 @@ async def _execute_phases_sequentially(
             if r["status"] == "failed":
                 failed_ids.add(r["phase_id"])
             _merge_written_files(r)
+            _update_stall_context(r)
 
     # 의존 Phase 순차 실행 (선행 phase 실패 시 skip)
     for idx, phase in dependent:
@@ -756,6 +792,7 @@ async def _execute_phases_sequentially(
         if r["status"] == "failed":
             failed_ids.add(r["phase_id"])
         _merge_written_files(r)
+        _update_stall_context(r)
 
     # 전체 phase 완료 후 VerificationAgent 실행
     verification_result = None

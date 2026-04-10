@@ -22,6 +22,7 @@ from typing import Any, ClassVar
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 from coding_agent.core.abort_controller import AbortController
 from coding_agent.core.base_agent import BaseGraphAgent
@@ -37,6 +38,7 @@ from coding_agent.core.tool_call_utils import tc_args, tc_id, tc_name
 from .config import PlannerConfig
 from .prompts import (
     ANALYZE_SYSTEM_PROMPT,
+    CONFLICT_ANALYSIS_PROMPT,
     EXPLORE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
     RESEARCH_SUMMARIZE_PROMPT,
@@ -92,6 +94,7 @@ class PlannerAgent(BaseGraphAgent):
         "ANALYZE": "analyze_task",
         "RESEARCH": "research_external",
         "EXPLORE": "explore_context",
+        "ANALYZE_CONFLICTS": "analyze_conflicts",
         "CREATE_PLAN": "create_plan",
     }
 
@@ -413,6 +416,86 @@ class PlannerAgent(BaseGraphAgent):
             "messages": messages,
         }
 
+    async def _analyze_conflicts(self, state: PlannerState) -> dict[str, Any]:
+        """기존 프로젝트와 새 프로젝트 간 충돌을 LLM으로 분석한다.
+
+        충돌 발견 시 interrupt()로 사용자 승인을 요청한다 (HITL).
+        사용자가 승인하면 정리 대상 파일 목록을 conflict_resolution에 저장.
+        """
+        explored_context = state.get("explored_context", [])
+        user_request = state.get("user_request", "")
+
+        # 탐색된 컨텍스트가 없으면 충돌 분석 불필요
+        if not explored_context:
+            return {"conflict_resolution": None}
+
+        context_str = "\n\n".join(explored_context)
+
+        model = self._get_model()
+        mw_request = MWRequest(
+            system_message=CONFLICT_ANALYSIS_PROMPT.format(
+                user_request=user_request,
+                explored_context=context_str,
+            ),
+            messages=[HumanMessage(content=user_request)],
+            metadata={
+                "purpose": "planning",
+                "request_timeout": self._planner_config.get_request_timeout("planning"),
+            },
+        )
+        mw_response = await self._middleware_chain.invoke(mw_request, model)
+        response = mw_response.message
+
+        try:
+            analysis = json.loads(response.content)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("충돌 분석 JSON 파싱 실패 — 충돌 없음으로 처리")
+            return {"conflict_resolution": None, "messages": [response]}
+
+        if not analysis.get("has_conflicts", False):
+            logger.info("Workspace 충돌 없음 — 계획 수립 진행")
+            return {"conflict_resolution": None, "messages": [response]}
+
+        # 충돌 발견 → HITL interrupt
+        logger.info(
+            "Workspace 충돌 감지: %d건, 권장=%s",
+            len(analysis.get("conflicts", [])),
+            analysis.get("recommendation", "none"),
+        )
+
+        interrupt_value = {
+            "type": "workspace_conflict",
+            "conflicts": analysis.get("conflicts", []),
+            "recommendation": analysis.get("recommendation", "none"),
+            "recommendation_detail": analysis.get("recommendation_detail", ""),
+            "files_to_clean": analysis.get("files_to_clean", []),
+            "existing_framework": analysis.get("existing_framework", ""),
+        }
+
+        user_response = interrupt(interrupt_value)
+
+        # 사용자 응답 처리
+        if user_response is True or user_response == True:  # noqa: E712
+            logger.info("사용자가 충돌 정리를 승인함")
+            return {
+                "conflict_resolution": {
+                    "approved": True,
+                    "action": analysis.get("recommendation", "clean"),
+                    "files_to_clean": analysis.get("files_to_clean", []),
+                },
+                "messages": [response],
+            }
+        else:
+            logger.info("사용자가 충돌 정리를 거부함 — 그대로 진행")
+            return {
+                "conflict_resolution": {
+                    "approved": False,
+                    "action": "none",
+                    "files_to_clean": [],
+                },
+                "messages": [response],
+            }
+
     async def _create_plan(self, state: PlannerState) -> dict[str, Any]:
         """구조화된 실행 계획을 생성한다."""
         user_request = state.get("user_request", "")
@@ -429,6 +512,19 @@ class PlannerAgent(BaseGraphAgent):
             if research_context
             else "조사된 외부 API 정보 없음"
         )
+
+        # 충돌 정리 승인 시 컨텍스트에 정보 추가
+        conflict_resolution = state.get("conflict_resolution")
+        if conflict_resolution and conflict_resolution.get("approved"):
+            files_to_clean = conflict_resolution.get("files_to_clean", [])
+            if files_to_clean:
+                conflict_note = (
+                    "\n\n## Workspace 충돌 정리 (사용자 승인됨)\n"
+                    "다음 기존 파일은 새 프로젝트와 충돌합니다. "
+                    "첫 번째 Phase에서 이 파일들을 삭제하거나 백업한 후 새 파일을 생성하세요:\n"
+                    + "\n".join(f"- {f}" for f in files_to_clean)
+                )
+                context_str += conflict_note
 
         model = self._get_model()
         mw_request = MWRequest(
@@ -562,6 +658,7 @@ class PlannerAgent(BaseGraphAgent):
         graph.add_node(self.get_node_name("ANALYZE"), self._analyze_task)
         graph.add_node(self.get_node_name("RESEARCH"), self._research_external)
         graph.add_node(self.get_node_name("EXPLORE"), self._explore_context)
+        graph.add_node(self.get_node_name("ANALYZE_CONFLICTS"), self._analyze_conflicts)
         graph.add_node(self.get_node_name("CREATE_PLAN"), self._create_plan)
 
     def init_edges(self, graph: StateGraph) -> None:
@@ -579,9 +676,15 @@ class PlannerAgent(BaseGraphAgent):
             self.get_node_name("EXPLORE"),
         )
 
-        # explore → create_plan
+        # explore → analyze_conflicts (충돌 분석 + HITL)
         graph.add_edge(
             self.get_node_name("EXPLORE"),
+            self.get_node_name("ANALYZE_CONFLICTS"),
+        )
+
+        # analyze_conflicts → create_plan
+        graph.add_edge(
+            self.get_node_name("ANALYZE_CONFLICTS"),
             self.get_node_name("CREATE_PLAN"),
         )
 

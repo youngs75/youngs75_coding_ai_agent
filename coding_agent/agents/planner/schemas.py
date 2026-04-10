@@ -75,6 +75,9 @@ class PlannerState(TypedDict, total=False):
     # 외부 API/서비스 조사 결과 (웹 검색)
     research_context: list[str]
 
+    # 충돌 분석 결과 (HITL 승인 후)
+    conflict_resolution: dict | None
+
     # 최종 계획 출력
     task_plan: TaskPlan
 

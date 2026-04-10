@@ -627,6 +627,11 @@ async def _run_agent_turn(
                             and interrupt_value.get("type") == "env_approval"
                         )
 
+                        is_conflict_approval = (
+                            isinstance(interrupt_value, dict)
+                            and interrupt_value.get("type") == "workspace_conflict"
+                        )
+
                         if is_env_approval:
                             # 환경 설정 승인 요청
                             renderer.show_env_approval(interrupt_value)
@@ -636,6 +641,17 @@ async def _run_agent_turn(
                                 graph_input = Command(resume=True)
                             else:
                                 renderer.warning("환경 설정 거부 — LLM 검증만 진행합니다")
+                                graph_input = Command(resume=False)
+                            continue
+                        elif is_conflict_approval:
+                            # Workspace 충돌 정리 승인 요청
+                            renderer.show_workspace_conflict(interrupt_value)
+                            approved = await asyncio.to_thread(renderer.ask_conflict_approval)
+                            if approved:
+                                renderer.success("충돌 정리 승인 — 기존 파일을 정리 후 진행합니다")
+                                graph_input = Command(resume=True)
+                            else:
+                                renderer.warning("충돌 정리 거부 — 기존 파일 유지한 채 진행합니다")
                                 graph_input = Command(resume=False)
                             continue
                         else:
