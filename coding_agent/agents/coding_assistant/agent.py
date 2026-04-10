@@ -632,7 +632,9 @@ class CodingAssistantAgent(BaseGraphAgent):
         sanitized.append(context_msg)
 
         log = list(state.get("execution_log", []))
-        written_files: list[str] = []
+        # 이전 iteration에서 저장한 파일 목록을 이어받는다.
+        # 빈 리스트로 초기화하면 테스트 실패 → 재시도 시 진척도가 소실됨.
+        written_files: list[str] = list(state.get("written_files", []))
         total_tool_calls = 0
         tools_by_name = _get_tools_by_name(write_tools)
         loop_messages = list(sanitized)
@@ -686,9 +688,22 @@ class CodingAssistantAgent(BaseGraphAgent):
                 call_args = tc_args(call)
 
                 if call_name in tools_by_name:
-                    result = await _execute_tool_safely(
-                        tools_by_name[call_name], call_args
-                    )
+                    # write_file에 strip 마커가 content로 들어오면 거부
+                    if (
+                        call_name == "write_file"
+                        and isinstance(call_args, dict)
+                        and self._CONTENT_STRIPPED_TAG
+                        in str(call_args.get("content", ""))
+                    ):
+                        result = (
+                            f"ERROR: 이 파일은 이미 저장되어 있습니다. "
+                            f"다시 write_file 하지 마세요. "
+                            f"내용을 확인하려면 read_file을 사용하세요."
+                        )
+                    else:
+                        result = await _execute_tool_safely(
+                            tools_by_name[call_name], call_args
+                        )
                     # write_file 성공 결과에서 파일 경로 수집 (정규화)
                     if call_name == "write_file" and result.startswith("OK:"):
                         filepath = result.split("OK:")[1].split("(")[0].strip()
@@ -698,6 +713,11 @@ class CodingAssistantAgent(BaseGraphAgent):
                         filepath = _normalize_file_path(filepath, workspace)
                         if filepath and filepath not in written_files:
                             written_files.append(filepath)
+                        # write_file 성공 후 재작성 금지 경고 추가
+                        result += (
+                            "\n[저장 완료 — 이 파일을 다시 write_file 하지 말 것. "
+                            "내용 확인은 read_file 사용]"
+                        )
                 else:
                     result = f"알 수 없는 도구: {call_name}"
 
@@ -1002,6 +1022,16 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return ai_msg
 
+    # strip 후 content에 삽입되는 마커.
+    # 자연어 문장이 아닌 태그 형식을 사용하여 LLM이 실제 파일 내용과
+    # 혼동하지 않도록 한다. LLM이 이 마커를 write_file content로
+    # 재전달하면 MCP write_file 도구가 거부한다.
+    _CONTENT_STRIPPED_TAG = "<CONTENT_STRIPPED>"
+
+    @staticmethod
+    def _make_stripped_marker(line_count: int) -> str:
+        return f"<CONTENT_STRIPPED lines={line_count}/>"
+
     @staticmethod
     def _strip_write_file_content(ai_msg: Any) -> Any:
         """AIMessage의 write_file tool_call에서 content 인자를 제거한다.
@@ -1010,10 +1040,14 @@ class CodingAssistantAgent(BaseGraphAgent):
         유지할 필요가 없다. LLM이 내용을 다시 봐야 하면 read_file을 사용.
         이로써 토큰 사용량을 대폭 절감하여 MessageWindowMiddleware가
         대화 히스토리를 잘라내는 문제를 방지한다.
-        """
-        from langchain_core.messages import AIMessage
 
-        if not isinstance(ai_msg, AIMessage):
+        마커는 <CONTENT_STRIPPED lines=N/> 태그 형식을 사용한다.
+        자연어 문장이 아닌 태그 형식이므로 LLM이 파일 내용으로 착각할
+        가능성이 없다.
+        """
+        from langchain_core.messages import AIMessage as _AIMessage
+
+        if not isinstance(ai_msg, _AIMessage):
             return ai_msg
 
         tool_calls = getattr(ai_msg, "tool_calls", None)
@@ -1030,7 +1064,9 @@ class CodingAssistantAgent(BaseGraphAgent):
                     content = args["content"]
                     line_count = content.count("\n") + 1 if content else 0
                     new_args = dict(args)
-                    new_args["content"] = f"(디스크에 저장됨, {line_count}줄 — 필요 시 read_file로 확인)"
+                    new_args["content"] = CodingAssistantAgent._make_stripped_marker(
+                        line_count
+                    )
                     new_tool_calls.append({**tc, "args": new_args})
                     modified = True
                     continue
@@ -1049,18 +1085,26 @@ class CodingAssistantAgent(BaseGraphAgent):
                 if fn.get("name") == "write_file":
                     args_raw = fn.get("arguments", "")
                     try:
-                        args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                        args_dict = (
+                            json.loads(args_raw)
+                            if isinstance(args_raw, str)
+                            else args_raw
+                        )
                         if isinstance(args_dict, dict) and "content" in args_dict:
                             content = args_dict["content"]
-                            line_count = content.count("\n") + 1 if content else 0
-                            args_dict["content"] = f"(디스크에 저장됨, {line_count}줄 — 필요 시 read_file로 확인)"
-                            fn["arguments"] = json.dumps(args_dict, ensure_ascii=False)
+                            lc = content.count("\n") + 1 if content else 0
+                            args_dict[
+                                "content"
+                            ] = CodingAssistantAgent._make_stripped_marker(lc)
+                            fn["arguments"] = json.dumps(
+                                args_dict, ensure_ascii=False
+                            )
                     except (json.JSONDecodeError, TypeError):
                         pass
                 new_ak_tcs.append(tc)
             ak["tool_calls"] = new_ak_tcs
 
-        return AIMessage(
+        return _AIMessage(
             content=ai_msg.content or "",
             tool_calls=new_tool_calls,
             additional_kwargs=ak,
@@ -1538,8 +1582,9 @@ class CodingAssistantAgent(BaseGraphAgent):
             for rel_path, content in list(error_files.items())[:5]:
                 file_context += f"\n### {rel_path}\n```python\n{content}\n```\n"
 
+        max_iter = state.get("max_iterations", 3)
         error_msg = HumanMessage(content=(
-            f"테스트가 실패했습니다 (시도 {iteration}회). "
+            f"테스트가 실패했습니다 (시도 {iteration}/{max_iter}회). "
             f"에러를 분석하고 **해당 파일만** 수정하세요.\n\n"
             f"### 에러 출력\n"
             f"```\n{test_output[:3000]}\n```\n"
@@ -1548,12 +1593,13 @@ class CodingAssistantAgent(BaseGraphAgent):
             f"문제가 되는 부분을 수정하여 write_file로 저장하세요.**"
         ))
 
-        log.append(f"[inject_error] 에러 원문 주입 (iteration={iteration})")
+        log.append(f"[inject_error] 에러 원문 주입 (iteration={iteration}/{max_iter})")
 
         return {
             "messages": [error_msg],
             "execution_log": log,
-            "written_files": [],
+            # written_files를 반환하지 않음 — 기존 리스트를 보존한다.
+            # override_reducer에 빈 리스트를 전달하면 no-op이지만 의도가 불명확하므로 생략.
             "_prev_generated_code": state.get("generated_code", ""),
             "generated_code": "",  # 리셋: _generate_code 반복 감지가 LLM 호출 전에 발동하지 않도록
             "_prev_test_output": test_output,
