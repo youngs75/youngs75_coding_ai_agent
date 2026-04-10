@@ -300,6 +300,7 @@ _ALLOWED_COMMANDS: set[str] = {
     # 유틸리티
     "cat", "ls", "find", "grep", "head", "tail", "wc", "diff", "sort",
     "mkdir", "cp", "mv", "touch", "echo", "which", "env", "printenv",
+    "cd", "pwd",
     # Git (읽기 전용)
     "git",
 }
@@ -318,7 +319,7 @@ _BLOCKED_PATTERNS: list[str] = [
 
 
 @mcp.tool()
-def run_shell(command: str, timeout: int = 120) -> str:
+def run_shell(command: str, timeout: int = 120, cwd: str = ".") -> str:
     """Shell 명령어를 실행하고 결과를 반환한다.
 
     보안: 허용된 명령어만 실행 가능 (pip, npm, go, cargo, pytest, jest 등).
@@ -327,10 +328,19 @@ def run_shell(command: str, timeout: int = 120) -> str:
     Args:
         command: 실행할 shell 명령어 (예: "pip install -r requirements.txt")
         timeout: 실행 제한 시간(초, 기본 120, 최대 300)
+        cwd: 작업 디렉토리 (workspace 기준 상대 경로, 기본 ".")
     """
     command = command.strip()
     if not command:
         return "Error: 빈 명령어"
+
+    # cwd 처리: workspace 기준 상대 경로로 해석
+    try:
+        work_dir = _safe_path(cwd) if cwd != "." else Path(_WORKSPACE).resolve()
+    except ValueError as e:
+        return f"Error: {e}"
+    if not work_dir.is_dir():
+        return f"Error: 디렉토리가 존재하지 않습니다: {cwd}"
 
     # 보안 검증 1: 금지 패턴 체크
     for blocked in _BLOCKED_PATTERNS:
@@ -361,7 +371,7 @@ def run_shell(command: str, timeout: int = 120) -> str:
             capture_output=True,
             text=True,
             timeout=effective_timeout,
-            cwd=_WORKSPACE,
+            cwd=str(work_dir),
             env={**os.environ, "PYTHONPATH": _WORKSPACE},
         )
         stdout = result.stdout.strip()

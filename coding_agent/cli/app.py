@@ -142,7 +142,7 @@ def _extract_node_summary(node: str, output: dict) -> str:
                 env_info.append("deps")
             if "[runtime]" in entry and "✗" in entry:
                 env_info.append("런타임 미설치")
-        env_summary = f" ({'+'.join(env_info)})" if env_info else ""
+        env_summary = f" ({'+'.join(dict.fromkeys(env_info))})" if env_info else ""
         if passed:
             return f"통과{env_summary}"
         test_out = output.get("test_output", "")
@@ -191,9 +191,11 @@ def _extract_node_summary(node: str, output: dict) -> str:
         if phase_results:
             parts = []
             for pr in phase_results:
-                icon = {"success": "OK", "failed": "FAIL", "skipped": "SKIP"}.get(pr.get("status", ""), "?")
+                status = pr.get("status", "")
+                icon = {"success": "✓", "failed": "✗", "skipped": "⊘"}.get(status, "?")
                 n_files = len(pr.get("written_files", []))
-                parts.append(f"{pr.get('phase_id', '?')}: {pr.get('title', '')} [{icon}] {n_files}파일")
+                title = pr.get("title", "")[:30]
+                parts.append(f"{icon} {pr.get('phase_id', '?')}: {title} {n_files}파일")
             return " | ".join(parts)
         resp = output.get("agent_response", "")
         if resp:
@@ -543,6 +545,21 @@ async def _run_agent_turn(
                         renderer.tool_call(
                             tool_name,
                             tool_input if isinstance(tool_input, dict) else None,
+                        )
+
+                # 도구 실행 완료 — 에러 시 인라인 표시
+                elif kind == "on_tool_end":
+                    tool_output = event.get("data", {}).get("output", "")
+                    tool_out_str = str(tool_output) if tool_output else ""
+                    if tool_out_str and (
+                        "error" in tool_out_str.lower()[:200]
+                        or "Error" in tool_out_str[:200]
+                        or "FAILED" in tool_out_str[:200]
+                    ):
+                        # 에러 결과만 축약 표시 (정상 결과는 표시하지 않음)
+                        first_line = tool_out_str.strip().split("\n")[0][:80]
+                        renderer.console.print(
+                            f"    [dim italic]↳ {first_line}[/]"
                         )
 
                 # 노드 완료 시 응답 데이터 수집 + 요약 추출
@@ -917,9 +934,40 @@ async def _main_loop(config: CLIConfig) -> None:
 
 def run_cli(config: CLIConfig | None = None) -> None:
     """CLI 진입점."""
+    import argparse
+
     from dotenv import load_dotenv
 
     load_dotenv()
+
+    parser = argparse.ArgumentParser(description="Youngs75 Coding AI Agent")
+    parser.add_argument(
+        "--server", action="store_true", help="A2A 서버 모드로 시작"
+    )
+    parser.add_argument(
+        "--host", default="0.0.0.0", help="서버 호스트 (기본: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8000, help="서버 포트 (기본: 8000)"
+    )
+    args = parser.parse_args()
+
+    if args.server:
+        from coding_agent.a2a.executor import LGAgentExecutor
+        from coding_agent.a2a.server import run_server
+        from coding_agent.agents.orchestrator.agent import OrchestratorAgent
+
+        agent = OrchestratorAgent(auto_build=True)
+        executor = LGAgentExecutor(graph=agent.graph)
+        run_server(
+            executor=executor,
+            name="youngs75-coding-agent",
+            description="Youngs75 Coding AI Agent (A2A)",
+            host=args.host,
+            port=args.port,
+        )
+        return
+
     config = config or CLIConfig()
     try:
         asyncio.run(_main_loop(config))

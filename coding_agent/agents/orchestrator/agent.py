@@ -20,8 +20,8 @@ A2A 프로토콜로 위임한 결과를 반환한다.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import re as _re
 import uuid
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -37,9 +37,11 @@ from coding_agent.core.context_manager import ContextManager
 from coding_agent.core.exceptions import SubAgentError
 from coding_agent.core.middleware import (
     MemoryMiddleware,
+    MessageWindowMiddleware,
     MiddlewareChain,
     ModelRequest as MWRequest,
     ResilienceMiddleware,
+    SummarizationMiddleware,
 )
 from coding_agent.core.subagents.registry import SubAgentRegistry
 from .config import OrchestratorConfig
@@ -60,58 +62,24 @@ _memory_store: Any | None = None
 logger = logging.getLogger(__name__)
 
 CLASSIFY_SYSTEM_PROMPT = """\
-당신은 사용자의 요청을 분석하여 가장 적합한 에이전트를 선택하는 라우터입니다.
+당신은 사용자의 요청을 분석하여 가장 적합한 에이전트를 선택하고, 요청의 복잡도를 판단하는 라우터입니다.
 
 사용 가능한 에이전트:
 {agent_descriptions}
 
 규칙:
 1. 사용자의 요청 의도를 파악하고, 위 목록에서 가장 적합한 에이전트 이름을 정확히 하나만 선택하세요.
-2. 에이전트 이름만 출력하세요. 다른 텍스트는 포함하지 마세요.
-3. 어떤 에이전트에도 맞지 않으면 "none"을 출력하세요.
-4. 코드 생성/개발 요청은 항상 coding_assistant를 선택하세요.
-   프론트엔드+백엔드, 여러 파일, 풀스택 등 하나의 프로젝트를 구현하는 요청은 모두 코딩 작업입니다.
-5. "coordinate"는 서로 다른 종류의 에이전트가 순차적으로 필요한 경우에만 사용하세요.
-   예시: "기술을 조사한 뒤 그 결과로 코드를 작성해줘" (research → coding 순차 협업)
+2. 어떤 에이전트에도 맞지 않으면 에이전트 이름으로 "none"을 사용하세요.
+3. 코드 생성/개발 요청은 항상 coding_assistant를 선택하세요.
+4. "coordinate"는 서로 다른 종류의 에이전트가 순차적으로 필요한 경우에만 사용하세요.
+
+복잡도 판단 기준:
+- complex: 풀스택, 여러 파일 생성, 프로젝트 구축, 프론트엔드+백엔드 조합, 다단계 작업
+- simple: 단일 파일 수정, 간단한 함수 작성, 설명/질문, 버그 수정
+
+응답 형식: `에이전트명|complex` 또는 `에이전트명|simple`
+예시: `coding_assistant|complex`, `coding_assistant|simple`, `none|simple`
 """
-
-# 복잡 요청 감지 키워드 패턴 (multi-file, fullstack, multi-step 등)
-_COMPLEX_PATTERNS = _re.compile(
-    r"(?:풀스택|fullstack|full[\-\s]stack|프론트엔드.*백엔드|백엔드.*프론트엔드"
-    r"|여러\s*파일|multi[\-\s]*file|multi[\-\s]*step|multi[\-\s]*phase"
-    r"|프로젝트\s*(?:생성|만들|구축|개발)|(?:앱|애플리케이션|서비스)\s*(?:만들|개발|구축)"
-    r"|(?:CRUD|REST\s*API|GraphQL)\s*(?:서버|백엔드|API)"
-    r"|(?:로그인|인증|회원가입).*(?:페이지|화면|UI)"
-    r"|칸반|대시보드|관리\s*페이지|어드민"
-    r"|(?:3|4|5|6|7|8|9|10)\s*개\s*(?:이상의?\s*)?(?:파일|페이지|컴포넌트|모듈))",
-    _re.IGNORECASE,
-)
-
-
-def _detect_complexity(user_message: str) -> bool:
-    """사용자 메시지에서 복잡한 코딩 요청인지 판단한다.
-
-    복잡 요청 기준:
-    - multi-file, fullstack, multi-step 키워드
-    - 프론트엔드+백엔드 조합 요청
-    - 프로젝트 수준의 생성/구축 요청
-    - 메시지 길이가 충분히 긴 경우 (상세 요구사항)
-
-    Args:
-        user_message: 사용자의 원본 메시지
-
-    Returns:
-        True면 Planner를 경유해야 하는 복잡 요청
-    """
-    if _COMPLEX_PATTERNS.search(user_message):
-        return True
-
-    # 긴 메시지(500자 이상)는 상세한 요구사항일 가능성이 높음
-    if len(user_message) > 500:
-        return True
-
-    return False
-
 
 async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
     """사용자 입력을 분석하여 적합한 에이전트를 선택한다.
@@ -156,7 +124,16 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
             ]
         )
 
-    selected = response.content.strip().lower()
+    raw = response.content.strip().lower()
+
+    # 파이프 구분자로 에이전트명과 복잡도 분리
+    if "|" in raw:
+        selected, complexity = raw.rsplit("|", 1)
+        selected = selected.strip()
+        is_complex = complexity.strip() == "complex"
+    else:
+        selected = raw
+        is_complex = False
 
     # 코디네이터 모드 감지
     if selected == "coordinate" or selected == "__coordinator__":
@@ -173,9 +150,6 @@ async def classify(state: OrchestratorState, config: RunnableConfig) -> dict:
                 break
         else:
             selected = "none"
-
-    # 복잡도 판단: multi-file, fullstack, multi-step 키워드 감지
-    is_complex = _detect_complexity(user_message)
 
     logger.info(
         "라우팅 결정: '%s...' → %s (complex=%s)",
@@ -549,8 +523,14 @@ async def _execute_phases_sequentially(
     from coding_agent.core.skills.loader import SkillLoader
     from coding_agent.core.skills.registry import SkillRegistry
     from coding_agent.core.subagent_context import SubagentContextFilter
+    from coding_agent.core.subagents.registry import SubAgentRegistry
+    from coding_agent.core.subagents.schemas import (
+        SubAgentSpec,
+        SubAgentStatus,
+        SubAgentUsageRecord,
+    )
 
-    # 스킬 레지스트리 초기화 (_invoke_local_agent와 동일)
+    # 스킬 레지스트리 초기화 + 자동 활성화
     skill_registry = SkillRegistry()
     skills_dir = _os.getenv(
         "SKILLS_DIR",
@@ -560,6 +540,36 @@ async def _execute_phases_sequentially(
         loader = SkillLoader(skills_dir)
         skill_registry = SkillRegistry(loader=loader)
         skill_registry.discover()
+
+    # Planner의 tech_stack에서 framework 힌트를 추출하여 스킬 L2 활성화
+    tech_stack = task_plan.get("tech_stack", [])
+    project_type = task_plan.get("project_type", "")
+    _framework_map = {
+        "flask": "flask_vue", "vue": "flask_vue",
+        "fastapi": "fastapi_react", "react": "fastapi_react",
+        "django": "django_htmx", "htmx": "django_htmx",
+        "express": "react_express", "node": "react_express",
+    }
+    framework_hint = ""
+    for tech in tech_stack:
+        key = tech.lower().split()[0]
+        if key in _framework_map:
+            framework_hint = _framework_map[key]
+            break
+
+    task_type = "scaffold" if project_type in ("webapp", "api_server") else "generate"
+    activated = skill_registry.auto_activate_for_task(task_type, framework_hint=framework_hint)
+    if activated:
+        logger.info("[스킬] task_type=%s, framework=%s → 활성화: %s", task_type, framework_hint, activated)
+
+    # SubAgent 레지스트리 초기화 — Phase별 CodingAssistant 수명주기 + 통계 추적
+    sa_registry = SubAgentRegistry(cost_sensitivity=0.3)
+    sa_registry.register(SubAgentSpec(
+        name="coding_assistant",
+        description="코드 생성 + 테스트 실행 + 파일 저장을 담당하는 에이전트",
+        capabilities=["code_generation", "testing", "file_io"],
+        cost_weight=0.5,
+    ))
 
     plan_summary = task_plan.get("summary", "")
     architecture = task_plan.get("architecture", "")
@@ -576,47 +586,46 @@ async def _execute_phases_sequentially(
     if sdd_path:
         all_written_files.append(f"{sdd_path} (SDD)")
 
-    for i, phase in enumerate(phases):
-        phase_id = phase.get("id", f"phase_{i + 1}")
+    async def _run_single_phase(
+        phase: dict,
+        idx: int,
+        prior_files: list[str],
+    ) -> dict:
+        """단일 Phase를 실행하고 결과 dict를 반환한다."""
+        phase_id = phase.get("id", f"phase_{idx + 1}")
         title = phase.get("title", "")
 
-        # depends_on 체크: 선행 phase가 실패 또는 스킵이면 skip
-        deps = set(phase.get("depends_on", []))
-        if deps & failed_ids:
-            logger.warning("Phase %s 건너뜀: 선행 phase 실패/스킵 (%s)", phase_id, deps & failed_ids)
-            phase_results.append({
-                "phase_id": phase_id,
-                "title": title,
-                "status": "skipped",
-                "written_files": [],
-                "error": f"선행 phase 실패: {deps & failed_ids}",
-            })
-            failed_ids.add(phase_id)  # 스킵도 전파하여 후속 phase가 실행되지 않도록
-            continue
+        logger.info("Phase %d/%d 시작: %s — %s", idx + 1, len(phases), phase_id, title)
 
-        logger.info("Phase %d/%d 시작: %s — %s", i + 1, len(phases), phase_id, title)
+        sa_instance = sa_registry.create_instance(
+            "coding_assistant",
+            task_summary=f"Phase {phase_id}: {title}",
+            role="code_generation",
+        )
 
         phase_message = SubagentContextFilter.build_phase_task_message(
             user_message=user_message,
             plan_summary=plan_summary,
             architecture=architecture,
             phase=phase,
-            phase_index=i,
+            phase_index=idx,
             total_phases=len(phases),
-            prior_written_files=all_written_files,
+            prior_written_files=prior_files,
         )
 
         try:
-            # 마지막 phase가 통합 성격(파일 수 적음, instructions 짧음)이면 budget 완화
-            is_final = i == len(phases) - 1 and len(phases) > 1
             phase_files = phase.get("files", [])
-            phase_instructions_len = len(phase.get("instructions", ""))
-            is_integration = is_final and len(phase_files) <= 2 and phase_instructions_len < 500
+            file_count = len(phase_files)
+            scaled_llm_calls = max(20, file_count * 3)
             config = CodingConfig(
-                max_llm_calls_per_turn=20 if is_integration else 15,
-                diminishing_streak_limit=5 if is_integration else 3,
-                min_delta_tokens=300 if is_integration else 500,
+                max_llm_calls_per_turn=scaled_llm_calls,
+                diminishing_streak_limit=5,
+                min_delta_tokens=300,
             )
+            if sa_instance:
+                sa_registry.transition_state(sa_instance.agent_id, SubAgentStatus.ASSIGNED, reason="phase 시작")
+                sa_registry.transition_state(sa_instance.agent_id, SubAgentStatus.RUNNING, reason="코드 생성 중")
+
             agent = await CodingAssistantAgent.create(
                 config=config,
                 skill_registry=skill_registry,
@@ -629,60 +638,124 @@ async def _execute_phases_sequentially(
                 extra_state={"planned_files": phase.get("files", [])},
             )
 
-            result = await agent.graph.ainvoke(
-                _init_state
-            )
+            result = await agent.graph.ainvoke(_init_state)
 
             compacted = SubagentContextFilter.compact_result(result)
             written = compacted["written_files"]
             test_passed = compacted["test_passed"]
             phase_status = "success" if test_passed else "failed"
 
-            # 파일 경로 기준 중복 제거 후 누적 (정규화 적용)
-            from coding_agent.agents.coding_assistant.agent import (
-                _normalize_file_path,
-            )
+            if not test_passed:
+                logger.warning("Phase %s 테스트 실패 상태로 완료: %d개 파일", phase_id, len(written))
+                if sa_instance:
+                    sa_registry.transition_state(sa_instance.agent_id, SubAgentStatus.FAILED, reason="테스트 실패")
+                    sa_registry.record_usage(SubAgentUsageRecord(
+                        agent_name="coding_assistant", task_type="code_generation",
+                        success=False, failure_reason="test_failed",
+                    ))
+            else:
+                logger.info("Phase %s 완료: %d개 파일 생성", phase_id, len(written))
+                if sa_instance:
+                    sa_registry.transition_state(
+                        sa_instance.agent_id, SubAgentStatus.COMPLETED,
+                        reason=f"{len(written)}개 파일 생성", result_summary=phase_status,
+                    )
+                    sa_registry.record_usage(SubAgentUsageRecord(
+                        agent_name="coding_assistant", task_type="code_generation", success=True,
+                    ))
 
-            _ws = workspace
-            existing_paths = {
-                _normalize_file_path(
-                    f.split(" (")[0].strip() if isinstance(f, str) else f.get("path", ""),
-                    _ws,
-                )
-                for f in all_written_files
-            }
-            for f in written:
-                fpath = f.get("path", "") if isinstance(f, dict) else str(f)
-                norm = _normalize_file_path(fpath, _ws)
-                if norm and norm not in existing_paths:
-                    all_written_files.append(norm)
-                    existing_paths.add(norm)
-
-            unique_written = written
-
-            phase_results.append({
+            return {
                 "phase_id": phase_id,
                 "title": title,
                 "status": phase_status,
-                "written_files": unique_written,
-            })
-
-            if not test_passed:
-                failed_ids.add(phase_id)
-                logger.warning("Phase %s 테스트 실패 상태로 완료: %d개 파일", phase_id, len(written))
-            else:
-                logger.info("Phase %s 완료: %d개 파일 생성", phase_id, len(written))
+                "written_files": written,
+            }
 
         except Exception as e:
             logger.error("Phase %s 실패: %s", phase_id, e)
-            failed_ids.add(phase_id)
-            phase_results.append({
+            if sa_instance:
+                sa_registry.transition_state(
+                    sa_instance.agent_id, SubAgentStatus.FAILED,
+                    reason="exception", error_message=str(e)[:200],
+                )
+                sa_registry.record_usage(SubAgentUsageRecord(
+                    agent_name="coding_assistant", task_type="code_generation",
+                    success=False, failure_reason=f"exception: {str(e)[:100]}",
+                ))
+            return {
                 "phase_id": phase_id,
                 "title": title,
                 "status": "failed",
                 "written_files": [],
                 "error": str(e),
+            }
+
+    def _merge_written_files(result: dict) -> None:
+        """Phase 결과의 written_files를 all_written_files에 중복 없이 누적한다."""
+        from coding_agent.agents.coding_assistant.agent import _normalize_file_path
+
+        written = result.get("written_files", [])
+        existing_paths = {
+            _normalize_file_path(
+                f.split(" (")[0].strip() if isinstance(f, str) else f.get("path", ""),
+                workspace,
+            )
+            for f in all_written_files
+        }
+        for f in written:
+            fpath = f.get("path", "") if isinstance(f, dict) else str(f)
+            norm = _normalize_file_path(fpath, workspace)
+            if norm and norm not in existing_paths:
+                all_written_files.append(norm)
+                existing_paths.add(norm)
+
+    # Phase를 독립(deps 없음) / 의존(deps 있음) 그룹으로 분리
+    independent = [(i, p) for i, p in enumerate(phases) if not p.get("depends_on")]
+    dependent = [(i, p) for i, p in enumerate(phases) if p.get("depends_on")]
+
+    # 독립 Phase 병렬 실행
+    if len(independent) > 1:
+        logger.info("독립 Phase %d개 병렬 실행 시작", len(independent))
+        ind_results = await asyncio.gather(*[
+            _run_single_phase(p, idx, list(all_written_files))
+            for idx, p in independent
+        ])
+        for r in ind_results:
+            phase_results.append(r)
+            if r["status"] == "failed":
+                failed_ids.add(r["phase_id"])
+            _merge_written_files(r)
+    else:
+        for idx, p in independent:
+            r = await _run_single_phase(p, idx, list(all_written_files))
+            phase_results.append(r)
+            if r["status"] == "failed":
+                failed_ids.add(r["phase_id"])
+            _merge_written_files(r)
+
+    # 의존 Phase 순차 실행 (선행 phase 실패 시 skip)
+    for idx, phase in dependent:
+        phase_id = phase.get("id", f"phase_{idx + 1}")
+        title = phase.get("title", "")
+        deps = set(phase.get("depends_on", []))
+
+        if deps & failed_ids:
+            logger.warning("Phase %s 건너뜀: 선행 phase 실패/스킵 (%s)", phase_id, deps & failed_ids)
+            phase_results.append({
+                "phase_id": phase_id,
+                "title": title,
+                "status": "skipped",
+                "written_files": [],
+                "error": f"선행 phase 실패: {deps & failed_ids}",
             })
+            failed_ids.add(phase_id)
+            continue
+
+        r = await _run_single_phase(phase, idx, list(all_written_files))
+        phase_results.append(r)
+        if r["status"] == "failed":
+            failed_ids.add(r["phase_id"])
+        _merge_written_files(r)
 
     # 전체 phase 완료 후 VerificationAgent 실행
     verification_result = None
@@ -704,6 +777,16 @@ async def _execute_phases_sequentially(
             logger.info("검증 완료: %s", verification_result.get("summary", ""))
         except Exception as e:
             logger.warning("VerificationAgent 실행 실패 (결과에 영향 없음): %s", e)
+
+    # SubAgent 통계 로깅
+    stats = sa_registry.usage_stats
+    if stats:
+        for name, s in stats.items():
+            logger.info(
+                "[SubAgent 통계] %s: 총 %d회 (성공 %d / 실패 %d)",
+                name, s["total"], s["success"], s["fail"],
+            )
+    sa_registry.cleanup_completed()
 
     # 집계 응답 생성
     response = _build_phase_summary_response(phase_results, all_written_files)
@@ -929,10 +1012,23 @@ class OrchestratorAgent(BaseGraphAgent):
         # AbortController — 턴 시작 시 reset
         _abort_controller = AbortController()
 
-        # 미들웨어 체인: ResilienceMiddleware(가장 바깥) + MemoryMiddleware
+        # 미들웨어 체인: Resilience → Summarization → MessageWindow → Memory
         _middleware_chain = MiddlewareChain([
             ResilienceMiddleware(abort_controller=_abort_controller),
-            MemoryMiddleware(memory_store=memory_store),
+            SummarizationMiddleware(
+                token_threshold=110_000,
+                keep_recent_messages=8,
+                max_tool_arg_chars=3000,
+            ),
+            MessageWindowMiddleware(
+                max_context_tokens=100_000,
+                tool_result_max_tokens=8_000,
+                keep_recent=8,
+            ),
+            MemoryMiddleware(
+                memory_store=memory_store,
+                slm_invoker=self._make_slm_invoker(),
+            ),
         ])
 
         super().__init__(
@@ -941,6 +1037,19 @@ class OrchestratorAgent(BaseGraphAgent):
             agent_name="OrchestratorAgent",
             **kwargs,
         )
+
+    def _make_slm_invoker(self):
+        """메모리 자동 축적용 SLM(FAST) 호출 함수를 생성한다."""
+        try:
+            slm = self._orch_config.get_model("parsing")  # FAST 티어
+        except Exception:
+            return None
+
+        async def _invoke(messages):
+            resp = await slm.ainvoke(messages)
+            return resp.content if resp else ""
+
+        return _invoke
 
     def init_nodes(self, graph: StateGraph) -> None:
         graph.add_node(self.get_node_name("CLASSIFY"), classify)

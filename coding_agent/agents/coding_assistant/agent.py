@@ -53,6 +53,7 @@ from .prompts import (
 from .schemas import CodingState
 
 
+
 def _normalize_file_path(path: str, workspace: str | None = None) -> str:
     """파일 경로를 workspace 기준 상대 경로로 정규화한다.
 
@@ -100,125 +101,7 @@ def _get_tools_by_name(tools: list[Any]) -> dict[str, Any]:
     return {getattr(t, "name", None): t for t in tools if getattr(t, "name", None)}
 
 
-# ── 코드 블록 파싱 ──
-
-_FENCE_RE = re.compile(r"```(\w+)?\s*\n(.*?)```", re.DOTALL)
-
-_FILEPATH_COMMENT_PATTERNS = [
-    # # filepath: path/to/file.py  또는  // filepath: path/to/file.py
-    re.compile(r"^(?:#|//)\s*(?:filepath:\s*)(\S+)\s*$"),
-    # <!-- filepath: path/to/file.html -->
-    re.compile(r"^<!--\s*(?:filepath:\s*)(\S+)\s*-->$"),
-    # /* filepath: path/to/file.css */
-    re.compile(r"^/\*\s*(?:filepath:\s*)(\S+)\s*\*/$"),
-    # 경로만 있는 주석: // app.py  또는  # app.py (확장자 필수)
-    re.compile(r"^(?:#|//)\s*(\S+\.\S+)\s*$"),
-    # <!-- templates/index.html -->
-    re.compile(r"^<!--\s*(\S+\.\S+)\s*-->$"),
-    # 백틱 감싼 경로: `frontend/package.json`
-    re.compile(r"^`([^`]+\.\S+)`\s*$"),
-]
-
-# 코드 블록 바로 위에 있는 filepath 마크다운 헤딩 패턴
-# LLM이 `# filepath: app.py` 를 코드 블록 밖에 제목으로 생성하는 경우 대응
-_HEADING_FILEPATH_RE = re.compile(r"#+\s*(?:filepath:\s*)?(\S*\.\S+)\s*$", re.MULTILINE)
-# 굵은 텍스트 형태: **filepath: app.py**
-_BOLD_FILEPATH_RE = re.compile(
-    r"\*{1,2}(?:filepath:\s*)?([^\s*]+\.[^\s*]+)\*{1,2}\s*$", re.MULTILINE
-)
-# 백틱 감싼 경로: `frontend/package.json` 또는 **`vite.config.js`**
-_BACKTICK_FILEPATH_RE = re.compile(
-    r"\*{0,2}`([^`]+\.[^`]+)`\*{0,2}\s*:?\s*$", re.MULTILINE
-)
-
 _FORBIDDEN_PATHS = (".claude/", ".git/", "__pycache__/", "node_modules/")
-
-
-def _find_filepath_before_fence(text: str, fence_start: int) -> str:
-    """코드 블록 바로 위 텍스트에서 filepath를 찾는다."""
-    # 코드 블록 앞 500자에서 검색 (LLM이 설명을 끼워넣는 경우 대비)
-    preceding = text[max(0, fence_start - 500) : fence_start]
-    lines = preceding.rstrip().rsplit("\n", 8)
-
-    for line in reversed(lines):
-        line = line.strip()
-        if not line:
-            continue
-        # 마크다운 제목: # filepath: app.py  또는  ## app.py
-        m = _HEADING_FILEPATH_RE.match(line)
-        if m:
-            return m.group(1).strip()
-        # 굵은 텍스트: **filepath: app.py**
-        m = _BOLD_FILEPATH_RE.match(line)
-        if m:
-            return m.group(1).strip()
-        # 백틱 감싼 경로: `frontend/package.json` 또는 **`vite.config.js`**:
-        m = _BACKTICK_FILEPATH_RE.match(line)
-        if m:
-            return m.group(1).strip()
-        # 일반 텍스트 filepath: app.py
-        for pattern in _FILEPATH_COMMENT_PATTERNS:
-            m = pattern.match(line)
-            if m:
-                return m.group(1).strip()
-    return ""
-
-
-# LLM이 write_file() 도구 호출 형태로 코드를 생성하는 경우 파싱
-_WRITE_FILE_RE = re.compile(
-    r'write_file\s*\(\s*path\s*=\s*"([^"]+)"\s*,\s*content\s*=\s*"(.*?)"\s*\)',
-    re.DOTALL,
-)
-
-
-def _extract_code_blocks(text: str) -> list[dict[str, str]]:
-    """마크다운에서 파일 경로가 포함된 코드 블록을 추출한다.
-
-    filepath를 다음 위치에서 순서대로 탐색:
-    1. 코드 블록 내부 첫 줄 (# filepath: app.py)
-    2. 코드 블록 바로 위 텍스트 (마크다운 제목, 주석 등)
-    3. write_file(path=..., content=...) 도구 호출 형태 (LLM fallback)
-    """
-    blocks: list[dict[str, str]] = []
-    for match in _FENCE_RE.finditer(text):
-        lang = match.group(1) or ""
-        code = match.group(2)
-
-        filepath = ""
-        # 전략 1: 코드 블록 내부 첫 줄에서 filepath 추출
-        if code:
-            first_line = code.split("\n", 1)[0].strip()
-            for pattern in _FILEPATH_COMMENT_PATTERNS:
-                m = pattern.match(first_line)
-                if m:
-                    filepath = m.group(1).strip()
-                    # 파일 경로 주석 줄 제거
-                    code = code.split("\n", 1)[1] if "\n" in code else ""
-                    break
-
-        # 전략 2: 코드 블록 바로 위 텍스트에서 filepath 추출
-        if not filepath:
-            filepath = _find_filepath_before_fence(text, match.start())
-
-        # 전략 3: write_file(path=..., content=...) 도구 호출 형태 파싱
-        if not filepath and lang in ("tool_code", "python", ""):
-            wf_match = _WRITE_FILE_RE.search(code)
-            if wf_match:
-                filepath = wf_match.group(1).strip()
-                # content 인자에서 실제 코드 추출 (이스케이프 처리)
-                raw_content = wf_match.group(2)
-                code = raw_content.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
-
-        if filepath:
-            blocks.append(
-                {
-                    "filepath": filepath,
-                    "language": lang,
-                    "code": code.rstrip("\n"),
-                }
-            )
-
-    return blocks
 
 
 class CodingAssistantAgent(BaseGraphAgent):
@@ -293,7 +176,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                 tool_result_max_tokens=8_000,  # 개별 도구 결과 상한
                 keep_recent=8,                 # 최근 보존 메시지 수
             ),
-            MemoryMiddleware(memory_store=self._memory_store),
+            MemoryMiddleware(
+                memory_store=self._memory_store,
+                slm_invoker=self._make_slm_invoker(),
+            ),
         ])
 
         # 다층 안전장치 (Claude Code OS 패턴)
@@ -316,6 +202,19 @@ class CodingAssistantAgent(BaseGraphAgent):
             auto_build=False,
             **kwargs,
         )
+
+    def _make_slm_invoker(self):
+        """메모리 자동 축적용 SLM(FAST) 호출 함수를 생성한다."""
+        try:
+            slm = self._coding_config.get_model("parsing")  # FAST 티어
+        except Exception:
+            return None
+
+        async def _invoke(messages):
+            resp = await slm.ainvoke(messages)
+            return resp.content if resp else ""
+
+        return _invoke
 
     async def async_init(self) -> None:
         """MCP 도구를 비동기로 로드한다."""
@@ -422,6 +321,33 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return {**base_result, **result}
 
+    @staticmethod
+    def _detect_language_from_files(state: CodingState) -> str:
+        """planned_files/written_files에서 주요 언어/프레임워크를 감지한다."""
+        files = state.get("planned_files", []) or state.get("written_files", [])
+        if not files:
+            return state.get("parse_result", {}).get("language", "python")
+
+        ext_map = {
+            ".tsx": "TypeScript/React", ".ts": "TypeScript", ".jsx": "React/JavaScript",
+            ".js": "JavaScript", ".py": "Python", ".go": "Go", ".rs": "Rust",
+            ".java": "Java", ".vue": "Vue.js", ".svelte": "Svelte",
+        }
+        ext_count: dict[str, int] = {}
+        for f in files:
+            for ext, lang in ext_map.items():
+                if f.endswith(ext):
+                    ext_count[lang] = ext_count.get(lang, 0) + 1
+                    break
+
+        if not ext_count:
+            return state.get("parse_result", {}).get("language", "python")
+
+        # 가장 많은 확장자의 언어를 반환, 여러 개면 결합
+        sorted_langs = sorted(ext_count.items(), key=lambda x: -x[1])
+        top_langs = [lang for lang, _ in sorted_langs[:3]]
+        return ", ".join(top_langs)
+
     def _build_execute_system_prompt(
         self, state: CodingState, *, purpose: str = "execute"
     ) -> str:
@@ -430,8 +356,8 @@ class CodingAssistantAgent(BaseGraphAgent):
         Args:
             purpose: "execute" — ReAct 도구 루프용, "generate" — 최종 코드 생성용
         """
-        parse_result = state.get("parse_result", {})
-        language = parse_result.get("language", "python")
+        # Planner가 결정한 tech_stack을 파일 확장자에서 동적 감지
+        language = self._detect_language_from_files(state)
 
         if purpose == "generate":
             # GENERATE_FINAL: write_file 도구 사용 지시 프롬프트
@@ -559,8 +485,9 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return "\n".join(lines)
 
-    # write_file 도구 루프 최대 반복 횟수
-    _GENERATE_MAX_TOOL_LOOPS = 10
+    # write_file 도구 루프 최대 반복 횟수 — 단일 턴 완결을 위해 충분히 확보
+    # 파일 수 제한 없이 LLM이 자율적으로 모든 파일을 한 턴에서 생성하도록 허용
+    _GENERATE_MAX_TOOL_LOOPS = 30
 
     async def _generate_code(self, state: CodingState) -> dict[str, Any]:
         """단순화된 그래프(v2)의 코드 생성 노드.
@@ -568,11 +495,14 @@ class CodingAssistantAgent(BaseGraphAgent):
         기존 GENERATE_FINAL + 정적 검증 + 마크다운 폴백을 통합한다.
         STRONG 모델이 write_file 도구로 파일을 직접 저장한다.
         """
-        # 반복 감지: 동일 코드 반복 시 조기 종료
-        generated_code = state.get("generated_code", "")
+        # 핵심: _generate_final 호출 (LLM이 코드 생성)
+        result = await self._generate_final(state)
+
+        # 반복 감지: LLM 호출 이후 이전 생성과 비교하여 동일하면 재시도 중단
         prev_code = state.get("_prev_generated_code", "")
-        if prev_code and generated_code:
-            norm_cur = re.sub(r"\s+", " ", generated_code).strip()
+        new_code = result.get("generated_code", "")
+        if prev_code and new_code:
+            norm_cur = re.sub(r"\s+", " ", new_code).strip()
             norm_prev = re.sub(r"\s+", " ", prev_code).strip()
             if norm_cur == norm_prev or (
                 len(norm_cur) > 100
@@ -580,65 +510,18 @@ class CodingAssistantAgent(BaseGraphAgent):
                 and norm_cur[:500] == norm_prev[:500]
             ):
                 iteration = state.get("iteration", 0)
+                log = list(result.get("execution_log", []))
+                log.append("[generate] 동일 코드 반복 감지 — 재시도 중단")
                 return {
+                    **result,
                     "test_passed": True,
                     "test_output": f"동일 코드 반복으로 재시도 중단 (시도 {iteration}회)",
-                    "execution_log": list(state.get("execution_log", []))
-                    + ["[generate] 동일 코드 반복 감지 — 재시도 중단"],
+                    "execution_log": log,
                 }
 
-        # 핵심: 기존 _generate_final 호출
-        result = await self._generate_final(state)
-
-        # 마크다운 파싱 폴백 (기존 APPLY_CODE에서 이관)
-        written_files = result.get("written_files", [])
-        content = result.get("generated_code", "")
-        log = list(result.get("execution_log", []))
-        if not written_files and content:
-            blocks = _extract_code_blocks(content)
-            workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
-            saved = []
-            for block in blocks:
-                fp = block.get("filepath", "")
-                code = block.get("code", "")
-                if not fp or not code:
-                    continue
-                fp = _normalize_file_path(fp, workspace)
-                if not fp or any(fp.startswith(p) for p in _FORBIDDEN_PATHS):
-                    continue
-                full_path = os.path.join(workspace, fp)
-                try:
-                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                    with open(full_path, "w") as f:
-                        f.write(code)
-                    lines = code.count("\n") + 1
-                    saved.append(f"{fp} (+{lines} lines)")
-                except OSError as e:
-                    log.append(f"[generate] 파일 저장 실패: {fp}: {e}")
-            if saved:
-                written_files = saved
-                log.append(f"[generate] 마크다운 폴백으로 {len(saved)}개 파일 저장")
-            result["written_files"] = written_files
-
-        # 정적 검증 (기존 VERIFY에서 이관, LLM 호출 없이)
-        if content:
-            api_issues = self._check_api_consistency(content)
-            sig_issues = self._check_signature_consistency(content)
-            static_issues = api_issues + sig_issues
-            if static_issues:
-                log.append(f"[generate] 정적 검증 이슈 {len(static_issues)}건")
-            result["verify_result"] = {
-                "passed": not any(
-                    i.startswith("[P0]") or i.startswith("[P1]")
-                    for i in static_issues
-                ),
-                "issues": static_issues,
-                "suggestions": [],
-            }
-        else:
-            result["verify_result"] = {"passed": True, "issues": [], "suggestions": []}
-
-        result["execution_log"] = log
+        # 마크다운 폴백/정적 검증 제거 — LLM이 write_file 도구로 직접 저장
+        # validate_consistency MCP 도구가 제공되므로 LLM이 필요 시 호출
+        result["verify_result"] = {"passed": True, "issues": [], "suggestions": []}
         return result
 
     async def _generate_final(self, state: CodingState) -> dict[str, Any]:
@@ -678,11 +561,30 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         context_msg = self._build_context_message(state)
 
-        # STRONG 모델 + write_file 도구 바인딩
-        gen_model = self._get_gen_model()
+        # 모델 선택: 문서 위주 Phase면 DEFAULT(비용 절감), 코드 Phase면 STRONG
+        planned = state.get("planned_files", [])
+        doc_exts = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"}
+        if planned:
+            doc_count = sum(1 for f in planned if any(f.endswith(ext) for ext in doc_exts))
+            is_docs_phase = doc_count > len(planned) * 0.5
+        else:
+            is_docs_phase = False
 
-        # MCP 도구에서 write_file, read_file, validate_consistency만 필터링하여 바인딩
-        _GENERATE_TOOL_NAMES = {"write_file", "read_file", "validate_consistency"}
+        # 모델 선택: 문서 Phase → DEFAULT(비용 절감), 코드 Phase → STRONG
+        if is_docs_phase:
+            gen_model = self._coding_config.get_model("verification")  # DEFAULT 티어
+        else:
+            gen_model = self._get_gen_model()  # STRONG 티어
+
+        # MCP 도구 바인딩: 파일 I/O + 셸 실행 (LLM이 직접 테스트/설치 수행)
+        language = self._detect_language_from_files(state)
+        _GENERATE_TOOL_NAMES = {
+            "write_file", "read_file",
+            "run_shell", "run_python", "list_directory",
+        }
+        # Python 프로젝트에서만 validate_consistency 제공 (TS/JS에서는 무의미)
+        if "python" in language.lower():
+            _GENERATE_TOOL_NAMES.add("validate_consistency")
         write_tools = [
             t for t in self._tools
             if getattr(t, "name", "") in _GENERATE_TOOL_NAMES
@@ -779,6 +681,25 @@ class CodingAssistantAgent(BaseGraphAgent):
 
             total_tool_calls += len(tool_calls)
 
+            # 이전 write_file tool result 압축 — 토큰 낭비 방지
+            # "OK: app.py (42 lines)" 같은 결과가 누적되면 LLM이 같은 파일을 반복 생성
+            # 이전 루프의 write_file 결과를 한 줄 요약으로 교체
+            if written_files and loop_idx > 0:
+                written_set = set(written_files)
+                for i, msg in enumerate(loop_messages):
+                    if (
+                        isinstance(msg, ToolMessage)
+                        and getattr(msg, "name", "") == "write_file"
+                        and msg.content.startswith("OK:")
+                    ):
+                        # 이번 루프에서 생성한 메시지는 유지
+                        if i < len(loop_messages) - len(tool_calls) * 2:
+                            loop_messages[i] = ToolMessage(
+                                content=f"(이미 저장됨)",
+                                tool_call_id=msg.tool_call_id,
+                                name="write_file",
+                            )
+
             # StallDetector: write_file 루프에서도 반복 패턴 체크
             stall_break = False
             for call in tool_calls:
@@ -808,6 +729,17 @@ class CodingAssistantAgent(BaseGraphAgent):
                 f"도구 {len(tool_calls)}회 호출, "
                 f"파일 {len(written_files)}개 저장"
             )
+
+            # 이미 생성된 파일 목록을 LLM에 알려서 중복 방지
+            if written_files and loop_idx > 0:
+                files_summary = ", ".join(written_files)
+                loop_messages.append(
+                    SystemMessage(
+                        content=f"[시스템] 이미 저장된 파일({len(written_files)}개): {files_summary}. "
+                        f"이미 저장된 파일은 다시 write_file하지 마세요. "
+                        f"아직 생성하지 않은 파일만 작성하세요."
+                    )
+                )
 
         # 미완성 도구 호출 처리 (PatchToolCalls 패턴)
         if response and hasattr(response, "tool_calls") and response.tool_calls:
@@ -987,52 +919,7 @@ class CodingAssistantAgent(BaseGraphAgent):
             "tool_call_count": current_count + len(tool_calls),
         }
 
-    # 검증 타임아웃 (초) — 이 시간 초과 시 검증 스킵하고 진행
     # ── 실행 기반 검증 ─────────────────────────────────────
-
-    _RUN_TESTS_TIMEOUT_S = 60
-    _INSTALL_TIMEOUT_S = 120
-    _VENV_TIMEOUT_S = 60
-
-    # ── 런타임 감지 ──
-
-    # 언어별 런타임 확인 명령어
-    _RUNTIME_CHECKS: dict[str, list[tuple[str, str]]] = {
-        "python": [("python3", "--version"), ("python", "--version")],
-        "node": [("node", "--version")],
-        "java": [("java", "--version"), ("javac", "--version")],
-        "go": [("go", "version")],
-        "rust": [("cargo", "--version"), ("rustc", "--version")],
-    }
-
-    @staticmethod
-    async def _check_command_exists(cmd: str) -> bool:
-        """명령어가 시스템에 설치되어 있는지 확인한다."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "which", cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await proc.communicate()
-            return proc.returncode == 0
-        except Exception:
-            return False
-
-    async def _detect_runtimes(self, languages: list[str], log: list[str]) -> dict[str, bool]:
-        """필요한 런타임이 설치되어 있는지 확인한다."""
-        results: dict[str, bool] = {}
-        for lang in languages:
-            checks = self._RUNTIME_CHECKS.get(lang, [])
-            found = False
-            for cmd, arg in checks:
-                if await self._check_command_exists(cmd):
-                    found = True
-                    break
-            results[lang] = found
-            status = "✓" if found else "✗ 미설치"
-            log.append(f"[runtime] {lang}: {status}")
-        return results
 
     # ── 메시지 직렬화 호환성 ──────────────────────────────────
 
@@ -1114,156 +1001,19 @@ class CodingAssistantAgent(BaseGraphAgent):
         if removed:
             log.append(f"[cache-clean] Python 캐시 {removed}건 삭제")
 
-    # ── 프로젝트 환경 설정 (venv 생성 + 의존성 설치) ──
-
-    async def _get_venv_python(self, workspace: str) -> str | None:
-        """workspace의 venv python 경로를 반환한다. venv가 없으면 None."""
-        venv_python = os.path.join(workspace, ".venv", "bin", "python")
-        if os.path.exists(venv_python):
-            return venv_python
-        return None
-
-    async def _setup_project_env(self, workspace: str, log: list[str]) -> str | None:
-        """workspace에 격리된 가상환경을 생성하고 의존성을 설치한다.
-
-        Returns:
-            venv의 python 경로, 또는 실패/비해당 시 None.
-        """
-        # 이미 venv가 있으면 재사용
-        existing = await self._get_venv_python(workspace)
-        if existing:
-            log.append(f"[env] 기존 venv 재사용: {existing}")
-            return existing
-
-        # requirements.txt 또는 pyproject.toml이 있을 때만 Python venv 생성
-        has_python_deps = any(
-            os.path.exists(os.path.join(workspace, f))
-            for f in ("requirements.txt", "pyproject.toml")
-        )
-        if not has_python_deps:
-            return None
-
-        # uv가 있으면 uv venv, 없으면 python -m venv
-        uv_available = await self._check_command_exists("uv")
-        venv_path = os.path.join(workspace, ".venv")
-
-        if uv_available:
-            create_cmd = ["uv", "venv", venv_path]
-        else:
-            # python3 우선, 없으면 python
-            py_cmd = "python3" if await self._check_command_exists("python3") else "python"
-            create_cmd = [py_cmd, "-m", "venv", venv_path]
-
-        log.append(f"[env] venv 생성: {' '.join(create_cmd)}")
-        try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    *create_cmd,
-                    cwd=workspace,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=self._VENV_TIMEOUT_S,
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                log.append(f"[env] ⚠ venv 생성 실패: {stderr.decode()[:300]}")
-                return None
-        except (TimeoutError, Exception) as e:
-            log.append(f"[env] ⚠ venv 생성 오류: {e}")
-            return None
-
-        venv_python = os.path.join(venv_path, "bin", "python")
-        if not os.path.exists(venv_python):
-            log.append("[env] ⚠ venv python 바이너리를 찾을 수 없음")
-            return None
-
-        log.append(f"[env] ✓ venv 생성 완료: {venv_python}")
-        return venv_python
-
-    async def _install_dependencies(
-        self, workspace: str, venv_python: str | None, log: list[str]
-    ) -> None:
-        """workspace의 의존성 파일을 감지하여 격리된 환경에 설치한다."""
-
-        dep_files: list[tuple[str, list[str]]] = []
-
-        # Python 의존성
-        req_path = os.path.join(workspace, "requirements.txt")
-        pyproject_path = os.path.join(workspace, "pyproject.toml")
-        if venv_python and os.path.exists(req_path):
-            uv_available = await self._check_command_exists("uv")
-            if uv_available:
-                dep_files.append(("requirements.txt", [
-                    "uv", "pip", "install",
-                    "--python", venv_python,
-                    "-r", "requirements.txt",
-                ]))
-                # pytest도 함께 설치
-                dep_files.append(("pytest", [
-                    "uv", "pip", "install",
-                    "--python", venv_python,
-                    "pytest",
-                ]))
-            else:
-                dep_files.append(("requirements.txt", [
-                    venv_python, "-m", "pip", "install", "-r", "requirements.txt",
-                ]))
-                dep_files.append(("pytest", [
-                    venv_python, "-m", "pip", "install", "pytest",
-                ]))
-        elif venv_python and os.path.exists(pyproject_path):
-            dep_files.append(("pyproject.toml", [venv_python, "-m", "pip", "install", "-e", "."]))
-
-        # Node.js 의존성
-        pkg_path = os.path.join(workspace, "package.json")
-        if os.path.exists(pkg_path) and await self._check_command_exists("npm"):
-            dep_files.append(("package.json", ["npm", "install"]))
-
-        # Go 의존성
-        gomod_path = os.path.join(workspace, "go.mod")
-        if os.path.exists(gomod_path) and await self._check_command_exists("go"):
-            dep_files.append(("go.mod", ["go", "mod", "tidy"]))
-
-        # Rust 의존성
-        cargo_path = os.path.join(workspace, "Cargo.toml")
-        if os.path.exists(cargo_path) and await self._check_command_exists("cargo"):
-            dep_files.append(("Cargo.toml", ["cargo", "build"]))
-
-        for label, cmd in dep_files:
-            log.append(f"[install_deps] {' '.join(cmd)}")
-            try:
-                proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        *cmd,
-                        cwd=workspace,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    ),
-                    timeout=self._INSTALL_TIMEOUT_S,
-                )
-                _, stderr = await proc.communicate()
-                if proc.returncode == 0:
-                    log.append(f"[install_deps] ✓ {label} 완료")
-                else:
-                    log.append(f"[install_deps] ⚠ {label} 실패: {stderr.decode()[:300]}")
-            except TimeoutError:
-                log.append(f"[install_deps] ⚠ {label} 타임아웃")
-            except Exception as e:
-                log.append(f"[install_deps] ⚠ {label} 오류: {e}")
+    # (환경 설정 메서드 제거됨 — LLM이 run_shell 도구로 직접 수행)
 
     # ── 실행 기반 검증 ──
 
     async def _run_tests(self, state: CodingState) -> dict[str, Any]:
-        """디스크에 저장된 코드를 격리된 프로젝트 환경에서 실제로 실행하여 검증한다.
+        """디스크에 저장된 코드의 기계적 검증만 수행한다.
 
-        0단계: 런타임 감지 + venv 생성 + 의존성 설치
-        1단계: syntax check (py_compile)
-        1.5단계: JS/TS/Vue 문법 검증 (node --check, tsc --noEmit)
-        2단계: 프론트엔드 테스트 실행 (jest / vitest)
-        3단계: pytest 실행 (workspace venv의 python 사용)
+        원칙: Harness = 기계적 도구 제공자, LLM = 판단자.
+        - Harness가 하는 것: syntax check (py_compile), planned 파일 존재 확인
+        - LLM이 하는 것: 환경 설정, 의존성 설치, 테스트 실행 (run_shell 도구 사용)
 
-        실패 시 test_passed=False + 에러 메시지를 test_output에 저장.
+        환경 설정(venv, pip, npm), 런타임 감지, 테스트 실행(pytest, jest)은
+        LLM이 _generate_final에서 run_shell 도구로 직접 수행한다.
         """
         written_files = state.get("written_files", [])
         log = list(state.get("execution_log", []))
@@ -1276,7 +1026,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             for f in planned_files:
                 norm = _normalize_file_path(f, workspace)
                 full_path = os.path.join(workspace, norm)
-                # 디스크에 실제로 존재하는지 확인 (이전 Phase 생성 파일 포함)
                 if not os.path.exists(full_path):
                     missing.append(f)
             if missing:
@@ -1306,118 +1055,17 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
-        workspace = os.environ.get("CODE_TOOLS_WORKSPACE", os.getcwd())
-
-        # 파일 경로에서 실제 경로 추출 + 정규화 ("app.py (+24 lines)" → "app.py")
-        real_files = []
-        for f in written_files:
-            path = _normalize_file_path(f, workspace)
-            real_files.append(path)
-
+        # 파일 경로 정규화
+        real_files = [_normalize_file_path(f, workspace) for f in written_files]
         py_files = [f for f in real_files if f.endswith(".py")]
-        test_files = [f for f in real_files if "test" in f.lower() and f.endswith(".py")]
-        # 프론트엔드 테스트 파일 감지 (.test.js, .spec.ts 등)
-        _FE_TEST_PATTERN = re.compile(
-            r"\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$", re.IGNORECASE,
-        )
-        fe_test_files = [f for f in real_files if _FE_TEST_PATTERN.search(f)]
 
-        # 0단계: 런타임 감지 + venv 생성 + 의존성 설치
-        needed_langs = []
-        if py_files:
-            needed_langs.append("python")
-        js_files = [f for f in real_files if f.endswith((".js", ".ts", ".jsx", ".tsx", ".vue"))]
-        html_detect = any(f.endswith((".html", ".htm")) for f in real_files)
-        if js_files or html_detect:
-            needed_langs.append("node")
-
-        runtimes = await self._detect_runtimes(needed_langs, log)
-        missing = [lang for lang, found in runtimes.items() if not found]
-        if missing:
-            log.append(f"[run_tests] 런타임 미설치: {missing} — 테스트 스킵")
-            return {
-                "test_passed": True,
-                "test_output": f"런타임 미설치로 스킵: {missing}",
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-        # 0.5단계: 환경 설정 승인 요청 (HITL)
-        # 이미 venv가 있으면 승인 스킵 (재사용)
-        existing_venv = await self._get_venv_python(workspace)
-        if not existing_venv and not state.get("env_approved"):
-            # 의존성 파일 내용 미리 수집
-            dep_summary = []
-            req_path = os.path.join(workspace, "requirements.txt")
-            if os.path.exists(req_path):
-                with open(req_path) as f:
-                    dep_summary.append(f"requirements.txt:\n{f.read()[:500]}")
-            pkg_path = os.path.join(workspace, "package.json")
-            if os.path.exists(pkg_path):
-                dep_summary.append("package.json 존재")
-
-            env_info = {
-                "type": "env_approval",
-                "venv_path": os.path.join(workspace, ".venv"),
-                "workspace": workspace,
-                "runtimes": {k: v for k, v in runtimes.items() if v},
-                "dependencies": "\n".join(dep_summary) if dep_summary else "(의존성 파일 없음)",
-            }
-            log.append("[run_tests] 환경 설정 승인 대기 (HITL interrupt)")
-
-            try:
-                response = interrupt(env_info)
-            except RuntimeError:
-                # 그래프 컨텍스트 밖 (테스트 등) — 자동 승인
-                response = True
-
-            if not response:
-                # 거부: 실행 기반 검증 스킵, LLM 검증만으로 진행
-                log.append("[run_tests] 환경 설정 거부 — 실행 검증 스킵")
-                return {
-                    "test_passed": True,
-                    "test_output": "환경 설정 거부 — LLM 검증만 통과",
-                    "execution_log": log,
-                    "iteration": state.get("iteration", 0) + 1,
-                }
-            log.append("[run_tests] 환경 설정 승인됨")
-
-        # Python venv 생성 + 의존성 설치
-        # 재시도 시: 의존성 파일 변경 또는 ModuleNotFoundError 발생 시 재설치
-        iteration = state.get("iteration", 0)
-        venv_python = None
-        should_install_deps = iteration == 0
-        if iteration > 0:
-            written = state.get("written_files", [])
-            dep_files = {"requirements.txt", "package.json", "go.mod", "Cargo.toml",
-                         "pyproject.toml", "setup.py", "setup.cfg"}
-            if any(f.split(" (")[0].strip() in dep_files for f in written):
-                should_install_deps = True
-                log.append("[run_tests] 의존성 파일 변경 감지 — 재설치")
-            # _inject_test_failure에서 설정한 플래그 확인
-            if state.get("_deps_changed"):
-                should_install_deps = True
-                log.append("[run_tests] 의존성 변경 플래그 감지 — 재설치")
-
-        if py_files:
-            venv_python = await self._setup_project_env(workspace, log)
-            if should_install_deps:
-                await self._install_dependencies(workspace, venv_python, log)
-
-        # Node.js / Go / Rust 의존성 설치 (venv 불필요)
-        if not py_files and should_install_deps:
-            await self._install_dependencies(workspace, None, log)
-
-        # 실제 사용할 python 경로 결정
-        project_python = venv_python or "python3"
-
-        # 0.9단계: Python 캐시 정리 — .pyc가 남아있으면 수정된 코드가 반영되지 않음
+        # Python 캐시 정리 (기계적 작업)
         if py_files:
             await self._clean_python_cache(workspace, log)
 
         errors: list[str] = []
 
-        # 1단계: syntax check
+        # syntax check (py_compile) — 기계적 검증
         for filepath in py_files:
             full_path = os.path.join(workspace, filepath)
             if not os.path.exists(full_path):
@@ -1438,483 +1086,19 @@ class CodingAssistantAgent(BaseGraphAgent):
                 "iteration": state.get("iteration", 0) + 1,
             }
 
-        # 1.2단계: HTML 구조 + 임베디드 JS 검증
-        html_files = [f for f in real_files if f.endswith((".html", ".htm"))]
-        if html_files:
-            html_errors = await self._validate_html_files(
-                html_files, workspace, runtimes, log,
-            )
-            if html_errors:
-                errors.extend(html_errors)
+        # 테스트 통과 + 이전에 실패가 있었으면 패턴 저장
+        if state.get("iteration", 0) > 0:
+            self._save_fix_pattern(state)
 
-        if errors:
-            output = "\n".join(errors)
-            log.append(f"[run_tests] HTML 검증 오류 {len(errors)}건")
-            return {
-                "test_passed": False,
-                "test_output": output,
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
+        log.append(f"[run_tests] syntax 검증 통과 ({len(py_files)} py, {len(real_files) - len(py_files)} other)")
+        return {
+            "test_passed": True,
+            "test_output": "syntax 검증 통과",
+            "execution_log": log,
+            "iteration": state.get("iteration", 0) + 1,
+        }
 
-        # 1.5단계: JS/TS/Vue 문법 검증 (node --check)
-        js_check_files = [f for f in real_files if f.endswith((".js", ".mjs", ".cjs"))]
-        ts_files = [f for f in real_files if f.endswith((".ts", ".tsx"))]
-        vue_files = [f for f in real_files if f.endswith(".vue")]
-
-        if js_check_files and runtimes.get("node"):
-            for filepath in js_check_files:
-                full_path = os.path.join(workspace, filepath)
-                if not os.path.exists(full_path):
-                    continue
-                try:
-                    proc = await asyncio.wait_for(
-                        asyncio.create_subprocess_exec(
-                            "node", "--check", full_path,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                        ),
-                        timeout=15,
-                    )
-                    _, stderr_out = await proc.communicate()
-                    if proc.returncode != 0:
-                        errors.append(f"[js-syntax] {filepath}: {stderr_out.decode()[:500]}")
-                except (TimeoutError, Exception) as e:
-                    log.append(f"[run_tests] node --check 실패 ({filepath}): {e}")
-
-        if ts_files and runtimes.get("node"):
-            # npx tsc --noEmit 사용 (tsconfig가 있을 때만)
-            tsconfig_path = os.path.join(workspace, "tsconfig.json")
-            if os.path.exists(tsconfig_path):
-                try:
-                    proc = await asyncio.wait_for(
-                        asyncio.create_subprocess_exec(
-                            "npx", "tsc", "--noEmit",
-                            cwd=workspace,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                        ),
-                        timeout=30,
-                    )
-                    stdout_out, stderr_out = await proc.communicate()
-                    if proc.returncode != 0:
-                        output = stdout_out.decode()[:500] + stderr_out.decode()[:500]
-                        errors.append(f"[ts-check] TypeScript 오류:\n{output}")
-                except (TimeoutError, Exception) as e:
-                    log.append(f"[run_tests] tsc --noEmit 실패: {e}")
-
-        if errors:
-            output = "\n".join(errors)
-            log.append(f"[run_tests] JS/TS 문법 오류 {len(errors)}건")
-            return {
-                "test_passed": False,
-                "test_output": output,
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-        # 2단계: 프론트엔드 테스트 실행 (jest / vitest)
-        frontend_only = not py_files and (js_check_files or ts_files or vue_files or html_files)
-        fe_test_result = None
-        if fe_test_files and runtimes.get("node"):
-            fe_test_result = await self._run_frontend_tests(
-                workspace, fe_test_files, log,
-            )
-
-        # 3단계: pytest 실행 (격리된 venv의 pytest 사용)
-        if not test_files:
-            # 프론트엔드 테스트 결과가 있으면 그 결과를 반환
-            if fe_test_result is not None:
-                return {
-                    **fe_test_result,
-                    "iteration": state.get("iteration", 0) + 1,
-                }
-            label = "프론트엔드 문법 검증 통과" if frontend_only else "syntax 검증 통과"
-            log.append(f"[run_tests] 테스트 파일 없음 — {label}")
-            return {
-                "test_passed": True,
-                "test_output": f"{label} (테스트 파일 없음)",
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-        test_paths = [os.path.join(workspace, f) for f in test_files]
-        try:
-            # 격리된 venv의 python으로 pytest 실행
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    project_python, "-m", "pytest",
-                    "--tb=short", "-q", "--no-header",
-                    "-p", "no:cacheprovider",
-                    *test_paths,
-                    cwd=workspace,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env={
-                        **os.environ,
-                        "PYTHONPATH": workspace,
-                        "VIRTUAL_ENV": os.path.join(workspace, ".venv"),
-                    },
-                ),
-                timeout=self._RUN_TESTS_TIMEOUT_S,
-            )
-            stdout, stderr = await proc.communicate()
-            output = self._smart_truncate_test_output(stdout.decode(), limit=3000)
-            if stderr:
-                output += "\n" + stderr.decode()[:1000]
-
-            passed = proc.returncode == 0
-            log.append(f"[run_tests] pytest {'통과' if passed else '실패'} (venv={project_python}): {test_files}")
-
-            # 프론트엔드 테스트 결과 병합
-            if fe_test_result is not None:
-                fe_passed = fe_test_result["test_passed"]
-                passed = passed and fe_passed
-                output = output + "\n\n--- Frontend Tests ---\n" + fe_test_result["test_output"]
-
-            # 테스트 통과 + 이전에 실패가 있었으면 "에러→수정" 패턴을 Procedural Memory에 저장
-            if passed and state.get("iteration", 0) > 0:
-                self._save_fix_pattern(state)
-
-            return {
-                "test_passed": passed,
-                "test_output": output,
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-        except TimeoutError:
-            log.append(f"[run_tests] 타임아웃 ({self._RUN_TESTS_TIMEOUT_S}s) — 통과 처리")
-            return {
-                "test_passed": True,
-                "test_output": "테스트 타임아웃 — 스킵",
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-        except Exception as e:
-            log.append(f"[run_tests] 실행 오류: {e}")
-            return {
-                "test_passed": True,
-                "test_output": f"테스트 실행 실패: {e}",
-                "execution_log": log,
-                "iteration": state.get("iteration", 0) + 1,
-            }
-
-    # ── HTML 구조 + 임베디드 스크립트 검증 ─────────────────────
-
-    async def _validate_html_files(
-        self,
-        html_files: list[str],
-        workspace: str,
-        runtimes: dict[str, bool],
-        log: list[str],
-    ) -> list[str]:
-        """HTML 파일의 구조적 유효성 + 임베디드 JS를 검증한다.
-
-        검증 항목:
-        1. HTML 파싱 오류 (미닫힌 태그, 잘못된 중첩)
-        2. 필수 요소 존재 여부 (<!DOCTYPE>, <html>, <head>, <body>)
-        3. 임베디드 <script> 블록의 JS 문법 검증 (node --check)
-        """
-        import html.parser
-        import tempfile
-
-        errors: list[str] = []
-
-        class _HTMLStructureValidator(html.parser.HTMLParser):
-            """HTML 구조 검증 파서."""
-
-            _VOID_ELEMENTS = frozenset({
-                "area", "base", "br", "col", "embed", "hr", "img", "input",
-                "link", "meta", "param", "source", "track", "wbr",
-            })
-
-            def __init__(self) -> None:
-                super().__init__()
-                self.tag_stack: list[str] = []
-                self.parse_errors: list[str] = []
-                self.found_tags: set[str] = set()
-                self.scripts: list[str] = []
-                self._in_script = False
-                self._script_buf: list[str] = []
-                self.has_doctype = False
-
-            def handle_decl(self, decl: str) -> None:
-                if decl.lower().startswith("doctype"):
-                    self.has_doctype = True
-
-            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-                tag = tag.lower()
-                self.found_tags.add(tag)
-                if tag not in self._VOID_ELEMENTS:
-                    self.tag_stack.append(tag)
-                if tag == "script":
-                    # 외부 스크립트(src 속성)는 건너뜀
-                    attr_dict = dict(attrs)
-                    if not attr_dict.get("src"):
-                        self._in_script = True
-                        self._script_buf = []
-
-            def handle_endtag(self, tag: str) -> None:
-                tag = tag.lower()
-                if tag in self._VOID_ELEMENTS:
-                    return
-                if tag == "script" and self._in_script:
-                    self._in_script = False
-                    content = "".join(self._script_buf).strip()
-                    if content:
-                        self.scripts.append(content)
-                if self.tag_stack and self.tag_stack[-1] == tag:
-                    self.tag_stack.pop()
-                elif self.tag_stack:
-                    self.parse_errors.append(
-                        f"태그 불일치: </{tag}> (예상: </{self.tag_stack[-1]}>)"
-                    )
-
-            def handle_data(self, data: str) -> None:
-                if self._in_script:
-                    self._script_buf.append(data)
-
-        for filepath in html_files:
-            full_path = os.path.join(workspace, filepath)
-            if not os.path.exists(full_path):
-                continue
-
-            try:
-                with open(full_path, encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-            except OSError as e:
-                errors.append(f"[html] {filepath}: 읽기 실패 — {e}")
-                continue
-
-            validator = _HTMLStructureValidator()
-            try:
-                validator.feed(content)
-            except Exception as e:
-                errors.append(f"[html] {filepath}: 파싱 실패 — {e}")
-                continue
-
-            # 구조 오류
-            for err in validator.parse_errors:
-                errors.append(f"[html] {filepath}: {err}")
-
-            # 미닫힌 태그
-            if validator.tag_stack:
-                unclosed = ", ".join(f"<{t}>" for t in validator.tag_stack)
-                errors.append(f"[html] {filepath}: 미닫힌 태그 — {unclosed}")
-
-            # 필수 요소 확인
-            if not validator.has_doctype:
-                errors.append(f"[html] {filepath}: <!DOCTYPE html> 누락")
-            for required in ("html", "head", "body"):
-                if required not in validator.found_tags:
-                    errors.append(f"[html] {filepath}: <{required}> 태그 누락")
-
-            # 임베디드 JS 문법 검증 (node --check)
-            if validator.scripts and runtimes.get("node"):
-                for idx, script_content in enumerate(validator.scripts):
-                    try:
-                        with tempfile.NamedTemporaryFile(
-                            mode="w", suffix=".js", delete=False,
-                            dir=workspace,
-                        ) as tmp:
-                            tmp.write(script_content)
-                            tmp_path = tmp.name
-
-                        proc = await asyncio.wait_for(
-                            asyncio.create_subprocess_exec(
-                                "node", "--check", tmp_path,
-                                stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE,
-                            ),
-                            timeout=10,
-                        )
-                        _, stderr_out = await proc.communicate()
-                        if proc.returncode != 0:
-                            err_msg = stderr_out.decode()[:300]
-                            errors.append(
-                                f"[html-js] {filepath} <script#{idx+1}>: {err_msg}"
-                            )
-                    except (TimeoutError, Exception) as e:
-                        log.append(
-                            f"[run_tests] HTML 임베디드 JS 검증 실패 "
-                            f"({filepath} #{idx+1}): {e}"
-                        )
-                    finally:
-                        try:
-                            os.unlink(tmp_path)
-                        except OSError:
-                            pass
-
-            log.append(
-                f"[run_tests] HTML 검증 완료: {filepath} "
-                f"(구조오류={len(validator.parse_errors)}, "
-                f"스크립트={len(validator.scripts)}개)"
-            )
-
-        return errors
-
-    # ── 프론트엔드 테스트 실행 ─────────────────────────────────
-
-    _FE_TEST_TIMEOUT_S: int = 60
-
-    async def _run_frontend_tests(
-        self,
-        workspace: str,
-        fe_test_files: list[str],
-        log: list[str],
-    ) -> dict[str, Any]:
-        """jest 또는 vitest로 프론트엔드 테스트를 실행한다.
-
-        탐지 우선순위:
-        1. package.json의 scripts.test가 있으면 `npm test` 사용
-        2. vitest.config / vite.config 존재 → `npx vitest run`
-        3. jest.config 존재 → `npx jest`
-        4. 폴백: `npx jest` (가장 보편적)
-        """
-        runner_cmd: list[str] = []
-        runner_label = ""
-
-        pkg_path = os.path.join(workspace, "package.json")
-        has_test_script = False
-        if os.path.exists(pkg_path):
-            try:
-                import json
-
-                with open(pkg_path) as f:
-                    pkg = json.load(f)
-                scripts = pkg.get("scripts", {})
-                test_script = scripts.get("test", "")
-                # "echo \"Error: no test specified\" && exit 1" 같은 기본값 제외
-                if test_script and "no test specified" not in test_script:
-                    has_test_script = True
-            except Exception:
-                pass
-
-        if has_test_script:
-            runner_cmd = ["npm", "test", "--"]
-            runner_label = "npm test"
-        elif any(
-            os.path.exists(os.path.join(workspace, cfg))
-            for cfg in ("vitest.config.ts", "vitest.config.js", "vitest.config.mts")
-        ):
-            runner_cmd = ["npx", "vitest", "run"]
-            runner_label = "vitest"
-        elif any(
-            os.path.exists(os.path.join(workspace, cfg))
-            for cfg in (
-                "vite.config.ts", "vite.config.js", "vite.config.mts",
-            )
-        ):
-            # vite 프로젝트는 vitest 사용 가능성 높음
-            runner_cmd = ["npx", "vitest", "run"]
-            runner_label = "vitest (vite project)"
-        elif any(
-            os.path.exists(os.path.join(workspace, cfg))
-            for cfg in ("jest.config.js", "jest.config.ts", "jest.config.mjs", "jest.config.cjs", "jest.config.json")
-        ):
-            runner_cmd = ["npx", "jest"]
-            runner_label = "jest"
-        else:
-            # 폴백: npx jest (가장 보편적)
-            runner_cmd = ["npx", "jest"]
-            runner_label = "jest (fallback)"
-
-        # 테스트 파일 경로 추가
-        test_paths = [os.path.join(workspace, f) for f in fe_test_files]
-        cmd = [*runner_cmd, *test_paths]
-
-        log.append(f"[run_tests] 프론트엔드 테스트 러너 감지: {runner_label}")
-
-        # npm install 확인 — node_modules 없으면 설치
-        node_modules = os.path.join(workspace, "node_modules")
-        if not os.path.isdir(node_modules):
-            log.append("[run_tests] node_modules 미설치 — npm install 실행")
-            try:
-                install_proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        "npm", "install",
-                        cwd=workspace,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    ),
-                    timeout=120,
-                )
-                _, install_err = await install_proc.communicate()
-                if install_proc.returncode != 0:
-                    log.append("[run_tests] npm install 실패 — 프론트엔드 테스트 스킵")
-                    return {
-                        "test_passed": True,
-                        "test_output": f"npm install 실패 — 프론트엔드 테스트 스킵\n{install_err.decode()[:500]}",
-                        "execution_log": log,
-                    }
-                log.append("[run_tests] ✓ npm install 완료")
-            except (TimeoutError, Exception) as e:
-                log.append(f"[run_tests] npm install 오류: {e} — 프론트엔드 테스트 스킵")
-                return {
-                    "test_passed": True,
-                    "test_output": f"npm install 실패: {e}",
-                    "execution_log": log,
-                }
-
-        log.append(f"[run_tests] 프론트엔드 테스트 실행: {runner_label} ({len(fe_test_files)}개 파일)")
-
-        try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=workspace,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env={**os.environ, "CI": "true"},
-                ),
-                timeout=self._FE_TEST_TIMEOUT_S,
-            )
-            stdout, stderr = await proc.communicate()
-            output = self._smart_truncate_test_output(stdout.decode(), limit=3000)
-            if stderr:
-                output += "\n" + stderr.decode()[:1000]
-
-            passed = proc.returncode == 0
-
-            # 테스트 도구 미설치 감지 — config 못 찾는 에러는 도구 미설치로 스킵
-            combined = output + (stderr.decode() if stderr else "")
-            if not passed and "Could not find a config file" in combined:
-                log.append(f"[run_tests] {runner_label} 설정 파일 미발견 — 테스트 도구 미설치, 스킵")
-                return {
-                    "test_passed": True,
-                    "test_output": f"{runner_label}: 테스트 도구 미설치 — 스킵",
-                    "execution_log": log,
-                }
-
-            log.append(
-                f"[run_tests] {runner_label} {'통과' if passed else '실패'}: {fe_test_files}"
-            )
-            return {
-                "test_passed": passed,
-                "test_output": output,
-                "execution_log": log,
-            }
-        except TimeoutError:
-            log.append(f"[run_tests] {runner_label} 타임아웃 ({self._FE_TEST_TIMEOUT_S}s) — 스킵")
-            return {
-                "test_passed": True,
-                "test_output": f"{runner_label} 타임아웃 — 스킵",
-                "execution_log": log,
-            }
-        except FileNotFoundError:
-            log.append(f"[run_tests] {runner_label} 실행 불가 (npx/npm 없음) — 스킵")
-            return {
-                "test_passed": True,
-                "test_output": f"{runner_label} 실행 불가 — 스킵",
-                "execution_log": log,
-            }
-        except Exception as e:
-            log.append(f"[run_tests] {runner_label} 오류: {e}")
-            return {
-                "test_passed": True,
-                "test_output": f"{runner_label} 실행 실패: {e}",
-                "execution_log": log,
-            }
+    # (HTML/프론트엔드 검증 메서드 제거됨 — LLM이 run_shell 도구로 직접 수행)
 
     # ── Procedural Memory 훅 ─────────────────────────────────
 
@@ -2031,11 +1215,7 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 학습 패턴 저장 (Procedural Memory) ──────────────────────
 
     def _save_fix_pattern(self, state: CodingState) -> None:
-        """테스트 실패→성공 사이클에서 학습된 수정 패턴을 Procedural Memory에 저장한다.
-
-        이전 테스트 에러와 현재 성공한 코드를 비교하여
-        "에러 유형 → 해결 방법" 패턴을 추출한다.
-        """
+        """테스트 실패→성공 사이클에서 학습된 수정 패턴을 Procedural Memory에 저장한다."""
         if not self._memory_store:
             return
 
@@ -2043,25 +1223,19 @@ class CodingAssistantAgent(BaseGraphAgent):
         if not prev_test_output:
             return
 
-        # 이전 에러 분류
-        error_type, guidance = self._classify_test_error(prev_test_output)
-        if error_type == "Unknown":
-            return
-
         parse_result = state.get("parse_result", {})
         task_type = parse_result.get("task_type", "generate")
         language = parse_result.get("language", "python")
+        iteration = state.get("iteration", 0)
 
-        # 수정된 코드에서 핵심 변경 사항 추출
+        # 에러 원문 요약 (regex 분류 대신)
+        error_summary = prev_test_output[:200].strip()
         generated_code = state.get("generated_code", "")
         code_snippet = generated_code[:500] if generated_code else ""
 
-        # 실패→성공에서의 구체적 해결 방법 추출
-        iteration = state.get("iteration", 0)
         description = (
-            f"[FIX:{error_type}] {language}/{task_type} — "
-            f"에러: {prev_test_output[:150].strip()} | "
-            f"해결: {guidance[:100]} | "
+            f"[FIX] {language}/{task_type} — "
+            f"에러: {error_summary} | "
             f"시도: {iteration}회 | "
             f"수정 코드 패턴: {code_snippet[:200]}"
         )
@@ -2070,21 +1244,17 @@ class CodingAssistantAgent(BaseGraphAgent):
             result = self._memory_store.accumulate_skill(
                 code=code_snippet,
                 description=description,
-                tags=[error_type.lower(), language, task_type, "test_fix"],
+                tags=[language, task_type, "test_fix"],
             )
             if result:
                 logging.getLogger(__name__).info(
-                    "[memory] 수정 패턴 저장: %s (%s)", error_type, result.id[:8]
+                    "[memory] 수정 패턴 저장: %s", result.id[:8]
                 )
         except Exception as e:
             logging.getLogger(__name__).debug("[memory] 패턴 저장 실패 (무시): %s", e)
 
     def _save_failure_pattern(self, state: CodingState) -> None:
-        """최대 반복 도달 시 실패 패턴을 Procedural Memory에 저장한다.
-
-        Codex 패턴: 실패 롤아웃에서도 "이렇게 하면 안 된다"는 패턴을 학습한다.
-        미래 동일 에러 발생 시 에스컬레이션 힌트에서 참조된다.
-        """
+        """최대 반복 도달 시 실패 패턴을 Procedural Memory에 저장한다."""
         if not self._memory_store:
             return
 
@@ -2092,365 +1262,33 @@ class CodingAssistantAgent(BaseGraphAgent):
         if not test_output:
             return
 
-        error_type, guidance = self._classify_test_error(test_output)
         parse_result = state.get("parse_result", {})
         task_type = parse_result.get("task_type", "generate")
         language = parse_result.get("language", "python")
         iteration = state.get("iteration", 0)
 
         description = (
-            f"[FAIL:{error_type}] {language}/{task_type} — "
+            f"[FAIL] {language}/{task_type} — "
             f"최대 반복({iteration}회) 도달 후 미해결. "
             f"에러: {test_output[:200].strip()} | "
-            f"시도한 해결법: {guidance[:100]} | "
-            f"교훈: 이 에러 유형은 코드 재생성만으로 해결 불가. "
-            f"근본적 접근 변경 필요 (의존성 제거, 구조 단순화 등)."
+            f"교훈: 코드 재생성만으로 해결 불가. "
+            f"근본적 접근 변경 필요."
         )
 
         try:
             self._memory_store.accumulate_skill(
                 code="",
                 description=description,
-                tags=[error_type.lower(), language, task_type, "test_failure", "anti_pattern"],
+                tags=[language, task_type, "test_failure", "anti_pattern"],
             )
             logging.getLogger(__name__).info(
-                "[memory] 실패 패턴 저장: %s (iteration=%d)", error_type, iteration
+                "[memory] 실패 패턴 저장 (iteration=%d)", iteration
             )
         except Exception as e:
             logging.getLogger(__name__).debug("[memory] 실패 패턴 저장 실패 (무시): %s", e)
 
-    # ── 테스트 출력 처리 ───────────────────────────────────────
-
-    @staticmethod
-    def _smart_truncate_test_output(raw: str, limit: int = 3000) -> str:
-        """pytest 출력에서 에러 섹션을 우선 추출하여 절단한다.
-
-        단순 [:limit] 절단 시 진행 바(FFFF...)만 남고 실제 에러가 잘리는 문제를 해결.
-        FAILURES/ERRORS 섹션을 우선 포함하고, 남은 예산으로 요약 줄을 추가한다.
-        """
-        if len(raw) <= limit:
-            return raw
-
-        lines = raw.split("\n")
-        # FAILURES 또는 ERRORS 섹션 시작점 찾기
-        failure_start = -1
-        for i, line in enumerate(lines):
-            if line.startswith("=") and ("FAILURES" in line or "ERRORS" in line):
-                failure_start = i
-                break
-
-        if failure_start >= 0:
-            # 에러 섹션부터 끝까지 추출
-            error_section = "\n".join(lines[failure_start:])
-            # 첫 줄(진행 표시)과 마지막 요약 줄도 포함
-            summary_line = lines[0] if lines else ""
-            short_summary = lines[-1] if len(lines) > 1 else ""
-            result = f"{summary_line}\n...\n{error_section}\n{short_summary}"
-            return result[:limit]
-
-        # FAILURES 섹션이 없으면 마지막 부분 우선 (에러는 보통 뒤에 출력)
-        tail = raw[-limit:]
-        if not tail.startswith("\n"):
-            # 줄 중간 절단 방지
-            first_newline = tail.find("\n")
-            if first_newline > 0:
-                tail = tail[first_newline + 1:]
-        return "...\n" + tail
-
-    # ── 에러 유형 분석 ─────────────────────────────────────────
-
-    _ERROR_PATTERNS: ClassVar[list[tuple[str, str, str]]] = [
-        # (정규식 패턴, 에러 유형, 수정 지시)
-        (
-            r"circular import|ImportError.*cannot import name.*most likely due to a circular",
-            "CircularImport",
-            "순환 import 감지. 해결: 1) 공유 객체를 extensions.py로 분리 "
-            "2) Factory 패턴(create_app) 사용 3) import를 함수 내부로 이동",
-        ),
-        (
-            r"KeyError.*(?:relationship|backref|mapper|ForeignKey)|"
-            r"(?:relationship|backref|mapper).*KeyError|"
-            r"sqlalchemy.*KeyError",
-            "SQLAlchemyKeyError",
-            "참조하는 클래스가 정의되지 않았습니다. "
-            "relationship에서 참조하는 모델 클래스가 현재 코드에 존재하는지 확인하세요. "
-            "존재하지 않으면 relationship을 제거하거나 해당 클래스를 이 Phase에서 먼저 정의하세요.",
-        ),
-        (
-            r"pip install.*(?:fail|error|Could not find)|"
-            r"No matching distribution found|"
-            r"ERROR:.*pip.*install",
-            "PipInstallError",
-            "requirements.txt의 패키지 버전 호환성을 확인하세요. "
-            "==핀을 제거하고 패키지명만 기재하세요. "
-            "예: flask==2.3.1 → flask",
-        ),
-        (
-            r"AssertionError.*TypingOnly|TypingOnly.*AssertionError|"
-            r"AssertionError.*typing_extensions|typing_extensions.*AssertionError",
-            "TypingCompatError",
-            "패키지 버전이 현재 Python 버전과 비호환입니다. "
-            "requirements.txt에서 버전 핀(==)을 제거하세요.",
-        ),
-        (
-            r"ModuleNotFoundError|No module named",
-            "ModuleNotFoundError",
-            "누락된 모듈/파일을 생성하거나 해당 import를 제거하세요. "
-            "1) 프로젝트 내 모듈이면 해당 .py 파일을 함께 생성하세요 "
-            "(예: backend/config.py, backend/extensions.py 등). "
-            "2) 외부 패키지면 requirements.txt에 패키지명만 기재하세요 (==핀 제거). "
-            "3) import 경로가 프로젝트 디렉토리 구조와 일치하는지 확인하세요.",
-        ),
-        (
-            r"ImportError.*cannot import name",
-            "ImportError",
-            "import 대상이 존재하지 않음. 해당 함수/클래스가 정의된 파일이 실제로 존재하는지 확인하세요. "
-            "없으면 해당 파일을 생성하세요. "
-            "예: from backend import create_app이 실패하면 backend/__init__.py에 create_app 함수를 정의하세요.",
-        ),
-        (
-            r"ImportError",
-            "ImportError",
-            "import 실패. __init__.py 존재 여부, 패키지 경로, 절대/상대 import 일관성을 확인하세요. "
-            "참조하는 모듈 파일이 존재하지 않으면 함께 생성하세요.",
-        ),
-        (
-            r"SyntaxError",
-            "SyntaxError",
-            "문법 오류. 괄호 짝, 들여쓰기, 콜론 누락 등을 확인하세요.",
-        ),
-        (
-            r"NameError",
-            "NameError",
-            "정의되지 않은 변수/함수. 오타, import 누락, 스코프 문제를 확인하세요.",
-        ),
-        (
-            r"AttributeError",
-            "AttributeError",
-            "존재하지 않는 속성 접근. 클래스/모듈의 실제 인터페이스를 확인하세요.",
-        ),
-        (
-            r"TypeError:.*takes \d+ positional arguments? but \d+ (?:was|were) given",
-            "TypeError_ArgCount",
-            "함수 정의의 인자 개수가 호출부와 불일치합니다. "
-            "**테스트 파일(conftest.py, test_*.py)의 호출 방식이 표준**이므로, "
-            "함수 정의(예: __init__.py의 create_app)를 수정하여 인자를 받도록 하세요. "
-            "config 딕셔너리 패턴: config = {'testing': TestingConfig, ...}; "
-            "def create_app(config_name='development'): app.config.from_object(config[config_name])",
-        ),
-        (
-            r"TypeError:.*missing \d+ required positional argument",
-            "TypeError_MissingArg",
-            "필수 인자가 누락되었습니다. 호출부에 필요한 인자를 추가하거나, "
-            "함수 정의에서 기본값을 설정하세요.",
-        ),
-        (
-            r"TypeError",
-            "TypeError",
-            "타입 불일치 또는 인자 개수 오류. 함수 시그니처와 호출부를 대조하세요.",
-        ),
-        (
-            r"OperationalError|no such table|ProgrammingError.*relation.*does not exist|"
-            r"no such column|table.*already exists",
-            "DatabaseError",
-            "DB 테이블/컬럼 미생성 또는 스키마 불일치. "
-            "테스트 fixture에서 app_context 내 db.create_all()을 호출하세요. "
-            "conftest.py에 app/db fixture를 정의하고, teardown에서 db.drop_all()을 실행하세요.",
-        ),
-        (
-            r"IntegrityError|UNIQUE constraint|duplicate key|NOT NULL constraint",
-            "IntegrityError",
-            "DB 무결성 제약 위반. 테스트 간 데이터 격리를 확인하세요. "
-            "fixture에서 매 테스트마다 트랜잭션 롤백 또는 db.drop_all() + db.create_all()을 수행하세요.",
-        ),
-        (
-            r"ConnectionRefusedError|could not connect to server|Connection refused",
-            "ConnectionError",
-            "외부 서비스 연결 실패. 테스트에서는 인메모리 DB(sqlite:///:memory:)를 사용하고, "
-            "외부 API는 mock 처리하세요.",
-        ),
-        # HTTP 상태 코드 에러 (웹 프레임워크 테스트)
-        (
-            r"assert\s+405\s*==\s*(?:200|201|204|404)|"
-            r"assert\s+(?:200|201|204|404)\s*==\s*405|"
-            r"405\s*Method\s*Not\s*Allowed",
-            "HTTPMethodNotAllowed",
-            "HTTP 405 Method Not Allowed. 요청한 HTTP 메서드(GET/POST/PUT/DELETE)에 대한 "
-            "라우트 핸들러가 등록되지 않았습니다. "
-            "routes.py에서 해당 엔드포인트에 필요한 메서드가 모두 정의되어 있는지 확인하세요. "
-            "예: 삭제 후 조회(GET)로 404를 기대하는 테스트가 있으면 GET 핸들러도 필요합니다.",
-        ),
-        (
-            r"assert\s+404\s*==\s*(?:200|201|204)|"
-            r"assert\s+(?:200|201|204)\s*==\s*404|"
-            r"404\s*Not\s*Found",
-            "HTTPNotFound",
-            "HTTP 404 Not Found. 라우트가 등록되지 않았거나 URL 패턴이 불일치합니다. "
-            "Blueprint 등록, url_prefix, 변수 타입(<int:id> 등)을 확인하세요.",
-        ),
-        (
-            r"assert\s+500\s*==\s*(?:200|201|204)|"
-            r"assert\s+(?:200|201|204)\s*==\s*500|"
-            r"500\s*Internal\s*Server\s*Error",
-            "HTTPServerError",
-            "HTTP 500 서버 에러. 핸들러 내부에서 예외가 발생합니다. "
-            "DB 초기화, 필수 필드 누락, 잘못된 쿼리 등을 확인하세요. "
-            "Flask의 경우 app.config['TESTING']=True로 상세 에러를 확인하세요.",
-        ),
-        (
-            r"assert\s+(?:4\d{2}|5\d{2})\s*==\s*(?:2\d{2})|"
-            r"assert\s+(?:2\d{2})\s*==\s*(?:4\d{2}|5\d{2})|"
-            r"status.code.*(?:4\d{2}|5\d{2})",
-            "HTTPStatusError",
-            "HTTP 상태 코드 불일치. 라우트 핸들러의 반환 상태 코드와 테스트의 기대값을 비교하세요. "
-            "라우트 등록 여부, HTTP 메서드, URL 패턴, 핸들러 로직을 순서대로 점검하세요.",
-        ),
-    ]
-
-    @staticmethod
-    def _check_api_consistency(generated_code: str) -> list[str]:
-        """프론트엔드 API 호출과 백엔드 라우트의 HTTP 메서드/경로 일치를 정적 검증한다.
-
-        Returns:
-            불일치 이슈 목록 (P1 태그 포함). 없으면 빈 리스트.
-        """
-        if not generated_code:
-            return []
-
-        issues: list[str] = []
-
-        # 백엔드 라우트 추출: @api.route("/path", methods=["METHOD"])
-        backend_routes: dict[str, set[str]] = {}  # path → {methods}
-        for match in re.finditer(
-            r'@\w+\.route\(\s*["\']([^"\']+)["\']'
-            r'(?:.*?methods\s*=\s*\[([^\]]+)\])?',
-            generated_code,
-        ):
-            path = match.group(1)
-            methods_str = match.group(2)
-            if methods_str:
-                methods = {
-                    m.strip().strip("'\"").upper()
-                    for m in methods_str.split(",")
-                }
-            else:
-                methods = {"GET"}
-            # 변수 경로 정규화: <int:id> → <id>
-            normalized = re.sub(r"<\w+:(\w+)>", r"<\1>", path)
-            if normalized in backend_routes:
-                backend_routes[normalized] |= methods
-            else:
-                backend_routes[normalized] = methods
-
-        if not backend_routes:
-            return []
-
-        # 프론트엔드 API 호출 추출: api.post("/path"), axios.put("/path")
-        fe_calls: list[tuple[str, str]] = []  # [(method, path)]
-        for match in re.finditer(
-            r'(?:api|axios|client|http)\.(get|post|put|patch|delete)\(\s*'
-            r'[`"\']([^`"\']*?)[`"\']',
-            generated_code,
-            re.IGNORECASE,
-        ):
-            method = match.group(1).upper()
-            path = match.group(2)
-            # 템플릿 리터럴 변수 정규화: ${cardId} → <id>
-            normalized = re.sub(r"\$\{[^}]+\}", "<id>", path)
-            # /api 접두사 추가 (없으면)
-            if not normalized.startswith("/api"):
-                normalized = "/api" + (normalized if normalized.startswith("/") else "/" + normalized)
-            fe_calls.append((method, normalized))
-
-        # 교차 검증
-        for fe_method, fe_path in fe_calls:
-            # 백엔드에서 매칭되는 경로 찾기
-            matched_path = None
-            for be_path in backend_routes:
-                # 정규화된 경로 비교 (변수 부분은 <id>로 통일)
-                be_normalized = re.sub(r"<\w+>", "<id>", be_path)
-                fe_normalized = re.sub(r"<\w+>", "<id>", fe_path)
-                if be_normalized == fe_normalized:
-                    matched_path = be_path
-                    break
-
-            if matched_path is None:
-                continue  # 경로 매칭 실패는 무시 (동적 경로일 수 있음)
-
-            be_methods = backend_routes[matched_path]
-            if fe_method not in be_methods:
-                issues.append(
-                    f"[P1] API 메서드 불일치: 프론트엔드 {fe_method} {fe_path} "
-                    f"→ 백엔드 {matched_path} 은 {be_methods}만 허용. "
-                    f"프론트엔드의 api.{fe_method.lower()}()를 "
-                    f"api.{next(iter(be_methods)).lower()}()로 변경하거나, "
-                    f"백엔드 라우트에 {fe_method} 메서드를 추가하세요."
-                )
-
-        return issues
-
-    @staticmethod
-    def _check_signature_consistency(generated_code: str) -> list[str]:
-        """파일 간 함수 정의와 호출의 인자 개수 일관성을 검증한다."""
-        issues: list[str] = []
-        # 내장/일반 함수 무시 목록
-        _BUILTIN_NAMES = frozenset({
-            "print", "len", "range", "str", "int", "float", "list", "dict",
-            "set", "tuple", "type", "super", "isinstance", "getattr", "setattr",
-            "hasattr", "open", "sorted", "filter", "map", "zip", "enumerate",
-            "min", "max", "abs", "round", "any", "all", "next", "iter",
-            "format", "repr", "id", "hash", "vars", "dir", "callable",
-            "staticmethod", "classmethod", "property",
-        })
-
-        # Python 함수 정의 추출: def func_name(args)
-        definitions: dict[str, dict[str, int]] = {}
-        for match in re.finditer(r"def\s+(\w+)\s*\(([^)]*)\)", generated_code):
-            name = match.group(1)
-            if name.startswith("_"):
-                continue  # private 함수는 스킵
-            args_str = match.group(2)
-            params = [a.strip() for a in args_str.split(",") if a.strip()]
-            params = [p for p in params if p not in ("self", "cls")]
-            required = [p for p in params if "=" not in p and "*" not in p]
-            definitions[name] = {
-                "total": len(params),
-                "required": len(required),
-            }
-
-        # 함수 호출 패턴 검출: name(args) — 정의와 교차 검증
-        for match in re.finditer(r"(?<!\bdef\s)(\w+)\s*\(([^)]*)\)", generated_code):
-            name = match.group(1)
-            if name not in definitions or name in _BUILTIN_NAMES:
-                continue
-            args_str = match.group(2).strip()
-            call_args = (
-                [a.strip() for a in args_str.split(",") if a.strip()]
-                if args_str else []
-            )
-
-            defn = definitions[name]
-            if len(call_args) < defn["required"]:
-                issues.append(
-                    f"[P1] 함수 시그니처 불일치: {name}() 호출에 인자 "
-                    f"{len(call_args)}개, 정의는 필수 인자 {defn['required']}개. "
-                    f"함수 정의에 기본값을 추가하거나 호출부에 인자를 추가하세요."
-                )
-            elif len(call_args) > defn["total"]:
-                issues.append(
-                    f"[P1] 함수 시그니처 불일치: {name}() 호출에 인자 "
-                    f"{len(call_args)}개, 정의는 최대 {defn['total']}개. "
-                    f"함수 정의를 수정하여 추가 인자를 받도록 하세요."
-                )
-
-        return issues
-
-    def _classify_test_error(self, test_output: str) -> tuple[str, str]:
-        """테스트 출력에서 에러 유형을 분류하고 수정 지시를 반환한다."""
-        for pattern, error_type, guidance in self._ERROR_PATTERNS:
-            if re.search(pattern, test_output, re.IGNORECASE):
-                return error_type, guidance
-        return "Unknown", "에러 메시지를 분석하여 원인을 파악하고 수정하세요."
+    # (에러 분류/정적 검증/테스트 출력 절단 메서드 제거됨
+    #  — LLM이 에러 원문을 직접 분석, validate_consistency MCP 도구로 일관성 검증 가능)
 
     async def _inject_error(self, state: CodingState) -> dict[str, Any]:
         """단순화된 에러 주입: 에러 원문만 LLM에게 전달한다.
@@ -2467,37 +1305,7 @@ class CodingAssistantAgent(BaseGraphAgent):
         # 1. Python 캐시 정리
         await self._clean_python_cache(workspace, log)
 
-        # 2. ModuleNotFoundError 자동 패치 (requirements.txt에 패키지 추가)
-        deps_changed = False
-        missing_modules = re.findall(
-            r"No module named ['\"]([^'\"]+)['\"]", test_output
-        )
-        if missing_modules:
-            req_path = os.path.join(workspace, "requirements.txt")
-            if os.path.exists(req_path):
-                with open(req_path) as f:
-                    existing = f.read()
-                existing_pkgs = {
-                    line.split("==")[0].split(">=")[0].split("<=")[0].split("[")[0].strip().lower()
-                    for line in existing.splitlines()
-                    if line.strip() and not line.strip().startswith("#")
-                }
-                added = []
-                for mod in missing_modules:
-                    top_pkg = mod.split(".")[0].replace("_", "-")
-                    internal_dir = os.path.join(workspace, mod.split(".")[0])
-                    if os.path.exists(internal_dir) or os.path.exists(internal_dir + ".py"):
-                        continue
-                    if top_pkg.lower() not in existing_pkgs:
-                        added.append(top_pkg)
-                if added:
-                    with open(req_path, "a") as f:
-                        for pkg in added:
-                            f.write(f"\n{pkg}")
-                    deps_changed = True
-                    log.append(f"[inject_error] requirements.txt에 자동 추가: {added}")
-
-        # 3. traceback에서 관련 파일 추출 → 실제 내용 수집 (기계적 작업)
+        # 2. traceback에서 관련 파일 추출 → 실제 내용 수집 (기계적 작업)
         error_files: dict[str, str] = {}
         for tb_match in re.finditer(r'File "([^"]+)"', test_output):
             fpath = tb_match.group(1)
@@ -2533,7 +1341,7 @@ class CodingAssistantAgent(BaseGraphAgent):
                     except Exception:
                         pass
 
-        # 4. 에러 원문 + 관련 파일 내용 전달 — LLM이 직접 판단
+        # 3. 에러 원문 + 관련 파일 내용 전달 — LLM이 직접 판단
         file_context = ""
         if error_files:
             file_context = "\n\n## 에러에 관련된 파일 내용\n"
@@ -2558,8 +1366,8 @@ class CodingAssistantAgent(BaseGraphAgent):
             "execution_log": log,
             "written_files": [],
             "_prev_generated_code": state.get("generated_code", ""),
+            "generated_code": "",  # 리셋: _generate_code 반복 감지가 LLM 호출 전에 발동하지 않도록
             "_prev_test_output": test_output,
-            "_deps_changed": deps_changed,
         }
 
     # ── 그래프 구성 ─────────────────────────────────────────

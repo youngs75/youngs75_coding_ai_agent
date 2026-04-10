@@ -321,13 +321,13 @@ def _handle_export(renderer: CLIRenderer) -> None:
         renderer.error(f"워크스페이스가 존재하지 않습���다: {workspace}")
         return
 
-    # 제외 패턴
-    exclude = {".venv", "node_modules", "__pycache__", ".pytest_cache", "instance", ".cli_history"}
+    # 표시 시 제외할 패턴 (실제 export는 전체 포함)
+    display_exclude = {".venv", "node_modules", "__pycache__", ".pytest_cache"}
 
     files: list[str] = []
     for root, dirs, filenames in os.walk(ws_path):
-        # 제외 디렉토리 스킵
-        dirs[:] = [d for d in dirs if d not in exclude and not d.startswith(".")]
+        # 표시용: 대량 파일 디렉토리는 숨김
+        dirs[:] = [d for d in dirs if d not in display_exclude and not d.startswith(".")]
         for fname in filenames:
             if fname.endswith(".pyc") or fname.startswith("."):
                 continue
@@ -345,6 +345,9 @@ def _handle_export(renderer: CLIRenderer) -> None:
     lines.append("")
     lines.append("호스트에서 추출하려면:")
     lines.append("  ./youngs75-agent.sh --export")
+    lines.append("")
+    lines.append("추출 후 워크스페이스 초기화:")
+    lines.append("  ./youngs75-agent.sh --clean")
     renderer.system_message("\n".join(lines))
 
 

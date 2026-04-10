@@ -7,8 +7,18 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# ── 시스템 패키지 + 런타임 설치 ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    # Node.js 22 LTS
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    # Java 21 (headless)
+    && apt-get install -y default-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
 
+# ── MCP 서버 + 공통 Python 패키지 ──
 RUN pip install --no-cache-dir \
     "mcp[cli]>=1.26.0" \
     "tavily-python" \
@@ -16,7 +26,14 @@ RUN pip install --no-cache-dir \
     "uvicorn" \
     "pydantic" \
     "httpx" \
-    "python-dotenv"
+    "python-dotenv" \
+    # 사용자 프로젝트에서 자주 사용하는 패키지
+    "pytest" \
+    "fastapi" \
+    "flask" \
+    "sqlalchemy" \
+    "requests" \
+    "aiohttp"
 
 # MCP 서버 런처 복사
 COPY tests/run_code_tools_mcp.py /app/run_code_tools_mcp.py

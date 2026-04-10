@@ -88,15 +88,9 @@ if [[ "$MODE" == "export" ]]; then
     echo -e "${CYAN}   대상: ${DEST}${NC}"
     echo ""
 
-    # 임시 tar 생성 (불필요 파일 제외)
+    # workspace 전체를 tar로 묶어 호스트로 복사
+    # .venv, node_modules 등도 포함 (프로젝트 그대로 재현 가능하도록)
     docker exec "$CONTAINER" tar czf /tmp/workspace_export.tar.gz \
-        --exclude='.venv' \
-        --exclude='node_modules' \
-        --exclude='__pycache__' \
-        --exclude='.pytest_cache' \
-        --exclude='*.pyc' \
-        --exclude='.cli_history' \
-        --exclude='instance' \
         -C /workspace .
 
     # 호스트로 복사 + 압축 해제
@@ -105,14 +99,22 @@ if [[ "$MODE" == "export" ]]; then
     rm -f /tmp/workspace_export.tar.gz
 
     # 결과 표시
-    echo -e "${GREEN}✓ 추출 완료${NC}"
+    FILE_COUNT=$(find "$DEST" -type f | wc -l)
+    DIR_COUNT=$(find "$DEST" -type d | wc -l)
+    echo -e "${GREEN}✓ 추출 완료${NC} (파일 ${FILE_COUNT}개, 디렉토리 ${DIR_COUNT}개)"
     echo ""
-    find "$DEST" -type f -not -path '*/\.*' | sort | while read -r f; do
+    # 주요 파일만 표시 (.venv, node_modules 등 상세 생략)
+    find "$DEST" -type f -not -path '*/.venv/*' -not -path '*/node_modules/*' \
+        -not -path '*/__pycache__/*' -not -path '*/.pytest_cache/*' \
+        -not -name '*.pyc' | sort | while read -r f; do
         rel="${f#$DEST/}"
         echo -e "  ${DIM}${rel}${NC}"
     done
     echo ""
     echo -e "${CYAN}📂 ${DEST}${NC}"
+    echo ""
+    echo -e "${YELLOW}💡 다음 작업 전 워크스페이스를 초기화하려면:${NC}"
+    echo -e "   ./youngs75-agent.sh --clean"
     exit 0
 fi
 

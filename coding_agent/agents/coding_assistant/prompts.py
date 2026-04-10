@@ -195,6 +195,39 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - 테스트는 핵심 로직(모델, API, 유틸 함수)에 대해 작성하세요
 - 테스트는 **실제 실행 가능한 상태**여야 합니다
 
+## 실행 환경 (사전 설치됨 — 별도 설치 불필요)
+이 workspace는 다음 런타임이 **이미 설치된** 샌드박스 환경입니다:
+- **Python 3.13** + pip + pytest, fastapi, flask, sqlalchemy, requests (설치됨)
+- **Node.js 22** + npm + npx (설치됨)
+- **Java 21** + javac + java (설치됨)
+- **Git** (설치됨)
+
+**테스트 실행 시 venv 없이 시스템 Python을 직접 사용하세요** — 주요 패키지가 이미 설치되어 있습니다.
+추가 패키지가 필요하면 `run_shell`로 `pip install 패키지명` 또는 `npm install` 하세요.
+(단, 생성하는 프로젝트의 Makefile/README에는 사용자 환경용 venv 설정을 포함해도 됩니다)
+
+## 테스트 실행 (run_shell 도구 — 필수)
+모든 파일을 write_file로 저장한 뒤, **반드시** 테스트를 실행하여 통과를 확인하세요.
+
+### 테스트 실행 방법
+- **Python**: `run_shell`로 `python3 -m pytest tests/ --tb=short -q` (workspace 루트에서 실행)
+  - 추가 패키지가 필요하면: `pip install -r requirements.txt`
+  - **주의**: `PYTHONPATH`가 workspace 루트로 설정되어 있으므로, import는 절대 경로로 작성하세요
+  - 예: `from backend.main import app` (O), `from ..main import app` (X — relative import 실패)
+- **Node.js**: `run_shell`로 `npm install` 후 `npx jest` 또는 `npm test` (cwd 파라미터로 디렉토리 지정)
+  - 예: `run_shell("npm install", cwd="frontend")` → `run_shell("npx jest", cwd="frontend")`
+- **Java**: `run_shell`로 `javac` 컴파일 + `java` 실행
+
+### 테스트 실패 시
+1. 에러 출력을 분석하세요
+2. 해당 파일을 `read_file`로 읽고 수정하세요
+3. `write_file`로 저장 후 테스트를 재실행하세요
+
+### run_shell 사용 규칙
+- `cwd` 파라미터로 작업 디렉토리를 지정하세요 (예: `cwd="backend"`)
+- `curl`, `wget` 등 네트워크 명령어는 차단됩니다
+- 타임아웃: 기본 120초, 최대 300초
+
 ## ⚠️ 계획된 파일 전수 생성 (필수)
 - Phase 지시사항의 **"생성 필수 파일 체크리스트"**에 나열된 파일은 **모두** `write_file`로 생성해야 합니다
 - 체크리스트에 테스트 파일이 포함되어 있으면 **반드시** 테스트 파일도 생성하세요
@@ -205,6 +238,32 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - **공유 객체 단일 출처**: `db`, `migrate` 등은 `extensions.py` 한 곳에서만 생성하고, 다른 모든 파일에서 import하세요
 - **테스트 코드 동기화**: 앱 코드의 시그니처를 변경하면 테스트 코드도 함께 수정하세요. 반대로 테스트 코드의 호출 패턴이 이미 정해져 있으면 앱 코드를 맞추세요
 - **config 딕셔너리 패턴**: Flask 앱에서 `create_app(config_name='development')`처럼 문자열 키로 config를 선택하는 패턴을 사용하세요
+
+## 실행 환경 파일 생성 (필수)
+프로젝트의 모든 코드를 작성한 뒤, **즉시 실행 가능한 환경 설정 파일**을 반드시 생성하세요:
+
+- **Makefile**: `make install`, `make run`, `make test` 명령으로 프로젝트를 설치/실행/테스트할 수 있어야 합니다
+- **docker-compose.yml** (선택): DB 등 외부 서비스가 필요한 경우 Docker Compose로 한 번에 기동할 수 있게 구성하세요
+- **README.md**: 프로젝트 설명, 실행 방법, API 명세 등을 포함하세요
+
+### Makefile 예시 (Python + Node.js 풀스택)
+```makefile
+install:
+	cd backend && pip install -r requirements.txt
+	cd frontend && npm install
+
+run-backend:
+	cd backend && python3 -m uvicorn main:app --reload --port 8000
+
+run-frontend:
+	cd frontend && npm run dev
+
+run: run-backend run-frontend
+
+test:
+	cd backend && python3 -m pytest tests/ --tb=short -q
+	cd frontend && npx jest
+```
 """
 
 VERIFY_SYSTEM_PROMPT = """\

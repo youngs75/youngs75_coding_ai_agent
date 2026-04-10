@@ -165,15 +165,14 @@ class CLIRenderer:
     # ── 도구 호출 표시 ──
 
     def tool_call(self, tool_name: str, args: dict | None = None) -> None:
-        """도구 호출을 축약 표시한다."""
+        """도구 호출을 축약 표시한다.
+
+        도구별 컨텍스트를 추출하여 사용자에게 유용한 정보를 표시한다.
+        """
         self._stop_progress()
-        args_str = ""
-        if args:
-            # 핵심 인자만 축약 표시
-            path = args.get("path", args.get("query", ""))
-            if path:
-                args_str = f" {_truncate(str(path), 50)}"
-        self.console.print(f"  [{_CLR_TOOL}]⚡[/] [{_CLR_DIM}]{tool_name}[/]{args_str}")
+        label, detail = _describe_tool_call(tool_name, args)
+        detail_str = f" {detail}" if detail else ""
+        self.console.print(f"  [{_CLR_TOOL}]⚡[/] [{_CLR_DIM}]{label}[/]{detail_str}")
 
     def tool_result(self, tool_name: str, success: bool = True) -> None:
         """도구 실행 결과를 표시한다."""
@@ -397,8 +396,8 @@ class CLIRenderer:
 
         suffix = f" [{_CLR_WARN}]{label}[/]" if label else ""
         self.console.print(
-            f"  [{color}]📊 {bar} {input_tokens:,}+{output_tokens:,} tok"
-            f" ({pct:.1f}% of {max_tokens:,}){suffix}[/]"
+            f"  [{color}]📊 {bar} {_fmt_tokens(input_tokens)}+{_fmt_tokens(output_tokens)}"
+            f" ({pct:.0f}% of {_fmt_tokens(max_tokens)}){suffix}[/]"
         )
 
     # ── 레거시 호환 ──
@@ -412,8 +411,70 @@ class CLIRenderer:
         self.console.print()
 
 
+def _fmt_tokens(n: int) -> str:
+    """토큰 수를 축약 표시한다 (DeepAgents 패턴)."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 10_000:
+        return f"{n / 1_000:.0f}K"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
 def _truncate(text: str, max_len: int = 50) -> str:
     """텍스트를 최대 길이로 잘라낸다."""
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
+def _describe_tool_call(tool_name: str, args: dict | None) -> tuple[str, str]:
+    """도구 호출을 사용자 친화적 (label, detail) 쌍으로 변환한다."""
+    args = args or {}
+
+    if tool_name == "write_file":
+        path = args.get("path", "")
+        content = args.get("content", "")
+        lines = content.count("\n") + 1 if content else 0
+        size = f"({lines}줄)" if lines else ""
+        return "write_file", f"{path} {size}".strip()
+
+    if tool_name == "read_file":
+        return "read_file", args.get("path", "")
+
+    if tool_name == "run_python":
+        code = args.get("code", "")
+        # code 내용에서 목적을 추론
+        if "py_compile" in code:
+            # lint: py_compile로 문법 체크
+            import re
+            m = re.search(r"['\"]([^'\"]+\.py)['\"]", code)
+            target = m.group(1) if m else ""
+            return "검증: 문법 체크", target
+        if "pytest" in code:
+            return "검증: 테스트 실행", ""
+        if "node" in code and "--check" in code:
+            return "검증: JS 문법 체크", ""
+        if "tsc" in code:
+            return "검증: TypeScript 체크", ""
+        if "eslint" in code or "npx" in code:
+            return "검증: Lint", ""
+        # 일반 Python 실행
+        return "run_python", _truncate(code.split("\n")[0], 50)
+
+    if tool_name == "search_code":
+        return "search_code", args.get("query", "")
+
+    if tool_name == "list_directory":
+        return "list_directory", args.get("path", ".")
+
+    if tool_name == "search_web":
+        return "search_web", _truncate(args.get("query", ""), 50)
+
+    if tool_name == "validate_consistency":
+        return "validate_consistency", args.get("target_dir", ".")
+
+    # 기본: tool_name + path/query 인자
+    path = args.get("path", args.get("query", ""))
+    return tool_name, _truncate(str(path), 50) if path else ""
