@@ -110,6 +110,9 @@ class SubagentContextFilter:
         *,
         max_user_message_chars: int = 500,
         prior_stall_context: str = "",
+        tech_stack: list[str] | None = None,
+        constraints: list[str] | None = None,
+        file_structure: list[str] | None = None,
     ) -> str:
         """멀티 페이즈 실행 시 서브에이전트에 전달할 태스크 메시지를 생성한다.
 
@@ -132,8 +135,29 @@ class SubagentContextFilter:
             "### 아키텍처",
             architecture,
             "",
-            "### 현재 페이즈 지시사항",
         ]
+
+        # 기술 스택 — LLM이 올바른 패키지/프레임워크를 사용하도록 안내
+        if tech_stack:
+            parts.append("### 기술 스택")
+            parts.append(", ".join(tech_stack))
+            parts.append("")
+
+        # 전체 파일 구조 — Phase 간 일관된 import 경로 보장
+        if file_structure:
+            parts.append("### 전체 파일 구조")
+            for f in file_structure:
+                parts.append(f"- `{f}`")
+            parts.append("")
+
+        # 제약 조건
+        if constraints:
+            parts.append("### 제약 조건")
+            for c in constraints:
+                parts.append(f"- {c}")
+            parts.append("")
+
+        parts.append("### 현재 페이즈 지시사항")
 
         # 페이즈 지시사항 추가
         instructions = phase.get("instructions", phase.get("description", ""))

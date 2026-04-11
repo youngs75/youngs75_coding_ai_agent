@@ -8,6 +8,7 @@ A2A AgentExecutor 구현 - 2가지 버전
 from typing import Any, Callable
 import asyncio
 import logging
+import os
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.messages import AIMessage, HumanMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
@@ -21,7 +22,20 @@ from a2a.utils.errors import ServerError
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
+
+def _propagate_session_id(context: RequestContext) -> None:
+    """A2A 메타데이터에서 session_id를 추출하여 환경변수에 설정한다.
+
+    Orchestrator가 A2A 메시지에 포함한 session_id를 수신 에이전트의
+    환경변수에 주입하여, Langfuse 트레이스가 동일 세션으로 묶이게 한다.
+    """
+    metadata = getattr(context, "metadata", None)
+    if not metadata or not isinstance(metadata, dict):
+        return
+    session_id = metadata.get("session_id")
+    if session_id and isinstance(session_id, str):
+        os.environ["HARNESS_SESSION_ID"] = session_id
+        logger.info("A2A 메타데이터에서 session_id 전파: %s", session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +75,7 @@ class BaseAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
+        _propagate_session_id(context)
         query = context.get_user_input() or ""
         logger.info(f"BaseAgentExecutor 요청 수신: {query[:100]}")
 
@@ -235,6 +250,7 @@ class LGAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
+        _propagate_session_id(context)
         query = context.get_user_input() or ""
         logger.info(f"LGAgentExecutor 요청 수신: {query[:100]}")
 

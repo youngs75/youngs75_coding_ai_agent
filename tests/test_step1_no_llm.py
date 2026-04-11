@@ -55,6 +55,28 @@ def test_tool_call_utils():
     assert tc_name(None) is None
     assert tc_args(None) == {}
 
+    # JSON 파싱 복구: 이중 닫기 중괄호
+    call_double_brace = {
+        "function": {
+            "name": "write_file",
+            "arguments": '{"path": "backend/routers/projects.py"}}',
+        },
+    }
+    assert tc_args(call_double_brace) == {"path": "backend/routers/projects.py"}
+
+    # JSON 파싱 복구: 후행 텍스트 포함
+    call_trailing = {
+        "function": {
+            "name": "read_file",
+            "arguments": '  {"path": "a.py"}  extra',
+        },
+    }
+    assert tc_args(call_trailing) == {"path": "a.py"}
+
+    # 완전히 깨진 JSON은 빈 dict 반환
+    call_broken = {"args": "not json at all"}
+    assert tc_args(call_broken) == {}
+
     print("✓ tool_call_utils 정상 동작")
 
 

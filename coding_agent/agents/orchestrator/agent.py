@@ -313,9 +313,18 @@ async def delegate(state: OrchestratorState, config: RunnableConfig) -> dict:
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as hc:
                 client = A2AClient(httpx_client=hc, url=url)
                 msg = create_text_message_object(content=user_message)
+                # Langfuse 세션 ID를 A2A 메타데이터로 전파
+                a2a_metadata: dict[str, Any] = {}
+                import os as _os
+                harness_sid = _os.environ.get("HARNESS_SESSION_ID")
+                if harness_sid:
+                    a2a_metadata["session_id"] = harness_sid
                 request = SendMessageRequest(
                     id=str(uuid.uuid4()),
-                    params=MessageSendParams(message=msg),
+                    params=MessageSendParams(
+                        message=msg,
+                        metadata=a2a_metadata or None,
+                    ),
                 )
                 response = await client.send_message(request)
 
@@ -539,9 +548,11 @@ async def _execute_phases_sequentially(
 
     # 스킬 레지스트리 초기화 + 자동 활성화
     skill_registry = SkillRegistry()
+    # __file__ = coding_agent/agents/orchestrator/agent.py
+    # .parent×4 = 프로젝트 루트 (coding_agent/ 상위)
     skills_dir = _os.getenv(
         "SKILLS_DIR",
-        str(_Path(__file__).resolve().parent.parent.parent / "data" / "skills"),
+        str(_Path(__file__).resolve().parent.parent.parent.parent / "data" / "skills"),
     )
     if _Path(skills_dir).is_dir():
         loader = SkillLoader(skills_dir)
@@ -634,6 +645,9 @@ async def _execute_phases_sequentially(
             total_phases=len(phases),
             prior_written_files=prior_files,
             prior_stall_context=_last_stall_context,
+            tech_stack=task_plan.get("tech_stack"),
+            constraints=task_plan.get("constraints"),
+            file_structure=task_plan.get("file_structure"),
         )
 
         try:

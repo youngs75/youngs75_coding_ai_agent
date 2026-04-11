@@ -554,6 +554,106 @@ class TestEpisodicMemoryAccumulation:
         assert len(fail_items) == 1
 
 
+class TestFilterInvalidToolCalls:
+    """빈 name tool_call 필터링 테스트."""
+
+    def _make_agent(self):
+        from coding_agent.agents.coding_assistant import CodingAssistantAgent, CodingConfig
+        return CodingAssistantAgent(config=CodingConfig())
+
+    def test_empty_name_removed(self):
+        """name이 빈 문자열인 tool_call이 제거된다."""
+        from langchain_core.messages import AIMessage
+
+        agent = self._make_agent()
+        msg = AIMessage(
+            content="코드 생성",
+            tool_calls=[
+                {"name": "write_file", "args": {"path": "a.py"}, "id": "call_1", "type": "tool_call"},
+                {"name": "", "args": {}, "id": "call_2", "type": "tool_call"},
+            ],
+        )
+        filtered = agent._filter_invalid_tool_calls(msg)
+        assert len(filtered.tool_calls) == 1
+        assert filtered.tool_calls[0]["name"] == "write_file"
+
+    def test_whitespace_name_removed(self):
+        """name이 공백만 있는 tool_call이 제거된다."""
+        from langchain_core.messages import AIMessage
+
+        agent = self._make_agent()
+        msg = AIMessage(
+            content="코드 생성",
+            tool_calls=[
+                {"name": "   ", "args": {"x": 1}, "id": "call_bad", "type": "tool_call"},
+                {"name": "read_file", "args": {"path": "b.py"}, "id": "call_ok", "type": "tool_call"},
+            ],
+        )
+        filtered = agent._filter_invalid_tool_calls(msg)
+        assert len(filtered.tool_calls) == 1
+        assert filtered.tool_calls[0]["name"] == "read_file"
+
+    def test_all_valid_unchanged(self):
+        """유효한 tool_calls만 있으면 원본 메시지를 그대로 반환한다."""
+        from langchain_core.messages import AIMessage
+
+        agent = self._make_agent()
+        msg = AIMessage(
+            content="코드 생성",
+            tool_calls=[
+                {"name": "write_file", "args": {"path": "a.py"}, "id": "call_1", "type": "tool_call"},
+            ],
+        )
+        filtered = agent._filter_invalid_tool_calls(msg)
+        assert filtered is msg  # 동일 객체
+
+    def test_all_invalid_returns_empty(self):
+        """모든 tool_call이 잘못된 경우 빈 tool_calls를 반환한다."""
+        from langchain_core.messages import AIMessage
+
+        agent = self._make_agent()
+        msg = AIMessage(
+            content="코드 생성",
+            tool_calls=[
+                {"name": "", "args": {}, "id": "call_1", "type": "tool_call"},
+                {"name": "  ", "args": {}, "id": "call_2", "type": "tool_call"},
+            ],
+        )
+        filtered = agent._filter_invalid_tool_calls(msg)
+        assert len(filtered.tool_calls) == 0
+
+    def test_additional_kwargs_synced(self):
+        """additional_kwargs의 tool_calls도 동기화된다."""
+        from langchain_core.messages import AIMessage
+
+        agent = self._make_agent()
+        msg = AIMessage(
+            content="코드 생성",
+            tool_calls=[
+                {"name": "write_file", "args": {"path": "a.py"}, "id": "call_1", "type": "tool_call"},
+                {"name": "", "args": {}, "id": "call_bad", "type": "tool_call"},
+            ],
+            additional_kwargs={
+                "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "write_file", "arguments": "{}"}},
+                    {"id": "call_bad", "type": "function", "function": {"name": "", "arguments": "{}"}},
+                ]
+            },
+        )
+        filtered = agent._filter_invalid_tool_calls(msg)
+        ak_calls = filtered.additional_kwargs.get("tool_calls", [])
+        assert len(ak_calls) == 1
+        assert ak_calls[0]["id"] == "call_1"
+
+    def test_non_ai_message_passthrough(self):
+        """AIMessage가 아닌 메시지는 그대로 반환한다."""
+        from langchain_core.messages import HumanMessage
+
+        agent = self._make_agent()
+        msg = HumanMessage(content="hello")
+        assert agent._filter_invalid_tool_calls(msg) is msg
+
+
 if __name__ == "__main__":
     step = sys.argv[1] if len(sys.argv) > 1 else "1"
 

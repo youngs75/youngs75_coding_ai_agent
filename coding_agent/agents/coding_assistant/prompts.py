@@ -195,16 +195,18 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
 - 테스트는 핵심 로직(모델, API, 유틸 함수)에 대해 작성하세요
 - 테스트는 **실제 실행 가능한 상태**여야 합니다
 
-## 실행 환경 (사전 설치됨 — 별도 설치 불필요)
-이 workspace는 다음 런타임이 **이미 설치된** 샌드박스 환경입니다:
-- **Python 3.12** + pip + pytest, fastapi, flask, sqlalchemy, requests (설치됨)
-- **Node.js 20 LTS** + npm + npx (설치됨)
-- **Java 21 LTS** + javac + java (설치됨)
-- **Git** (설치됨)
+## 실행 환경
+이 workspace는 다음 **런타임만** 설치된 샌드박스 환경입니다:
+- **Python 3.12** + pip (pytest, fastapi, flask, sqlalchemy, requests 설치됨)
+- **Node.js 20 LTS** + npm + npx (글로벌 패키지 없음 — 프로젝트별 npm install 필요)
+- **Java 21 LTS** + javac + java
+- **Git**
 
-**테스트 실행 시 venv 없이 시스템 Python을 직접 사용하세요** — 주요 패키지가 이미 설치되어 있습니다.
-추가 패키지가 필요하면 `run_shell`로 `pip install 패키지명` 또는 `npm install` 하세요.
-(단, 생성하는 프로젝트의 Makefile/README에는 사용자 환경용 venv 설정을 포함해도 됩니다)
+**의존성 설치 원칙**:
+- 코드 작성 전에 **먼저** package.json/requirements.txt를 생성하고 `npm install`/`pip install`을 실행하세요
+- Node.js 프로젝트: package.json에 모든 의존성(jest, typescript 포함)을 명시한 후 `npm install`을 **한 번만** 실행
+- `npm install`이 타임아웃되면 package.json에서 불필요한 패키지를 제거하세요
+- **테스트 실행 시 venv 없이 시스템 Python을 직접 사용하세요**
 
 ## 테스트 실행 (run_shell 도구 — 필수)
 모든 파일을 write_file로 저장한 뒤, **반드시** 테스트를 실행하여 통과를 확인하세요.
@@ -214,9 +216,10 @@ GENERATE_FINAL_SYSTEM_PROMPT = """\
   - 추가 패키지가 필요하면: `pip install -r requirements.txt`
   - **주의**: `PYTHONPATH`가 workspace 루트로 설정되어 있으므로, import는 절대 경로로 작성하세요
   - 예: `from backend.main import app` (O), `from ..main import app` (X — relative import 실패)
-- **Node.js**: `run_shell`로 `npm install` 후 `npx jest` 또는 `npm test` (cwd 파라미터로 디렉토리 지정)
-  - 예: `run_shell("npm install", cwd="frontend")` → `run_shell("npx jest", cwd="frontend")`
+- **Node.js**: `npm install` 후 `npx jest` 또는 `npm test` (cwd 파라미터로 디렉토리 지정)
+  - 예: `run_shell("npm install", cwd="frontend")` → `run_shell("npx jest --no-coverage", cwd="frontend")`
   - **npm install이 실패하면 반드시 에러를 확인하고 package.json을 수정하세요** (존재하지 않는 패키지 제거)
+  - **타임아웃 시 jest.config.js를 확인하세요** — testEnvironment, transform 설정 오류가 행의 주요 원인
 - **Java**: `run_shell`로 `javac` 컴파일 + `java` 실행
 
 ### 테스트 실패 시

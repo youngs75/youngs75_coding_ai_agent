@@ -631,6 +631,21 @@ class CodingAssistantAgent(BaseGraphAgent):
         # 메시지 정리는 MessageWindowMiddleware(토큰 기반 다단계 컴팩션)에 위임.
         # 에러 메시지 우선 보존 + 오래된 도구 결과 자동 정리가 미들웨어에서 처리됨.
         sanitized = sanitize_messages_for_llm(state["messages"])
+
+        # P1: 이전 재시도 에러 메시지 누적 방지
+        # 매 retry마다 "테스트가 실패했습니다" HumanMessage가 추가되어
+        # 컨텍스트가 선형으로 증가하는 문제를 방지한다.
+        # 최신 에러 1건만 유지하고 이전 것은 제거.
+        _ERROR_MARKER = "테스트가 실패했습니다"
+        error_indices = [
+            i for i, msg in enumerate(sanitized)
+            if isinstance(msg, HumanMessage)
+            and _ERROR_MARKER in (msg.content[:50] if isinstance(msg.content, str) else "")
+        ]
+        if len(error_indices) > 1:
+            remove_set = set(error_indices[:-1])
+            sanitized = [m for i, m in enumerate(sanitized) if i not in remove_set]
+
         sanitized.append(context_msg)
 
         log = list(state.get("execution_log", []))
@@ -642,6 +657,21 @@ class CodingAssistantAgent(BaseGraphAgent):
         loop_messages = list(sanitized)
         response = None
         responded_ids: set[str] = set()
+
+        # 이전 시도 컨텍스트 주입 — 리셋 후 백지 상태 방지
+        # StallDetector FORCE_EXIT → _inject_error → 다시 여기 올 때
+        # 이전에 저장한 파일과 실패 원인을 알려줘야 같은 실수를 반복하지 않음
+        iteration = state.get("iteration", 0)
+        if iteration > 0 and written_files:
+            prev_test_output = state.get("_prev_test_output", "")
+            prev_summary = f"[시스템] 이전 시도(#{iteration})에서 이미 저장된 파일: {', '.join(written_files)}. 이 파일들은 다시 생성하지 마세요."
+            if prev_test_output:
+                # 에러 핵심만 50자 추출
+                err_snippet = prev_test_output[:200].replace("\n", " ").strip()
+                prev_summary += f" 이전 에러: {err_snippet}"
+            self._replace_or_append_system(
+                loop_messages, prev_summary, "[PREV_ATTEMPT]"
+            )
 
         for loop_idx in range(self._GENERATE_MAX_TOOL_LOOPS):
             mw_request = MWRequest(
@@ -674,33 +704,48 @@ class CodingAssistantAgent(BaseGraphAgent):
             if not tool_calls:
                 break
 
+            # 빈 name tool_call 필터링 (Qwen3 버그 방어)
+            response = self._filter_invalid_tool_calls(response)
+            tool_calls = getattr(response, "tool_calls", None) or []
+            if not tool_calls:
+                break
+
             # 도구 호출 실행
             # DashScope 호환: AIMessage의 tool_calls args를 JSON 문자열로 정규화
             # LangChain 내부 형식(args: dict)이 DashScope 재전송 시
             # arguments(JSON string) 변환에 실패하는 문제 방지
             sanitized_response = self._sanitize_ai_tool_calls(response)
-            # write_file의 content 인자를 제거 — 파일은 디스크에 저장되었으므로
-            # 대화 히스토리에 전체 내용을 유지할 필요 없음.
-            # LLM이 필요하면 read_file로 읽을 수 있음.
-            sanitized_response = self._strip_write_file_content(sanitized_response)
+            # NOTE: strip은 도구 실행 **이후**에 수행한다.
+            # 도구 실행 전에 strip하면 LangChain Pydantic 내부에서
+            # tool_calls args dict가 공유 참조되어 마커가 MCP 도구에
+            # 전달되는 P0 버그를 유발한다.
             loop_messages.append(sanitized_response)
+            ai_msg_idx = len(loop_messages) - 1  # strip 교체용 인덱스
             for call in tool_calls:
                 call_id = tc_id(call) or f"call_{tc_name(call)}_{loop_idx}"
                 call_name = tc_name(call) or "unknown"
                 call_args = tc_args(call)
 
                 if call_name in tools_by_name:
-                    # write_file에 strip 마커가 content로 들어오면 거부
+                    # write_file에 빈/마커 content가 들어오면 거부
+                    # LLM이 CONTENT_STRIPPED 마커를 재생산하거나
+                    # 빈 content로 write_file을 호출하는 것을 방지
+                    _wf_content = (
+                        str(call_args.get("content", ""))
+                        if isinstance(call_args, dict) else ""
+                    )
                     if (
                         call_name == "write_file"
-                        and isinstance(call_args, dict)
-                        and self._CONTENT_STRIPPED_TAG
-                        in str(call_args.get("content", ""))
+                        and (
+                            not _wf_content.strip()
+                            or "CONTENT_STRIPPED" in _wf_content
+                            or self._CONTENT_STRIPPED_TAG in _wf_content
+                        )
                     ):
                         result = (
-                            f"ERROR: 이 파일은 이미 저장되어 있습니다. "
-                            f"다시 write_file 하지 마세요. "
-                            f"내용을 확인하려면 read_file을 사용하세요."
+                            f"ERROR: content가 비어있거나 유효하지 않습니다. "
+                            f"실제 코드를 content에 작성하세요. "
+                            f"기존 파일 내용은 read_file로 확인하세요."
                         )
                     else:
                         result = await _execute_tool_safely(
@@ -715,11 +760,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                         filepath = _normalize_file_path(filepath, workspace)
                         if filepath and filepath not in written_files:
                             written_files.append(filepath)
-                        # write_file 성공 후 재작성 금지 경고 추가
-                        result += (
-                            "\n[저장 완료 — 이 파일을 다시 write_file 하지 말 것. "
-                            "내용 확인은 read_file 사용]"
-                        )
+                        # write_file 성공 — 간결한 확인만 반환
+                        # "read_file 사용" 문구를 포함하면 LLM이 방금 쓴 파일을
+                        # 즉시 read_file하는 write→read 무한 루프에 빠짐
+                        pass
                 else:
                     result = f"알 수 없는 도구: {call_name}"
 
@@ -732,10 +776,16 @@ class CodingAssistantAgent(BaseGraphAgent):
 
             total_tool_calls += len(tool_calls)
 
-            # 진척도 체크리스트 동적 주입 — 매 iteration마다 업데이트
-            # 3종 에이전트 패턴: 대화 히스토리로 진척도를 파악하되,
-            # 명시적 체크리스트로 남은 작업을 안내
-            if planned_files and loop_idx > 0:
+            # write_file content strip — 도구 실행 완료 후 히스토리 정리
+            # 파일은 이미 디스크에 저장되었으므로 대화 히스토리에서 제거
+            loop_messages[ai_msg_idx] = self._strip_write_file_content(
+                loop_messages[ai_msg_idx]
+            )
+
+            # 진척도 체크리스트 동적 주입 — 첫 write_file 성공 이후부터
+            # LLM이 read_file로 코드를 파악하는 동안은 주입하지 않아
+            # 성급한 write_file 유발을 방지한다.
+            if planned_files and written_files:
                 written_set = set(written_files)
                 done = [f for f in planned_files if f in written_set]
                 remaining = [f for f in planned_files if f not in written_set]
@@ -841,6 +891,10 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         messages = state.get("messages", [])
         last_msg = messages[-1] if messages else None
+
+        # 빈 name tool_call 필터링 (Qwen3 버그 방어)
+        if last_msg is not None:
+            last_msg = self._filter_invalid_tool_calls(last_msg)
         tool_calls = getattr(last_msg, "tool_calls", None) or []
 
         if not tool_calls:
@@ -986,6 +1040,58 @@ class CodingAssistantAgent(BaseGraphAgent):
     # ── 메시지 직렬화 호환성 ──────────────────────────────────
 
     @staticmethod
+    def _filter_invalid_tool_calls(ai_msg: Any) -> Any:
+        """LLM이 생성한 잘못된 tool_call을 필터링한다.
+
+        Qwen3 등 일부 모델이 name이 빈 문자열이거나 None인
+        tool_call을 생성하는 문제를 방어한다. 히스토리 오염을 방지하기 위해
+        잘못된 tool_call은 AIMessage에서 제거하고 ToolMessage도 생성하지 않는다.
+        """
+        from langchain_core.messages import AIMessage as _AIMessage
+
+        if not isinstance(ai_msg, _AIMessage):
+            return ai_msg
+
+        tool_calls = getattr(ai_msg, "tool_calls", None)
+        if not tool_calls:
+            return ai_msg
+
+        valid_calls = []
+        removed_ids: set[str] = set()
+        for tc in tool_calls:
+            name = tc.get("name") or ""
+            if not name.strip():
+                tc_identifier = tc.get("id", "")
+                if tc_identifier:
+                    removed_ids.add(tc_identifier)
+                logging.getLogger(__name__).warning(
+                    "[filter] 빈 name tool_call 제거: id=%s, args=%s",
+                    tc_identifier,
+                    str(tc.get("args", {}))[:100],
+                )
+                continue
+            valid_calls.append(tc)
+
+        if len(valid_calls) == len(tool_calls):
+            return ai_msg  # 필터링된 것 없음
+
+        # additional_kwargs의 tool_calls도 동기화
+        ak = dict(getattr(ai_msg, "additional_kwargs", {}) or {})
+        ak_tool_calls = ak.get("tool_calls", [])
+        if ak_tool_calls and removed_ids:
+            ak["tool_calls"] = [
+                tc for tc in ak_tool_calls
+                if tc.get("id") not in removed_ids
+            ]
+
+        return _AIMessage(
+            content=ai_msg.content or "",
+            tool_calls=valid_calls,
+            additional_kwargs=ak,
+            id=getattr(ai_msg, "id", None),
+        )
+
+    @staticmethod
     def _sanitize_ai_tool_calls(ai_msg: Any) -> Any:
         """AIMessage의 tool_calls를 LLM 공급자 호환 형식으로 정규화한다.
 
@@ -1026,15 +1132,15 @@ class CodingAssistantAgent(BaseGraphAgent):
 
         return ai_msg
 
-    # strip 후 content에 삽입되는 마커.
-    # 자연어 문장이 아닌 태그 형식을 사용하여 LLM이 실제 파일 내용과
-    # 혼동하지 않도록 한다. LLM이 이 마커를 write_file content로
-    # 재전달하면 MCP write_file 도구가 거부한다.
-    _CONTENT_STRIPPED_TAG = "<CONTENT_STRIPPED>"
+    # strip 후 content를 대체하는 마커.
+    # XML 태그 형태는 LLM이 write_file content로 재생산하므로 사용하지 않는다.
+    # 빈 문자열로 대체하여 LLM이 재생산할 수 없게 한다.
+    # 가드는 빈 content와 이 마커 문자열 모두 검사한다.
+    _CONTENT_STRIPPED_TAG = "[FILE_SAVED]"
 
     @staticmethod
     def _make_stripped_marker(line_count: int) -> str:
-        return f"<CONTENT_STRIPPED lines={line_count}/>"
+        return ""
 
     @staticmethod
     def _strip_write_file_content(ai_msg: Any) -> Any:

@@ -36,6 +36,25 @@ class _StallRecord:
 
 
 @dataclass
+class _ToolThreshold:
+    """도구별 임계값 오버라이드."""
+
+    warn: int
+    exit: int
+
+
+# 도구별 임계값 오버라이드
+# - read_file: 의도적 재확인이 흔하므로 완화
+# - write_file: write→read→rewrite가 자연스러운 패턴이므로 완화
+# - run_shell: 동일 명령(pytest 등)도 파일 수정 후 결과가 달라지므로 완화
+_DEFAULT_TOOL_THRESHOLDS: dict[str, _ToolThreshold] = {
+    "read_file": _ToolThreshold(warn=4, exit=5),
+    "write_file": _ToolThreshold(warn=4, exit=6),
+    "run_shell": _ToolThreshold(warn=4, exit=6),
+}
+
+
+@dataclass
 class StallDetector:
     """반복 도구 호출 감지기.
 
@@ -45,6 +64,7 @@ class StallDetector:
         warn_threshold: 동일 호출 N회 시 경고 (기본: 2)
         exit_threshold: 동일 호출 N회 시 강제 탈출 (기본: 3)
         window_size: 슬라이딩 윈도우 크기 (기본: 10)
+        tool_thresholds: 도구별 임계값 오버라이드 (기본: read_file 완화)
     """
 
     warn_threshold: int = 2
@@ -53,6 +73,10 @@ class StallDetector:
 
     diversity_warn_threshold: float = 0.3
     diversity_exit_threshold: float = 0.2
+
+    tool_thresholds: dict[str, _ToolThreshold] = field(
+        default_factory=lambda: dict(_DEFAULT_TOOL_THRESHOLDS),
+    )
 
     _history: deque[_StallRecord] = field(
         default_factory=lambda: deque(maxlen=10),
@@ -88,7 +112,12 @@ class StallDetector:
         self._call_counts[key] = self._call_counts.get(key, 0) + 1
         count = self._call_counts[key]
 
-        if count >= self.exit_threshold:
+        # 도구별 임계값 오버라이드 적용
+        override = self.tool_thresholds.get(tool_name)
+        warn_th = override.warn if override else self.warn_threshold
+        exit_th = override.exit if override else self.exit_threshold
+
+        if count >= exit_th:
             logger.warning(
                 "[StallDetector] FORCE_EXIT: %s — 동일 인자 %d회 반복",
                 tool_name,
@@ -96,7 +125,7 @@ class StallDetector:
             )
             return StallAction.FORCE_EXIT
 
-        if count >= self.warn_threshold:
+        if count >= warn_th:
             logger.warning(
                 "[StallDetector] WARN: %s — 동일 인자 %d회 반복",
                 tool_name,

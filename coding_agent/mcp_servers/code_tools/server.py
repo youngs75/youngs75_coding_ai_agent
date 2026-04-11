@@ -356,8 +356,12 @@ def run_shell(command: str, timeout: int = 120, cwd: str = ".") -> str:
         )
 
     # 파이프라인 명령어의 각 단계도 검증
-    if "|" in command:
-        for segment in command.split("|"):
+    # 주의: 코드 문자열 내부의 | (비트 OR, 논리 OR 등)를 파이프로 오인하지 않도록
+    # 실제 셸 파이프는 공백을 동반하므로 " | " 패턴으로 분리한다.
+    import re as _re
+    pipe_segments = _re.split(r'\s\|\s', command)
+    if len(pipe_segments) > 1:
+        for segment in pipe_segments[1:]:  # 첫 세그먼트는 이미 검증됨
             seg_cmd = segment.strip().split()[0].split("/")[-1] if segment.strip() else ""
             if seg_cmd and seg_cmd not in _ALLOWED_COMMANDS:
                 return f"Error: 파이프라인 내 허용되지 않은 명령어 — '{seg_cmd}'"

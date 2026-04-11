@@ -177,16 +177,16 @@ class TestScenarioBStallDetection:
     """StallDetector가 반복 도구 호출 및 낮은 diversity를 감지."""
 
     def test_same_tool_3_times_force_exit(self):
-        """동일 도구 호출 3회 반복 시 FORCE_EXIT."""
+        """동일 도구 호출 3회 반복 시 FORCE_EXIT (기본 임계값 도구)."""
         detector = StallDetector(warn_threshold=2, exit_threshold=3, window_size=10)
 
-        action1 = detector.record_and_check("read_file", {"path": "a.py"})
+        action1 = detector.record_and_check("list_directory", {"path": "."})
         assert action1 == StallAction.CONTINUE
 
-        action2 = detector.record_and_check("read_file", {"path": "a.py"})
+        action2 = detector.record_and_check("list_directory", {"path": "."})
         assert action2 == StallAction.WARN
 
-        action3 = detector.record_and_check("read_file", {"path": "a.py"})
+        action3 = detector.record_and_check("list_directory", {"path": "."})
         assert action3 == StallAction.FORCE_EXIT
 
     def test_different_args_no_stall(self):

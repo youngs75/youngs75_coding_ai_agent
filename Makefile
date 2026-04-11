@@ -47,6 +47,9 @@ build: ## Docker 이미지 빌드
 up: ## 전체 Harness 기동 (MCP + LiteLLM + Agent + Orchestrator)
 	cd docker && docker compose up -d --build
 
+rebuild: ## 에이전트만 재빌드 (DB/LiteLLM 유지)
+	cd docker && docker compose up -d --build agent-coding-assistant orchestrator mcp-server
+
 down: ## 전체 Harness 종료 및 컨테이너 제거
 	cd docker && docker compose down
 

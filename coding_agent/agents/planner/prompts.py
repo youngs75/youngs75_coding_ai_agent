@@ -163,8 +163,9 @@ PLAN_SYSTEM_PROMPT = """\
 1. **import 자기 완결**: 한 Phase 내에서 `from X import Y`로 참조하는 모듈 X가 같은 Phase에서 생성되거나 이전 Phase에서 이미 존재해야 합니다.
 2. **Phase 간 의존성 격리**: 다른 Phase에서 구현될 엔티티를 relationship/FK/import로 참조하지 마세요. 후속 Phase의 instructions에 명시하세요.
 3. **테스트 파일 동봉**: 각 phase에 해당 코드의 테스트 파일도 포함하세요.
-4. **의존성 파일은 반드시 첫 번째 Phase에 포함**: requirements.txt, package.json 등은 테스트 실행에 필수이므로, 해당 언어의 첫 Phase files에 반드시 포함하세요. 나중 Phase에 넣으면 테스트 실행기(pytest, jest)가 설치되지 않아 실패합니다.
+4. **의존성 설치를 첫 번째 Phase의 첫 작업으로 포함**: 실행 환경에는 런타임(Python, Node.js, Java)만 설치되어 있습니다. 각 Phase의 instructions 첫 줄에 "의존성 설치: package.json 생성 후 `npm install` 실행" 또는 "requirements.txt 생성 후 `pip install -r requirements.txt` 실행"을 반드시 명시하세요. 설치가 먼저 완료되어야 테스트(jest, pytest)를 실행할 수 있습니다.
 5. **CORS 필수**: 클라이언트-서버 분리 프로젝트에서는 CORS 설정을 instructions에 명시하세요.
+6. **설정 파일 선행 생성**: tsconfig.json, jest.config.js, .env 등 설정 파일은 코드 파일보다 먼저 생성하도록 instructions에서 순서를 명시하세요. 설정 없이 테스트를 실행하면 행(hang)이나 에러가 발생합니다.
 
 ### 2. 구체적 지시 (코드 금지, 사양만 명시)
 - instructions에는 **구현 사양만** 명시하세요. **코드를 절대 포함하지 마세요.**

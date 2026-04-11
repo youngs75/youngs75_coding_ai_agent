@@ -129,3 +129,59 @@ class TestStallDetectorCustomThresholds:
         detector.record_and_check("tool", {"a": 1, "b": 2})
         action = detector.record_and_check("tool", {"b": 2, "a": 1})
         assert action == StallAction.WARN
+
+
+class TestStallDetectorToolThresholds:
+    """도구별 임계값 오버라이드 테스트."""
+
+    def test_read_file_higher_threshold(self):
+        """read_file은 기본보다 높은 임계값을 가진다 (4회 WARN, 5회 EXIT)."""
+        detector = StallDetector()
+        args = {"path": "a.py"}
+        # 1~3회: CONTINUE
+        for _ in range(3):
+            assert detector.record_and_check("read_file", args) == StallAction.CONTINUE
+        # 4회: WARN
+        assert detector.record_and_check("read_file", args) == StallAction.WARN
+        # 5회: FORCE_EXIT
+        assert detector.record_and_check("read_file", args) == StallAction.FORCE_EXIT
+
+    def test_write_file_higher_threshold(self):
+        """write_file은 기본보다 높은 임계값을 가진다 (4회 WARN, 6회 EXIT)."""
+        detector = StallDetector()
+        args = {"path": "a.py", "content": "x"}
+        # 1~3회: CONTINUE (write→read→rewrite 패턴 허용)
+        for _ in range(3):
+            assert detector.record_and_check("write_file", args) == StallAction.CONTINUE
+        # 4회: WARN
+        assert detector.record_and_check("write_file", args) == StallAction.WARN
+        # 5회: WARN
+        assert detector.record_and_check("write_file", args) == StallAction.WARN
+        # 6회: FORCE_EXIT
+        assert detector.record_and_check("write_file", args) == StallAction.FORCE_EXIT
+
+    def test_run_shell_higher_threshold(self):
+        """run_shell은 기본보다 높은 임계값을 가진다 (4회 WARN, 6회 EXIT)."""
+        detector = StallDetector()
+        args = {"command": "pytest tests/ -q"}
+        # 1~3회: CONTINUE
+        for _ in range(3):
+            assert detector.record_and_check("run_shell", args) == StallAction.CONTINUE
+        # 4회: WARN
+        assert detector.record_and_check("run_shell", args) == StallAction.WARN
+        # 5회: WARN (아직 EXIT 아님)
+        assert detector.record_and_check("run_shell", args) == StallAction.WARN
+        # 6회: FORCE_EXIT
+        assert detector.record_and_check("run_shell", args) == StallAction.FORCE_EXIT
+
+    def test_custom_tool_threshold_override(self):
+        """커스텀 도구 임계값을 설정할 수 있다."""
+        from coding_agent.core.stall_detector import _ToolThreshold
+
+        detector = StallDetector(
+            tool_thresholds={"search_code": _ToolThreshold(warn=3, exit=6)}
+        )
+        args = {"query": "foo"}
+        for _ in range(2):
+            assert detector.record_and_check("search_code", args) == StallAction.CONTINUE
+        assert detector.record_and_check("search_code", args) == StallAction.WARN

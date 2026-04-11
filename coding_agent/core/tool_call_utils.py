@@ -42,6 +42,43 @@ def tc_id(tool_call: Any) -> str | None:
     return getattr(tool_call, "id", None) or getattr(tool_call, "tool_call_id", None)
 
 
+def _try_parse_json_args(raw: str) -> dict[str, Any]:
+    """JSON 문자열을 파싱하되, 실패 시 복구를 시도한다.
+
+    Qwen3 등 일부 모델이 이중 닫기 중괄호(}})나 불필요한 후행 문자를
+    생성하는 문제를 방어한다.
+    """
+    # 1차: 원본 파싱
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 2차: 후행 중괄호/공백 제거 후 재시도
+    stripped = raw.rstrip()
+    while stripped.endswith("}}"):
+        stripped = stripped[:-1]
+        try:
+            parsed = json.loads(stripped)
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    # 3차: 첫 번째 '{' ~ 마지막 '}'만 추출하여 재시도
+    first_brace = raw.find("{")
+    last_brace = raw.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        candidate = raw[first_brace : last_brace + 1]
+        try:
+            parsed = json.loads(candidate)
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {}
+
+
 def tc_args(tool_call: Any) -> dict[str, Any]:
     """도구 호출에서 인자를 추출한다. JSON 문자열도 파싱한다."""
     if tool_call is None:
@@ -60,11 +97,7 @@ def tc_args(tool_call: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
+        return _try_parse_json_args(raw)
     return {}
 
 
