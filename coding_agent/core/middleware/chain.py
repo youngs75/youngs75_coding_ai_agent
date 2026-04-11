@@ -78,6 +78,20 @@ class MiddlewareChain:
 
         # 가장 안쪽: 실제 LLM 호출 (타임아웃 보호)
         async def _final_handler(req: ModelRequest) -> ModelResponse:
+            # 미들웨어 체인 이후 최종 페어링 검증 — 컴팩션으로 깨진 페어 정리
+            from coding_agent.core.tool_call_utils import (
+                sanitize_messages_for_llm,
+                ensure_tool_calls_serializable,
+            )
+            sanitized_msgs = sanitize_messages_for_llm(req.messages)
+            # DashScope 호환: tool_calls.args(dict) → additional_kwargs 보장
+            sanitized_msgs = ensure_tool_calls_serializable(sanitized_msgs)
+            if len(sanitized_msgs) != len(req.messages):
+                logger.debug(
+                    "[MiddlewareChain] 최종 sanitize: %d → %d messages",
+                    len(req.messages), len(sanitized_msgs),
+                )
+            req = req.override(messages=sanitized_msgs)
             all_messages = req.all_messages
             timeout = req.metadata.get("request_timeout", _DEFAULT_LLM_TIMEOUT)
             logger.debug(

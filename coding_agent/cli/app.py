@@ -947,6 +947,19 @@ async def _main_loop(config: CLIConfig) -> None:
             langfuse_handler=langfuse_handler,
         )
 
+    # 세션 종료 시 Langfuse 세션 ID 표시 (트레이스 분석용)
+    _print_session_id(renderer)
+
+
+def _print_session_id(renderer: CLIRenderer) -> None:
+    """Langfuse 세션 ID를 출력한다."""
+    sid = os.environ.get("HARNESS_SESSION_ID")
+    if sid:
+        renderer.system_message(f"Langfuse 세션 ID: {sid}")
+        renderer.system_message(
+            f"트레이스 조회: python -m coding_agent.utils.langfuse_trace_exporter --session {sid}"
+        )
+
 
 def run_cli(config: CLIConfig | None = None) -> None:
     """CLI 진입점."""
@@ -988,6 +1001,13 @@ def run_cli(config: CLIConfig | None = None) -> None:
     try:
         asyncio.run(_main_loop(config))
     finally:
+        # Ctrl+C 등 비정상 종료 시에도 세션 ID 출력
+        sid = os.environ.get("HARNESS_SESSION_ID")
+        if sid:
+            print(f"\nLangfuse 세션 ID: {sid}")
+            print(
+                f"트레이스 조회: python -m coding_agent.utils.langfuse_trace_exporter --session {sid}"
+            )
         # 로컬 MCP 서버 정리
         global _local_mcp_process
         if _local_mcp_process is not None:

@@ -437,11 +437,14 @@ def create_chat_model(
         extra_body["enable_thinking"] = False
 
     # Langfuse 세션 추적: 모든 LLM 호출을 하나의 E2E 세션으로 묶음
+    # LiteLLM Proxy는 metadata 내 키 이름을 그대로 Langfuse에 매핑:
+    #   session_id → Langfuse trace.session_id
+    #   trace_name → Langfuse trace.name
     from coding_agent.utils.e2e_session import get_or_create_session_id
 
     metadata = extra_body.get("metadata", {})
-    metadata.setdefault("langfuse_session_id", get_or_create_session_id())
-    metadata.setdefault("langfuse_trace_name", f"harness:{litellm_model}")
+    metadata.setdefault("session_id", get_or_create_session_id())
+    metadata.setdefault("trace_name", f"harness:{litellm_model}")
     extra_body["metadata"] = metadata
 
     kwargs["extra_body"] = extra_body

@@ -71,40 +71,141 @@ def tc_args(tool_call: Any) -> dict[str, Any]:
 def sanitize_messages_for_llm(
     messages: list[Any],
 ) -> list[Any]:
-    """LLM에 전달할 메시지에서 고아 tool_calls를 정리한다.
+    """LLM에 전달할 메시지에서 양방향 고아 페어링을 정리한다.
 
-    DashScope/OpenAI API는 tool_calls가 있는 AI 메시지 뒤에 반드시
-    대응하는 ToolMessage가 있어야 한다. 이 함수는:
-    1. tool_calls가 있는 AI 메시지에 대응하는 ToolMessage가 없으면
-       해당 AI 메시지의 tool_calls를 제거한다.
-    2. 메시지 순서와 내용은 최대한 보존한다.
+    DashScope/OpenAI API는 AIMessage.tool_calls와 ToolMessage가 반드시
+    1:1 대응해야 한다. 이 함수는 양방향으로 정리한다:
+
+    1. 대응 ToolMessage가 없는 AIMessage의 tool_calls → 해당 call만 부분 제거
+       (기존: 전체 tool_calls 제거 → 캐스케이딩 고아 발생)
+    2. 대응 AIMessage가 없는 ToolMessage → 제거
     """
     from langchain_core.messages import AIMessage, ToolMessage
 
-    # 1단계: 존재하는 ToolMessage의 tool_call_id를 수집
-    answered_ids: set[str] = set()
+    # 1단계: 양방향 ID 수집
+    ai_call_ids: set[str] = set()
+    tool_result_ids: set[str] = set()
+
     for msg in messages:
-        if isinstance(msg, ToolMessage):
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                cid = tc_id(tc)
+                if cid:
+                    ai_call_ids.add(cid)
+        elif isinstance(msg, ToolMessage):
             tcid = getattr(msg, "tool_call_id", None)
             if tcid:
-                answered_ids.add(tcid)
+                tool_result_ids.add(tcid)
 
-    # 2단계: 고아 tool_calls가 있는 AI 메시지를 정리
+    # 2단계: 정리
     cleaned: list[Any] = []
     for msg in messages:
         if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-            # 모든 tool_call_id가 answered인지 확인
-            orphaned = [
+            # 대응 ToolMessage가 있는 call만 보존 (부분 제거)
+            valid_calls = [
                 tc for tc in msg.tool_calls
-                if tc_id(tc) not in answered_ids
+                if tc_id(tc) in tool_result_ids
             ]
-            if orphaned:
-                # tool_calls를 제거한 깨끗한 메시지로 교체
-                clean_msg = AIMessage(
+            if len(valid_calls) == len(msg.tool_calls):
+                # 모든 call이 유효 → 원본 유지
+                cleaned.append(msg)
+            elif valid_calls:
+                # 일부만 유효 → 유효한 call만 포함하는 새 메시지
+                # additional_kwargs.tool_calls도 동기화 (DashScope 호환)
+                valid_ids = {tc_id(tc) for tc in valid_calls}
+                ak = dict(getattr(msg, "additional_kwargs", {}) or {})
+                ak_tcs = ak.get("tool_calls", [])
+                if ak_tcs:
+                    ak["tool_calls"] = [
+                        tc for tc in ak_tcs
+                        if tc.get("id", "") in valid_ids
+                    ]
+                cleaned.append(AIMessage(
+                    content=msg.content or "",
+                    tool_calls=valid_calls,
+                    additional_kwargs=ak,
+                    id=getattr(msg, "id", None),
+                ))
+            else:
+                # 모든 call이 고아 → tool_calls 제거
+                cleaned.append(AIMessage(
                     content=msg.content or "[도구 호출 생략됨]",
-                )
-                cleaned.append(clean_msg)
-                continue
+                ))
+            continue
+
+        if isinstance(msg, ToolMessage):
+            # 대응 AIMessage가 없는 ToolMessage 제거
+            tcid = getattr(msg, "tool_call_id", None)
+            if tcid and tcid not in ai_call_ids:
+                continue  # 고아 ToolMessage 제거
+
         cleaned.append(msg)
 
     return cleaned
+
+
+def ensure_tool_calls_serializable(messages: list[Any]) -> list[Any]:
+    """AIMessage의 tool_calls가 DashScope/OpenAI 호환 형식인지 보장한다.
+
+    LangChain 내부 형식(tool_calls[].args: dict)은 DashScope가 직렬화하지 못한다.
+    additional_kwargs.tool_calls가 없으면 생성하여 arguments를 JSON 문자열로 보장한다.
+
+    "Can only get item pairs from a mapping" 에러 방지용.
+    """
+    from langchain_core.messages import AIMessage
+
+    result: list[Any] = []
+    for msg in messages:
+        if not isinstance(msg, AIMessage) or not getattr(msg, "tool_calls", None):
+            result.append(msg)
+            continue
+
+        ak = getattr(msg, "additional_kwargs", {}) or {}
+        ak_tcs = ak.get("tool_calls", [])
+
+        if ak_tcs:
+            # additional_kwargs.tool_calls가 있으면 arguments를 JSON 문자열로 보장
+            fixed = False
+            for tc in ak_tcs:
+                fn = tc.get("function", {})
+                args = fn.get("arguments")
+                if isinstance(args, dict):
+                    fn["arguments"] = json.dumps(args, ensure_ascii=False)
+                    fixed = True
+            if fixed:
+                new_ak = dict(ak)
+                new_ak["tool_calls"] = ak_tcs
+                result.append(AIMessage(
+                    content=msg.content or "",
+                    tool_calls=msg.tool_calls,
+                    additional_kwargs=new_ak,
+                    id=getattr(msg, "id", None),
+                ))
+            else:
+                result.append(msg)
+        else:
+            # additional_kwargs.tool_calls가 없으면 tool_calls에서 생성
+            new_ak_tcs = []
+            for tc in msg.tool_calls:
+                tc_id_val = tc.get("id", "")
+                tc_name_val = tc.get("name", "")
+                tc_args = tc.get("args", {})
+                args_str = json.dumps(tc_args, ensure_ascii=False) if isinstance(tc_args, dict) else str(tc_args)
+                new_ak_tcs.append({
+                    "id": tc_id_val,
+                    "type": "function",
+                    "function": {
+                        "name": tc_name_val,
+                        "arguments": args_str,
+                    },
+                })
+            new_ak = dict(ak)
+            new_ak["tool_calls"] = new_ak_tcs
+            result.append(AIMessage(
+                content=msg.content or "",
+                tool_calls=msg.tool_calls,
+                additional_kwargs=new_ak,
+                id=getattr(msg, "id", None),
+            ))
+
+    return result

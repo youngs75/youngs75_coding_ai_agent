@@ -161,8 +161,25 @@ class SummarizationMiddleware(AgentMiddleware):
         estimated = _estimate_tokens(messages)
         if estimated > self._token_threshold and len(messages) > self._keep_recent + 1:
             first_msg = messages[0]
-            old_msgs = messages[1:-self._keep_recent]
-            tail_msgs = messages[-self._keep_recent:]
+
+            # Claw Code walk-back 패턴: tail 시작점이 ToolMessage이면
+            # 대응 AIMessage까지 포함하여 페어링 보호
+            tail_start = max(1, len(messages) - self._keep_recent)
+            from langchain_core.messages import ToolMessage as _TM
+            if tail_start < len(messages) and isinstance(messages[tail_start], _TM):
+                tool_call_id = getattr(messages[tail_start], "tool_call_id", None)
+                if tool_call_id:
+                    for j in range(tail_start - 1, 0, -1):
+                        if isinstance(messages[j], AIMessage) and getattr(messages[j], "tool_calls", None):
+                            for tc in messages[j].tool_calls:
+                                if tc.get("id") == tool_call_id:
+                                    tail_start = j
+                                    break
+                            if tail_start == j:
+                                break
+
+            old_msgs = messages[1:tail_start]
+            tail_msgs = messages[tail_start:]
             removed_count = len(old_msgs)
 
             summary_text = await self._summarize(old_msgs)

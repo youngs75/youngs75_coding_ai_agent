@@ -446,9 +446,12 @@ class CodingAssistantAgent(BaseGraphAgent):
         return system_prompt
 
     def _build_context_message(self, state: CodingState) -> HumanMessage:
-        """execute/generate 노드 공통 컨텍스트 메시지를 구성한다."""
+        """generate 노드 컨텍스트 메시지를 구성한다.
+
+        에러 처리는 _inject_error가 HumanMessage로 직접 주입하므로,
+        여기서는 태스크 정보만 전달한다.
+        """
         parse_result = state.get("parse_result", {})
-        verify_result = state.get("verify_result")
 
         context_parts = [
             f"작업 유형: {parse_result.get('task_type', 'generate')}",
@@ -460,27 +463,6 @@ class CodingAssistantAgent(BaseGraphAgent):
             context_parts.append(
                 f"대상 파일: {', '.join(parse_result['target_files'])}"
             )
-
-        if verify_result and not verify_result.get("passed"):
-            issues = verify_result.get("issues", [])
-            issue_strs = [
-                i if isinstance(i, str) else json.dumps(i, ensure_ascii=False)
-                for i in issues
-            ]
-            context_parts.append(
-                "\n이전 검증에서 발견된 문제:\n- " + "\n- ".join(issue_strs)
-            )
-            # 이전 생성 코드를 포함하여 LLM이 read_file 없이도 수정 가능하게 함
-            prev_code = state.get("generated_code", "")
-            if prev_code:
-                # 토큰 폭발 방지: 최대 8000자
-                truncated = prev_code[:8000]
-                if len(prev_code) > 8000:
-                    truncated += f"\n\n... (총 {len(prev_code)}자 중 8000자만 표시)"
-                context_parts.append(
-                    f"\n이전에 생성한 코드 (위 문제를 수정하세요):\n```\n{truncated}\n```"
-                )
-            context_parts.append("위 문제를 수정하여 다시 코드를 작성하세요.")
 
         return HumanMessage(content="\n".join(context_parts))
 
@@ -517,6 +499,26 @@ class CodingAssistantAgent(BaseGraphAgent):
     # write_file 도구 루프 최대 반복 횟수 — 단일 턴 완결을 위해 충분히 확보
     # 파일 수 제한 없이 LLM이 자율적으로 모든 파일을 한 턴에서 생성하도록 허용
     _GENERATE_MAX_TOOL_LOOPS = 30
+
+    # 루프 내 SystemMessage 태그 — 교체 식별용
+    _SYS_TAG_PROGRESS = "[시스템] 진척 현황:"
+    _SYS_TAG_SAVED_FILES = "[시스템] 이미 저장된 파일"
+    _SYS_TAG_STALL_WARN = "[시스템] 진전 없음이 감지되었습니다."
+
+    @staticmethod
+    def _replace_or_append_system(
+        messages: list, content: str, tag: str
+    ) -> None:
+        """동일 태그의 기존 SystemMessage를 교체하거나, 없으면 추가한다.
+
+        매 iteration마다 동일 유형의 SystemMessage가 누적되는 것을 방지한다.
+        """
+        for i in range(len(messages) - 1, -1, -1):
+            msg = messages[i]
+            if isinstance(msg, SystemMessage) and tag in (msg.content or ""):
+                messages[i] = SystemMessage(content=content)
+                return
+        messages.append(SystemMessage(content=content))
 
     async def _generate_code(self, state: CodingState) -> dict[str, Any]:
         """단순화된 그래프(v2)의 코드 생성 노드.
@@ -747,8 +749,10 @@ class CodingAssistantAgent(BaseGraphAgent):
                         f"남은 파일: {', '.join(remaining)}. "
                         f"이 파일들만 write_file로 생성하세요."
                     )
-                    loop_messages.append(
-                        SystemMessage(content=" ".join(checklist_parts))
+                    self._replace_or_append_system(
+                        loop_messages,
+                        " ".join(checklist_parts),
+                        self._SYS_TAG_PROGRESS,
                     )
 
             # StallDetector: write_file 루프에서도 반복 패턴 체크
@@ -761,11 +765,11 @@ class CodingAssistantAgent(BaseGraphAgent):
                     log.append(
                         "[stall] 진전 없음 감지 — 다른 접근을 시도하세요"
                     )
-                    loop_messages.append(
-                        SystemMessage(
-                            content="[시스템] 진전 없음이 감지되었습니다. "
-                            "다른 접근 방식을 시도하세요."
-                        )
+                    self._replace_or_append_system(
+                        loop_messages,
+                        "[시스템] 진전 없음이 감지되었습니다. "
+                        "다른 접근 방식을 시도하세요.",
+                        self._SYS_TAG_STALL_WARN,
                     )
                 elif stall_action == StallAction.FORCE_EXIT:
                     summary = self._stall_detector.get_stall_summary()
@@ -785,12 +789,12 @@ class CodingAssistantAgent(BaseGraphAgent):
             # 이미 생성된 파일 목록을 LLM에 알려서 중복 방지
             if written_files and loop_idx > 0:
                 files_summary = ", ".join(written_files)
-                loop_messages.append(
-                    SystemMessage(
-                        content=f"[시스템] 이미 저장된 파일({len(written_files)}개): {files_summary}. "
-                        f"이미 저장된 파일은 다시 write_file하지 마세요. "
-                        f"아직 생성하지 않은 파일만 작성하세요."
-                    )
+                self._replace_or_append_system(
+                    loop_messages,
+                    f"[시스템] 이미 저장된 파일({len(written_files)}개): {files_summary}. "
+                    f"이미 저장된 파일은 다시 write_file하지 마세요. "
+                    f"아직 생성하지 않은 파일만 작성하세요.",
+                    self._SYS_TAG_SAVED_FILES,
                 )
 
         # 미완성 도구 호출 처리 (PatchToolCalls 패턴)

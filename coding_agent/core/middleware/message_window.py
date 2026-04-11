@@ -37,6 +37,35 @@ logger = logging.getLogger(__name__)
 # 토큰 추정: 4 문자 ≈ 1 토큰 (Claude Code, DeepAgents 동일 근사치)
 _CHARS_PER_TOKEN = 4
 
+
+def _protect_tool_pair_boundary(messages: list[BaseMessage], keep_from: int) -> int:
+    """보존 시작점이 ToolMessage이면 대응 AIMessage까지 거슬러 올라간다.
+
+    Claw Code walk-back 패턴: 컴팩션 경계에서 AIMessage↔ToolMessage
+    페어가 분리되지 않도록 보장한다.
+    """
+    if keep_from <= 0 or keep_from >= len(messages):
+        return keep_from
+
+    msg = messages[keep_from]
+    if not isinstance(msg, ToolMessage):
+        return keep_from
+
+    # ToolMessage의 tool_call_id로 대응 AIMessage를 역방향 탐색
+    tool_call_id = getattr(msg, "tool_call_id", None)
+    if not tool_call_id:
+        return keep_from
+
+    for i in range(keep_from - 1, -1, -1):
+        if isinstance(messages[i], AIMessage) and getattr(messages[i], "tool_calls", None):
+            for tc in messages[i].tool_calls:
+                tc_id = tc.get("id", "")
+                if tc_id == tool_call_id:
+                    return i
+
+    return keep_from
+
+
 # 도구 결과 교체 메시지 (Claude Code 패턴)
 _TOOL_RESULT_CLEARED = "[이전 도구 결과 — 컨텍스트 압축으로 제거됨]"
 
@@ -175,21 +204,26 @@ class MessageWindowMiddleware(AgentMiddleware):
 
         Codex 패턴: base_instructions 항상 보존.
         Claude Code 패턴: 에러 컨텍스트 우선 보존.
+        Claw Code 패턴: tool pair 경계 보호.
         """
         if len(messages) <= self._keep_recent + 2:
             return messages
 
         first_msg = messages[0]
 
+        # tool pair 보호: tail 시작점이 ToolMessage이면 대응 AIMessage까지 포함
+        tail_start = max(0, len(messages) - self._keep_recent)
+        tail_start = _protect_tool_pair_boundary(messages, tail_start)
+
         # 에러 메시지 수집 (중간에 있는 것도 보존)
         error_msgs: list[BaseMessage] = []
-        middle = messages[1:-self._keep_recent]
+        middle = messages[1:tail_start]
         for msg in middle:
             if _is_error_message(msg):
                 error_msgs.append(msg)
 
-        # 최근 메시지
-        tail = messages[-self._keep_recent:]
+        # 최근 메시지 (tool pair 보호된 시작점부터)
+        tail = messages[tail_start:]
 
         # 에러 메시지가 이미 tail에 포함되어 있으면 중복 제거
         tail_ids = {id(m) for m in tail}
@@ -208,6 +242,7 @@ class MessageWindowMiddleware(AgentMiddleware):
         """3단계: 토큰 예산 내로 최근 메시지만 유지.
 
         Codex 패턴: FIFO — 오래된 메시지부터 제거.
+        Claw Code 패턴: tool pair 경계 보호.
         """
         first_msg = messages[0]
         first_tokens = _estimate_tokens(first_msg)
@@ -224,6 +259,16 @@ class MessageWindowMiddleware(AgentMiddleware):
             used += msg_tokens
 
         kept.reverse()
+
+        # tool pair 보호: kept의 첫 메시지가 ToolMessage이면 대응 AIMessage까지 포함
+        if kept:
+            # kept의 시작 인덱스를 원본 messages 기준으로 계산
+            keep_start = len(messages) - len(kept)
+            protected_start = _protect_tool_pair_boundary(messages, keep_start)
+            if protected_start < keep_start:
+                # 보호로 인해 추가된 메시지를 prepend
+                kept = list(messages[protected_start:keep_start]) + kept
+
         removed = len(messages) - 1 - len(kept)
         summary = HumanMessage(
             content=f"[이전 {removed}개 메시지 제거됨 — 토큰 예산 초과]"
